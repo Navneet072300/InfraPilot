@@ -1,0 +1,22 @@
+{
+  "clusters": [
+    {
+      "name": "my-cluster",
+      "environment": "dev",
+      "connection_type": "token",
+      "api_url": "https://your-cluster.example.com:6443",
+      "token": "",
+      "kubeconfig": "",
+      "active": true
+    }
+  ],
+  "github": {
+    "username": "",
+    "pat": ""
+  },
+  "selected_platforms": [
+    "aws",
+    "github-actions",
+    "argocd"
+  ]
+}
