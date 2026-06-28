@@ -1,12 +1,13 @@
+import hashlib
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Cookie, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from config import unified_store
-from services import cache_service
+from services import cache_service, audit_service
 from services.k8s_service import KubernetesService, KUBECTL_ALLOWED
 
 logger = logging.getLogger(__name__)
@@ -201,23 +202,55 @@ async def node_metrics(cluster: str | None = Query(None)):
 class KubectlRequest(BaseModel):
     cluster: str | None = None
     command: list[str]
+    confirmed: bool = False
+
+
+def _extract_namespace(cmd: list[str]) -> str:
+    for i, part in enumerate(cmd):
+        if part in ("-n", "--namespace") and i + 1 < len(cmd):
+            return cmd[i + 1]
+    return "default"
 
 
 @router.post("/k8s/kubectl")
-async def run_kubectl(body: KubectlRequest):
+async def run_kubectl(body: KubectlRequest, request: Request):
     svc = await _get_service(body.cluster)
+    namespace = _extract_namespace(body.command)
 
     async def generate():
         result = await svc.run_kubectl_safe(body.command)
-        if result["stdout"]:
-            for line in result["stdout"].splitlines():
-                data = json.dumps({"line": line, "type": "stdout"})
-                yield f"data: {data}\n\n"
-        if result["stderr"]:
-            for line in result["stderr"].splitlines():
-                data = json.dumps({"line": line, "type": "stderr"})
-                yield f"data: {data}\n\n"
-        yield f"data: {json.dumps({'done': True, 'exit_code': result['exit_code']})}\n\n"
+        stdout = result.get("stdout", "") or ""
+        stderr = result.get("stderr", "") or ""
+        exit_code = result.get("exit_code", 0)
+
+        if stdout:
+            for line in stdout.splitlines():
+                yield f"data: {json.dumps({'line': line, 'type': 'stdout'})}\n\n"
+        if stderr:
+            for line in stderr.splitlines():
+                yield f"data: {json.dumps({'line': line, 'type': 'stderr'})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'exit_code': exit_code})}\n\n"
+
+        # Audit log — never log stdout content, only hash
+        output_hash = hashlib.sha256(stdout.encode()).hexdigest()
+        cmd_display = body.command[:3]  # first 3 tokens only
+        await audit_service.log(
+            user_id=None,
+            user_email="api",
+            action="kubectl_execute",
+            resource=f"{body.cluster or 'active'}:{' '.join(cmd_display)}",
+            ip_address=request.client.host if request.client else "",
+            status="success" if exit_code == 0 else "failed",
+            details=json.dumps({
+                "cluster": body.cluster,
+                "command": cmd_display,
+                "namespace": namespace,
+                "exit_code": exit_code,
+                "confirmed": body.confirmed,
+                "output_lines": len(stdout.splitlines()),
+                "output_hash": output_hash,
+            }),
+        )
 
     return StreamingResponse(
         generate(),

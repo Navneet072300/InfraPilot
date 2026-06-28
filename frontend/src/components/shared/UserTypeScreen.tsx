@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import type { ExperienceLevel } from '../../lib/terminology';
 
@@ -39,6 +39,27 @@ export function UserTypeScreen({ onDone }: Props) {
   const [selected, setSelected] = useState<ExperienceLevel | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Auto-dismiss with devops default if user hasn't interacted after 5 minutes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!selected) skip();
+    }, 5 * 60 * 1000);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
+
+  async function skip() {
+    setUser({ experience_level: 'devops' });
+    try {
+      await fetch('/api/settings/general', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ experience_level: 'devops' }),
+      });
+    } catch { /* best-effort */ }
+    onDone();
+  }
+
   async function confirm() {
     if (!selected) return;
     setSaving(true);
@@ -65,6 +86,18 @@ export function UserTypeScreen({ onDone }: Props) {
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }}>
       <div style={{ width: '100%', maxWidth: 440, padding: '0 20px' }}>
+        {/* Skip button */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+          <button
+            type="button"
+            onClick={skip}
+            title="Skip for now — we'll use DevOps mode by default"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, padding: '4px 8px' }}
+          >
+            Skip for now ✕
+          </button>
+        </div>
+
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 36 }}>
           <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.03em' }}>

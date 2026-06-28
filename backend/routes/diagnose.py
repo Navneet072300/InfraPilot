@@ -6,11 +6,12 @@ import shlex
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from services.ai_service import ai
+from services import audit_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -408,7 +409,7 @@ async def diagnose_chat(req: ChatRequest):
 
 
 @router.post("/diagnose/run-command")
-async def run_command(req: RunCommandRequest):
+async def run_command(req: RunCommandRequest, request: Request):
     if not req.confirmed:
         raise HTTPException(400, "confirmed must be true")
 
@@ -421,6 +422,8 @@ async def run_command(req: RunCommandRequest):
         cluster_name = _sessions[req.diagnosis_id].get("cluster")
 
     async def stream():
+        exit_code = 0
+        output = ""
         try:
             svc = await _get_k8s(cluster_name)
             parts = shlex.split(req.command.strip())
@@ -429,18 +432,41 @@ async def run_command(req: RunCommandRequest):
 
             result = await svc._kubectl(parts, timeout=30)
             output = result.get("stdout", "") or result.get("stderr", "")
+            exit_code = result.get("exit_code", 0)
             for line in output.split("\n"):
                 if line.strip():
                     yield _ev("output", text=line)
-            if result.get("exit_code", 0) != 0:
-                yield _ev("error_code", code=result.get("exit_code", 1))
+            if exit_code != 0:
+                yield _ev("error_code", code=exit_code)
         except HTTPException as e:
             yield _ev("output", text=f"Error: {e.detail}")
+            exit_code = 1
         except Exception as e:
             logger.exception("run-command error")
             yield _ev("output", text=f"Error: {e}")
+            exit_code = 1
 
         yield _ev("done", done=True)
+
+        # Audit — hash output, never store content
+        import hashlib as _hl, json as _j
+        cmd_tokens = req.command.strip().split()[:3]
+        await audit_service.log(
+            user_id=None,
+            user_email="diagnose",
+            action="diagnose_run_command",
+            resource=f"{cluster_name or 'active'}:{' '.join(cmd_tokens)}",
+            ip_address=request.client.host if request.client else "",
+            status="success" if exit_code == 0 else "failed",
+            details=_j.dumps({
+                "diagnosis_id": req.diagnosis_id,
+                "cluster": cluster_name,
+                "command": cmd_tokens,
+                "exit_code": exit_code,
+                "output_lines": len(output.splitlines()),
+                "output_hash": _hl.sha256(output.encode()).hexdigest(),
+            }),
+        )
 
     return StreamingResponse(stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

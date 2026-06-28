@@ -413,7 +413,7 @@ export function PipelineMode() {
   const [analyzing, setAnalyzing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const { tasks, isRunning, isDone, runAll, reset } = useAgent();
+  const { tasks, isRunning, isDone, runAll, reset, abort, runId } = useAgent();
 
   const handleAnalyze = useCallback(async (cfg: Omit<PipelineConfig, 'analysis' | 'clarifications'>) => {
     setPhase('analyzing');
@@ -501,6 +501,15 @@ export function PipelineMode() {
             ))}
           </div>
 
+          {isRunning && runId && (
+            <button
+              type="button"
+              onClick={() => abort()}
+              style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', background: 'rgba(239,68,68,0.12)', border: '1px solid var(--error)', borderRadius: '5px', color: 'var(--error)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              <X size={12} /> Abort
+            </button>
+          )}
           <button
             onClick={handleReset}
             style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 10px', background: 'transparent', border: '1px solid var(--border)', borderRadius: '5px', color: 'var(--text-muted)', fontSize: '12px', cursor: 'pointer', fontFamily: 'inherit' }}

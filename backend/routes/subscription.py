@@ -1,17 +1,26 @@
 """
 Subscription management routes.
-All plan enforcement (rate limiting) is handled via check_plan_limit().
-Actual payment processing is mocked — replace with Stripe in production.
+Upgrades are queued as pending requests — no auto-billing without payment.
 """
 import logging
+import os
 from datetime import datetime, timezone, timedelta
+from uuid import uuid4
 
+import httpx
 from fastapi import APIRouter, Cookie, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, func
 
 from db.database import AsyncSessionLocal
 from db.models import User
+
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@infrapilot.dev")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+# In-memory upgrade request store (use DB in production)
+_upgrade_requests: dict[str, dict] = {}
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/subscription", tags=["subscription"])
@@ -291,6 +300,36 @@ class UpgradeRequest(BaseModel):
     billing: str = "monthly"
 
 
+async def _notify_admin_upgrade(user_email: str, user_id: int, plan: str, billing: str, request_id: str):
+    if not RESEND_API_KEY:
+        logger.info("UPGRADE REQUEST: %s → %s (%s) id=%s", user_email, plan, billing, request_id)
+        return
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {RESEND_API_KEY}"},
+                json={
+                    "from": "InfraPilot <noreply@infrapilot.dev>",
+                    "to": ADMIN_EMAIL,
+                    "subject": f"UPGRADE REQUEST: {user_email} → {plan}",
+                    "html": f"""
+                    <h2>New Upgrade Request</h2>
+                    <table>
+                      <tr><td><b>User:</b></td><td>{user_email}</td></tr>
+                      <tr><td><b>Plan:</b></td><td>{plan} ({billing})</td></tr>
+                      <tr><td><b>User ID:</b></td><td>{user_id}</td></tr>
+                      <tr><td><b>Request ID:</b></td><td>{request_id}</td></tr>
+                      <tr><td><b>Time:</b></td><td>{datetime.now(timezone.utc).isoformat()}</td></tr>
+                    </table>
+                    <p>Manually activate and email the user to confirm.</p>
+                    """,
+                },
+            )
+    except Exception as e:
+        logger.error("Failed to notify admin of upgrade: %s", e)
+
+
 @router.post("/upgrade")
 async def upgrade_plan(
     body: UpgradeRequest,
@@ -302,15 +341,45 @@ async def upgrade_plan(
     if body.plan not in valid_plans:
         raise HTTPException(status_code=400, detail="Invalid plan")
 
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(select(User).where(User.id == user.id))
-        db_user = result.scalar_one_or_none()
-        if db_user:
-            db_user.plan = body.plan
-            await session.commit()
+    # Downgrade to free is instant (no payment needed)
+    if body.plan == "free":
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(User).where(User.id == user.id))
+            db_user = result.scalar_one_or_none()
+            if db_user:
+                db_user.plan = "free"
+                await session.commit()
+        return {"status": "downgraded", "new_plan": "free"}
 
-    logger.info("Plan upgrade: user=%s old=%s new=%s billing=%s", user.email, user.plan, body.plan, body.billing)
-    return {"success": True, "new_plan": body.plan, "billing": body.billing}
+    # Paid upgrades → queue as pending request
+    request_id = str(uuid4())
+    _upgrade_requests[request_id] = {
+        "id": request_id,
+        "user_id": user.id,
+        "user_email": user.email,
+        "requested_plan": body.plan,
+        "billing_cycle": body.billing,
+        "status": "pending",
+        "requested_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # Notify admin
+    import asyncio
+    asyncio.create_task(_notify_admin_upgrade(
+        user.email or "", user.id, body.plan, body.billing, request_id
+    ))
+
+    logger.info("Upgrade request queued: user=%s plan=%s billing=%s id=%s",
+                user.email, body.plan, body.billing, request_id)
+    return {
+        "status": "pending",
+        "request_id": request_id,
+        "message": (
+            f"We received your upgrade request to {body.plan.title()}. "
+            f"We will activate your plan within 24 hours and email you at {user.email or 'your email'}."
+        ),
+        "estimated_activation": "within 24 hours",
+    }
 
 
 @router.post("/cancel")

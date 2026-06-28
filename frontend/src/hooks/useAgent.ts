@@ -28,6 +28,7 @@ export function useAgent() {
   const [tasks, setTasks] = useState<PipelineTask[]>(makeTasks);
   const [isRunning, setIsRunning] = useState(false);
   const [isDone, setIsDone] = useState(false);
+  const [runId, setRunId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const updateTask = useCallback(
@@ -84,8 +85,21 @@ export function useAgent() {
             try {
               const ev = JSON.parse(raw) as AgentEvent;
 
+              // Capture run_id from first SSE event
+              if ((ev as Record<string, unknown>).type === 'started' && (ev as Record<string, unknown>).run_id) {
+                setRunId((ev as Record<string, unknown>).run_id as string);
+                continue;
+              }
+
+              if ((ev as Record<string, unknown>).type === 'aborted' || ev.pipeline === 'aborted') {
+                setIsDone(true);
+                setRunId(null);
+                continue;
+              }
+
               if (ev.pipeline) {
                 setIsDone(true);
+                setRunId(null);
                 continue;
               }
 
@@ -136,10 +150,17 @@ export function useAgent() {
     [updateTask]
   );
 
-  const abort = useCallback(() => {
+  const abort = useCallback(async () => {
+    // Tell backend to stop the run
+    if (runId) {
+      try {
+        await fetch(`/api/agent/pipeline/${runId}/abort`, { method: 'POST' });
+      } catch { /* ignore */ }
+      setRunId(null);
+    }
     abortRef.current?.abort();
     setIsRunning(false);
-  }, []);
+  }, [runId]);
 
-  return { tasks, isRunning, isDone, runAll, reset, abort };
+  return { tasks, isRunning, isDone, runAll, reset, abort, runId };
 }

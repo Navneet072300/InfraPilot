@@ -1,12 +1,18 @@
 import logging
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from routes.agent import router as agent_router
+from routes.alerts import router as alerts_router
 from routes.audit import router as audit_router
 from routes.auth import router as auth_router
+from routes.incidents import router as incidents_router
 from routes.design import router as design_router
 from routes.diagnose import router as diagnose_router
 from routes.generate import router as generate_router
@@ -26,7 +32,10 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="InfraPilot API v2", version="2.0.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -57,15 +66,20 @@ for r in (
     support_router,
     subscription_router,
     implement_router,
+    incidents_router,
+    alerts_router,
 ):
     app.include_router(r, prefix="/api")
 
 
 @app.on_event("startup")
 async def startup():
+    import asyncio as _aio
     from db.database import init_db
     from services.cache_service import init_redis
+    from workers import cluster_monitor
 
     await init_db()
     await init_redis()
+    _aio.create_task(cluster_monitor.run())
     logger.info("InfraPilot v2 backend ready")

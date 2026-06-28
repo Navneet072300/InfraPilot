@@ -3,6 +3,7 @@ import json
 import logging
 import re
 from typing import AsyncGenerator
+from uuid import uuid4
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
@@ -14,6 +15,7 @@ from services.vault_service import VaultService
 from services.cloudflare_service import CloudflareService
 from services.github_service import GitHubService
 from services.k8s_service import KubernetesService
+from services import cache_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -93,7 +95,14 @@ async def _stub_task(task_id: int, lines: list[str], delay: float = 0.3) -> Asyn
     yield _ev({"task": task_id, "status": "done", "files": []})
 
 
-async def _pipeline_gen(req: PipelineRequest) -> AsyncGenerator[str, None]:
+async def _check_aborted(run_id: str | None) -> bool:
+    if not run_id:
+        return False
+    state = await cache_service.get(f"pipeline:{run_id}")
+    return state == "aborted"
+
+
+async def _pipeline_gen(req: PipelineRequest, run_id: str | None = None) -> AsyncGenerator[str, None]:
     ai = AIService()
     cfg = settings.load_config()
     gh_cfg = cfg.get("github", {})
@@ -126,8 +135,19 @@ Output exactly one file:
 --- FILE: .github/workflows/ci.yml ---
 [complete workflow YAML]"""
 
-    async for ev in _stream_ai_task(1, "GitHub Actions CI Pipeline", ci_prompt, ai):
-        yield ev
+    if await _check_aborted(run_id):
+        yield _ev({"type": "aborted", "run_id": run_id, "pipeline": "aborted"})
+        return
+
+    try:
+        async with asyncio.timeout(30):
+            collected = []
+            async for ev in _stream_ai_task(1, "GitHub Actions CI Pipeline", ci_prompt, ai):
+                collected.append(ev)
+        for ev in collected:
+            yield ev
+    except asyncio.TimeoutError:
+        yield _ev({"task": 1, "status": "failed", "error": "Timed out after 30s"})
 
     # ── TASK 2: Kustomize Base ─────────────────────────────────────────────────
     base_prompt = f"""Generate Kustomize base manifests for {app}.
@@ -150,8 +170,19 @@ Include:
 --- FILE: k8s/base/kustomization.yaml ---
 [kustomization]"""
 
-    async for ev in _stream_ai_task(2, "Kustomize Base Manifests", base_prompt, ai):
-        yield ev
+    if await _check_aborted(run_id):
+        yield _ev({"type": "aborted", "run_id": run_id, "pipeline": "aborted"})
+        return
+
+    try:
+        async with asyncio.timeout(30):
+            collected = []
+            async for ev in _stream_ai_task(2, "Kustomize Base Manifests", base_prompt, ai):
+                collected.append(ev)
+        for ev in collected:
+            yield ev
+    except asyncio.TimeoutError:
+        yield _ev({"task": 2, "status": "failed", "error": "Timed out after 30s"})
 
     # ── TASK 3: Overlays ────────────────────────────────────────────────────────
     overlay_prompt = f"""Generate Kustomize environment overlays for {app}.
@@ -178,8 +209,19 @@ Prod overlay (k8s/overlays/prod/):
 --- FILE: k8s/overlays/prod/pdb.yaml ---
 [PDB manifest]"""
 
-    async for ev in _stream_ai_task(3, "Environment Overlays", overlay_prompt, ai):
-        yield ev
+    if await _check_aborted(run_id):
+        yield _ev({"type": "aborted", "run_id": run_id, "pipeline": "aborted"})
+        return
+
+    try:
+        async with asyncio.timeout(30):
+            collected = []
+            async for ev in _stream_ai_task(3, "Environment Overlays", overlay_prompt, ai):
+                collected.append(ev)
+        for ev in collected:
+            yield ev
+    except asyncio.TimeoutError:
+        yield _ev({"task": 3, "status": "failed", "error": "Timed out after 30s"})
 
     # ── TASK 4: Vault Secrets ──────────────────────────────────────────────────
     vault_cfg = cfg.get("vault")
@@ -300,8 +342,23 @@ Include automated sync policy with self-heal and pruning enabled.
 --- FILE: argocd/{app}-application.yaml ---
 [ArgoCD Application manifest]"""
 
-    async for ev in _stream_ai_task(7, "ArgoCD Application", argo_prompt, ai):
-        yield ev
+    if await _check_aborted(run_id):
+        yield _ev({"type": "aborted", "run_id": run_id, "pipeline": "aborted"})
+        return
+
+    try:
+        async with asyncio.timeout(30):
+            collected = []
+            async for ev in _stream_ai_task(7, "ArgoCD Application", argo_prompt, ai):
+                collected.append(ev)
+        for ev in collected:
+            yield ev
+    except asyncio.TimeoutError:
+        yield _ev({"task": 7, "status": "failed", "error": "Timed out after 30s"})
+
+    if await _check_aborted(run_id):
+        yield _ev({"type": "aborted", "run_id": run_id, "pipeline": "aborted"})
+        return
 
     # ── TASK 8: Watch Rollout ────────────────────────────────────────────────────
     cluster_cfg = settings.get_cluster(req.cluster) if req.cluster else settings.get_active_cluster()
@@ -309,34 +366,37 @@ Include automated sync policy with self-heal and pruning enabled.
 
     if cluster_cfg:
         svc = KubernetesService(cluster_cfg)
-        result = await svc.run_kubectl_safe([
-            "rollout", "status", f"deployment/{app}", "-n", ns, "--timeout=60s"
-        ])
-        for line in (result["stdout"] + result["stderr"]).splitlines():
-            yield _ev({"task": 8, "status": "chunk", "content": line + "\n"})
-
-        if result["exit_code"] == 0:
-            yield _ev({"task": 8, "status": "done", "files": []})
-        else:
-            yield _ev({"task": 8, "status": "failed", "error": f"Rollout failed: {result['stderr'][:200]}"})
-            # ── TASK 9: Auto-troubleshoot ──────────────────────────────────────
-            yield _ev({"task": 9, "status": "running", "message": "Analyzing failure..."})
-            pods = await svc.get_pods(ns)
-            app_pods = [p for p in pods if app in p.get("name", "")]
-            if app_pods:
-                pod_name = app_pods[0]["name"]
-                logs = await svc.get_pod_logs(ns, pod_name)
-                events = await svc.get_pod_events(ns, pod_name)
-                events_text = "\n".join(e.get("message", "") for e in events)
-                fix_content = ""
-                async for chunk in ai.stream_diagnose(logs, events_text):
-                    fix_content += chunk
-                    yield _ev({"task": 9, "status": "chunk", "content": chunk})
-                yield _ev({"task": 9, "status": "done", "files": [], "fix": fix_content})
+        try:
+            async with asyncio.timeout(90):
+                result = await svc.run_kubectl_safe([
+                    "rollout", "status", f"deployment/{app}", "-n", ns, "--timeout=60s"
+                ])
+            for line in (result["stdout"] + result["stderr"]).splitlines():
+                yield _ev({"task": 8, "status": "chunk", "content": line + "\n"})
+            if result["exit_code"] == 0:
+                yield _ev({"task": 8, "status": "done", "files": []})
             else:
-                yield _ev({"task": 9, "status": "chunk", "content": f"No pods found for {app} in {ns}\n"})
-                yield _ev({"task": 9, "status": "skipped"})
-            return  # Stop pipeline after troubleshoot
+                yield _ev({"task": 8, "status": "failed", "error": f"Rollout failed: {result['stderr'][:200]}"})
+        except asyncio.TimeoutError:
+            yield _ev({"task": 8, "status": "failed", "error": "Rollout watch timed out after 90s"})
+        # ── TASK 9: Auto-troubleshoot ──────────────────────────────────────
+        yield _ev({"task": 9, "status": "running", "message": "Analyzing failure..."})
+        pods = await svc.get_pods(ns)
+        app_pods = [p for p in pods if app in p.get("name", "")]
+        if app_pods:
+            pod_name = app_pods[0]["name"]
+            logs = await svc.get_pod_logs(ns, pod_name)
+            events = await svc.get_pod_events(ns, pod_name)
+            events_text = "\n".join(e.get("message", "") for e in events)
+            fix_content = ""
+            async for chunk in ai.stream_diagnose(logs, events_text):
+                fix_content += chunk
+                yield _ev({"task": 9, "status": "chunk", "content": chunk})
+            yield _ev({"task": 9, "status": "done", "files": [], "fix": fix_content})
+        else:
+            yield _ev({"task": 9, "status": "chunk", "content": f"No pods found for {app} in {ns}\n"})
+            yield _ev({"task": 9, "status": "skipped"})
+        return  # Stop pipeline after troubleshoot
     else:
         await asyncio.sleep(1.0)
         yield _ev({"task": 8, "status": "chunk", "content": f"ℹ No cluster configured — skipping real rollout watch\n"})
@@ -376,17 +436,28 @@ Include automated sync policy with self-heal and pruning enabled.
     yield _ev({"pipeline": "complete"})
 
 
+@router.post("/agent/pipeline/{run_id}/abort")
+async def abort_pipeline(run_id: str):
+    await cache_service.set(f"pipeline:{run_id}", "aborted", ttl=600)
+    return {"status": "aborted", "run_id": run_id}
+
+
 @router.post("/agent/pipeline")
 async def run_pipeline(request: PipelineRequest):
-    logger.info("Pipeline: app=%s cluster=%s", request.app_name, request.cluster)
+    run_id = str(uuid4())
+    await cache_service.set(f"pipeline:{run_id}", "running", ttl=600)
+    logger.info("Pipeline: run_id=%s app=%s cluster=%s", run_id, request.app_name, request.cluster)
 
     async def generate():
+        yield _ev({"type": "started", "run_id": run_id})
         try:
-            async for event in _pipeline_gen(request):
+            async for event in _pipeline_gen(request, run_id):
                 yield event
         except Exception as e:
             logger.error("Pipeline error: %s", e)
             yield _ev({"error": str(e), "pipeline": "failed"})
+        finally:
+            await cache_service.delete(f"pipeline:{run_id}")
 
     return StreamingResponse(
         generate(),

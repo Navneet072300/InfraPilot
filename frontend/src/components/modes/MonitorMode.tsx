@@ -3,11 +3,26 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   TrendingUp, TrendingDown, AlertTriangle, RefreshCw, DollarSign,
   BarChart2, Loader2, CheckCircle2, Edit2, X, Eye, EyeOff,
-  ShieldAlert, Activity, Trash2, Server, Layers,
+  ShieldAlert, Activity, Trash2, Server, Layers, BellOff, Wrench,
 } from 'lucide-react';
 import { useClusterStore } from '../../store/clusterStore';
 import { useClusterOverview, useNamespaces, useResources, useNodeMetrics } from '../../hooks/useKubernetes';
 import type { ClusterConfig, ClusterOverview } from '../../types';
+
+interface Incident {
+  id: string;
+  cluster_name: string;
+  namespace?: string;
+  resource_type: string;
+  resource_name: string;
+  issue_type: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  title: string;
+  status: 'active' | 'acknowledged' | 'fixing' | 'resolved' | 'auto_resolved';
+  detected_at: string;
+  acknowledged_at?: string;
+  snoozed_until?: string;
+}
 
 // ─── Demo data (cost/drift) ───────────────────────────────────────────────────
 const SPEND_DATA = [
@@ -376,6 +391,175 @@ function UsageBar({ pct, color }: { pct: number; color: string }) {
   return (
     <div style={{ height: 5, background: 'var(--bg-hover)', borderRadius: 3, overflow: 'hidden', width: '100%' }}>
       <div style={{ height: '100%', width: `${clamped}%`, background: color, borderRadius: 3, transition: 'width 0.4s' }} />
+    </div>
+  );
+}
+
+// ─── Issues panel ────────────────────────────────────────────────────────────
+
+const SEV_COLOR_MAP: Record<string, string> = {
+  critical: 'var(--error)',
+  high: '#f97316',
+  medium: 'var(--warning)',
+  low: 'var(--info, #60a5fa)',
+};
+const SEV_EMOJI_MAP: Record<string, string> = { critical: '🔴', high: '🟠', medium: '🟡', low: '🔵' };
+
+function timeAgo(iso: string): string {
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (diff < 60) return `${Math.floor(diff)}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
+}
+
+function IssuesPanel({ incidents, summary }: { incidents: Incident[]; summary?: { active: number; snoozed: number; resolved_today: number } }) {
+  const qc = useQueryClient();
+  const [sevFilter, setSevFilter] = useState<string>('all');
+  const [showSnooze, setShowSnooze] = useState<string | null>(null);
+
+  const displayed = incidents.filter((i) => {
+    if (i.status === 'resolved' || i.status === 'auto_resolved') return false;
+    if (sevFilter !== 'all' && i.severity !== sevFilter) return false;
+    return true;
+  });
+
+  async function handleAcknowledge(id: string) {
+    await fetch(`/api/incidents/${id}/acknowledge`, { method: 'POST' });
+    qc.invalidateQueries({ queryKey: ['incidents'] });
+  }
+
+  async function handleSnooze(id: string, mins: number) {
+    await fetch(`/api/incidents/${id}/snooze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ minutes: mins }),
+    });
+    setShowSnooze(null);
+    qc.invalidateQueries({ queryKey: ['incidents'] });
+  }
+
+  async function handleFixAuto(id: string) {
+    await fetch(`/api/incidents/${id}/fix-auto`, { method: 'POST' });
+    qc.invalidateQueries({ queryKey: ['incidents'] });
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Summary cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+        {[
+          { label: 'Active', value: summary?.active ?? 0, color: 'var(--error)' },
+          { label: 'Snoozed', value: summary?.snoozed ?? 0, color: 'var(--warning)' },
+          { label: 'Resolved Today', value: summary?.resolved_today ?? 0, color: 'var(--success)' },
+        ].map((c) => (
+          <div key={c.label} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '14px 16px' }}>
+            <p style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{c.label}</p>
+            <p style={{ fontSize: 28, fontWeight: 700, color: c.color, lineHeight: 1 }}>{c.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 6 }}>
+        {['all', 'critical', 'high', 'medium', 'low'].map((sev) => (
+          <button
+            key={sev}
+            type="button"
+            onClick={() => setSevFilter(sev)}
+            style={{
+              padding: '4px 12px', borderRadius: 100, border: `1px solid ${sevFilter === sev ? SEV_COLOR_MAP[sev] || 'var(--accent)' : 'var(--border)'}`,
+              background: sevFilter === sev ? `${SEV_COLOR_MAP[sev] || 'var(--accent)'}18` : 'transparent',
+              color: sevFilter === sev ? (SEV_COLOR_MAP[sev] || 'var(--accent)') : 'var(--text-muted)',
+              fontSize: 11, fontWeight: 600, cursor: 'pointer', textTransform: 'capitalize',
+            }}
+          >
+            {sev === 'all' ? 'All' : `${SEV_EMOJI_MAP[sev]} ${sev}`}
+          </button>
+        ))}
+      </div>
+
+      {/* Incident cards */}
+      {displayed.length === 0 && (
+        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 32, textAlign: 'center' }}>
+          <p style={{ fontSize: 20, marginBottom: 8 }}>✅</p>
+          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>No active issues</p>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>All clusters are healthy. Monitor checks every 60 seconds.</p>
+        </div>
+      )}
+
+      {displayed.map((inc) => {
+        const sev = inc.severity;
+        const col = SEV_COLOR_MAP[sev] || 'var(--text-muted)';
+        return (
+          <div
+            key={inc.id}
+            style={{ background: 'var(--bg-surface)', border: `1px solid ${col}44`, borderRadius: 10, padding: 16, borderLeft: `3px solid ${col}` }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: col, background: `${col}15`, padding: '2px 8px', borderRadius: 100, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  {SEV_EMOJI_MAP[sev]} {sev}
+                </span>
+                {inc.status === 'acknowledged' && (
+                  <span style={{ fontSize: 10, color: 'var(--warning)', fontWeight: 600 }}>ACK</span>
+                )}
+                {inc.status === 'fixing' && (
+                  <span style={{ fontSize: 10, color: 'var(--accent)', fontWeight: 600 }}>🔧 FIXING</span>
+                )}
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{timeAgo(inc.detected_at)}</span>
+              </div>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{inc.cluster_name}</span>
+            </div>
+
+            <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{inc.title}</p>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10, fontFamily: 'monospace' }}>
+              {inc.namespace && `${inc.namespace} / `}{inc.resource_name}
+            </p>
+
+            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => handleFixAuto(inc.id)}
+                style={{ padding: '5px 12px', background: 'var(--accent)', border: 'none', borderRadius: 5, color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+              >
+                <Wrench size={11} /> Fix Now
+              </button>
+              {inc.status !== 'acknowledged' && (
+                <button
+                  type="button"
+                  onClick={() => handleAcknowledge(inc.id)}
+                  style={{ padding: '5px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-secondary)', fontSize: 11, cursor: 'pointer' }}
+                >
+                  🙋 Acknowledge
+                </button>
+              )}
+              <div style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowSnooze(showSnooze === inc.id ? null : inc.id)}
+                  style={{ padding: '5px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-secondary)', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                >
+                  <BellOff size={11} /> Snooze
+                </button>
+                {showSnooze === inc.id && (
+                  <div style={{ position: 'absolute', top: '110%', left: 0, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, zIndex: 10, overflow: 'hidden', minWidth: 120 }}>
+                    {[30, 60, 240].map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => handleSnooze(inc.id, m)}
+                        style={{ display: 'block', width: '100%', padding: '8px 14px', background: 'none', border: 'none', color: 'var(--text-primary)', fontSize: 12, cursor: 'pointer', textAlign: 'left' }}
+                      >
+                        {m === 240 ? '4 hours' : `${m} min`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -777,26 +961,114 @@ function ResourceExplorerPanel() {
 
 // ─── Main MonitorMode ──────────────────────────────────────────────────────────
 
+type MonitorTab = 'issues' | 'health' | 'resources';
+
 export function MonitorMode() {
   const totalSpend = SPEND_DATA.reduce((s, d) => s + d.monthly, 0);
   const vsLastMonth = -4.2;
   const budget = 2500;
   const budgetPct = Math.round((totalSpend / budget) * 100);
+  const [activeTab, setActiveTab] = useState<MonitorTab>('issues');
+  const [liveMode, setLiveMode] = useState(false);
+  const { clusters } = useClusterStore();
+  const hasCluster = clusters.length > 0;
+
+  // Incidents polling
+  const { data: incidentsData } = useQuery({
+    queryKey: ['incidents'],
+    queryFn: async () => {
+      const r = await fetch('/api/incidents');
+      return r.json();
+    },
+    refetchInterval: 30_000,
+  });
+  const incidents: Incident[] = incidentsData?.incidents ?? [];
+  const activeIncidentCount = incidents.filter((i) => i.status === 'active').length;
+
+  const tabs: { id: MonitorTab; label: string; badge?: number }[] = [
+    { id: 'issues', label: '🚨 Issues', badge: activeIncidentCount || undefined },
+    { id: 'health', label: '💻 Cluster Health' },
+    { id: 'resources', label: '📊 Resources' },
+  ];
 
   return (
     <div style={{ padding: '20px', overflow: 'auto', height: '100%' }}>
       <div style={{ maxWidth: '1100px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-        {/* ① Cluster health — all clusters, green/red status, inline token fix */}
-        <ClusterHealthSection />
+        {/* Tab bar */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
+          <div style={{ display: 'flex', gap: 0 }}>
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                style={{
+                  padding: '10px 18px', background: 'none', border: 'none',
+                  borderBottom: `2px solid ${activeTab === tab.id ? 'var(--accent)' : 'transparent'}`,
+                  color: activeTab === tab.id ? 'var(--accent)' : 'var(--text-muted)',
+                  fontSize: 13, fontWeight: activeTab === tab.id ? 700 : 400,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                }}
+              >
+                {tab.label}
+                {tab.badge !== undefined && tab.badge > 0 && (
+                  <span style={{ background: 'var(--error)', color: '#fff', borderRadius: 100, fontSize: 10, fontWeight: 700, padding: '1px 5px', minWidth: 16, textAlign: 'center' }}>
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
 
-        {/* ② Active cluster overview — nodes with CPU/memory bars, warning events */}
-        <ClusterOverviewPanel />
+          {/* Live/Demo toggle — only on health/resources tabs */}
+          {activeTab !== 'issues' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+              {!hasCluster && liveMode && (
+                <span style={{ fontSize: 11, color: 'var(--warning)' }}>No cluster connected</span>
+              )}
+              <div style={{ display: 'flex', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
+                {[false, true].map((live) => (
+                  <button
+                    key={String(live)}
+                    type="button"
+                    onClick={() => setLiveMode(live)}
+                    style={{
+                      padding: '5px 12px', background: liveMode === live ? (live ? 'rgba(239,68,68,0.15)' : 'var(--accent-glow)') : 'transparent',
+                      border: 'none', color: liveMode === live ? (live ? 'var(--error)' : 'var(--accent)') : 'var(--text-muted)',
+                      fontSize: 11, fontWeight: liveMode === live ? 700 : 400, cursor: 'pointer',
+                    }}
+                  >
+                    {live ? '🔴 Live Data' : '📊 Demo Data'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
-        {/* ③ Resource Explorer — kubectl get all -n namespace */}
-        <ResourceExplorerPanel />
+        {/* Issues tab */}
+        {activeTab === 'issues' && <IssuesPanel incidents={incidents} summary={incidentsData?.summary} />}
 
-        {/* ③ Cost metric cards */}
+        {/* Health tab */}
+        {activeTab === 'health' && (
+          <>
+            {!liveMode && (
+              <div style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid var(--warning)', borderRadius: 8, padding: '10px 16px', fontSize: 12, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                📊 Showing sample data. Connect a cluster and switch to Live Data to see real metrics.
+              </div>
+            )}
+
+            {/* ① Cluster health — all clusters, green/red status, inline token fix */}
+            <ClusterHealthSection />
+
+            {/* ② Active cluster overview — nodes with CPU/memory bars, warning events */}
+            <ClusterOverviewPanel />
+
+            {/* Cost & drift — demo only */}
+            {!liveMode && (
+              <>
+                {/* ③ Cost metric cards (demo) */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
           {[
             { label: 'Total Spend', value: `$${totalSpend.toLocaleString()}`, sub: 'This month', icon: <DollarSign size={18} />, color: 'var(--text-primary)' },
@@ -922,6 +1194,42 @@ export function MonitorMode() {
             </tbody>
           </table>
         </div>
+              </>
+            )}
+
+            {/* Live mode: honest placeholders for cost & drift */}
+            {liveMode && (
+              <>
+                <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 24, textAlign: 'center' }}>
+                  <p style={{ fontSize: 20, marginBottom: 8 }}>💰</p>
+                  <p style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 6 }}>Cost Integration — Coming Soon</p>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.7 }}>
+                    Cost data from AWS Cost Explorer, Azure Cost Management, and GCP Billing will be available in the next release.
+                  </p>
+                </div>
+                <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 24, textAlign: 'center' }}>
+                  <p style={{ fontSize: 20, marginBottom: 8 }}>🔍</p>
+                  <p style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 6 }}>Drift Detection — Coming Soon</p>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.7 }}>
+                    Infrastructure drift detection comparing live cluster state to IaC definitions will be available in the next release.
+                  </p>
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {/* Resources tab */}
+        {activeTab === 'resources' && (
+          <>
+            {!liveMode && (
+              <div style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid var(--warning)', borderRadius: 8, padding: '10px 16px', fontSize: 12, color: 'var(--warning)' }}>
+                📊 Showing sample data. Switch to Live Data to see real cluster resources.
+              </div>
+            )}
+            <ResourceExplorerPanel />
+          </>
+        )}
 
       </div>
     </div>

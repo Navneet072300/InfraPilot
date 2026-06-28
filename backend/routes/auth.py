@@ -10,12 +10,16 @@ import httpx
 from fastapi import APIRouter, Cookie, Header, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import select
 
 from core.security import create_access_token, decode_token, hash_password, verify_password
 from db.database import get_session, is_db_available
 from db.models import APIKey, OTPCode, User, UserSession, UserSettings
 from services import audit_service
+
+limiter = Limiter(key_func=get_remote_address)
 
 SESSION_COOKIE = "ip_session"
 SESSION_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
@@ -192,7 +196,8 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/auth/signup")
-async def signup(req: SignupRequest):
+@limiter.limit("3/minute")
+async def signup(request: Request, req: SignupRequest):
     if not is_db_available():
         raise HTTPException(503, "Database unavailable")
     async with get_session() as session:
@@ -215,7 +220,8 @@ async def signup(req: SignupRequest):
 
 
 @router.post("/auth/login")
-async def login(req: LoginRequest, response: Response, request: Request):
+@limiter.limit("5/minute")
+async def login(request: Request, req: LoginRequest, response: Response):
     if not is_db_available():
         raise HTTPException(503, "Database unavailable")
     async with get_session() as session:
@@ -245,7 +251,8 @@ class OTPVerifyRequest(BaseModel):
 
 
 @router.post("/auth/otp/send")
-async def otp_send(req: OTPSendRequest):
+@limiter.limit("3/hour", key_func=lambda r: r.query_params.get("contact", get_remote_address(r)))
+async def otp_send(request: Request, req: OTPSendRequest):
     code = _gen_otp()
     await _store_otp(req.contact, code)
     ok = await _send_email_otp(req.contact, code)
