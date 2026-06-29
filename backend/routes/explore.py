@@ -77,8 +77,9 @@ SAFE_COMMANDS: dict[str, list[dict]] = {
         {"id": "telemetry",   "label": "Telemetry / Stats",   "cmd": ["curl", "-s", "http://127.0.0.1:6333/telemetry"]},
     ],
     "minio": [
-        {"id": "ping",        "label": "Health Check",    "cmd": ["curl", "-s", "http://127.0.0.1:9000/minio/health/live"]},
-        {"id": "buckets",     "label": "List Buckets",    "cmd": ["curl", "-s", "http://127.0.0.1:9000/"]},
+        {"id": "ping",        "label": "Health Check",    "cmd": ["curl", "-sf", "http://127.0.0.1:9000/minio/health/live"]},
+        {"id": "buckets",     "label": "List Buckets",    "cmd": ["mc", "ls", "local/"]},
+        {"id": "admin-info",  "label": "Server Info",     "cmd": ["mc", "admin", "info", "local"]},
     ],
     "elasticsearch": [
         {"id": "ping",        "label": "Health Check",   "cmd": ["curl", "-s", "http://127.0.0.1:9200/_cluster/health?pretty"]},
@@ -102,15 +103,23 @@ SAFE_COMMANDS: dict[str, list[dict]] = {
 
 
 async def _read_pod_env(svc, pod_name: str, namespace: str) -> dict[str, str]:
-    """Read env vars from a pod using kubectl get pod -o json (no exec needed)."""
-    from services.k8s_service import KubernetesService as _KS
-    result = await svc._kubectl(["get", "pod", pod_name, "-n", namespace, "-o", "json"])
-    if result["exit_code"] != 0:
+    """Read runtime env vars via kubectl exec -- env (captures secret/configmap-referenced values)."""
+    result = await svc._kubectl(["exec", pod_name, "-n", namespace, "--", "env"], timeout=10)
+    if result["exit_code"] == 0 and result["stdout"]:
+        env: dict[str, str] = {}
+        for line in result["stdout"].splitlines():
+            if "=" in line:
+                key, _, val = line.partition("=")
+                env[key.strip()] = val
+        return env
+    # Fallback: read from static pod spec (misses secret-referenced vars but better than nothing)
+    spec_result = await svc._kubectl(["get", "pod", pod_name, "-n", namespace, "-o", "json"])
+    if spec_result["exit_code"] != 0:
         return {}
     try:
         import json as _json
-        pod = _json.loads(result["stdout"])
-        env: dict[str, str] = {}
+        pod = _json.loads(spec_result["stdout"])
+        env = {}
         for container in pod.get("spec", {}).get("containers", []):
             for e in container.get("env", []):
                 val = e.get("value")
@@ -161,6 +170,22 @@ def _build_command(action: dict, env: dict[str, str], service_type: str) -> list
         mysql_user = env.get("MYSQL_USER") or env.get("MARIADB_USER") or "root"
         return [t.replace("-uroot", f"-u{mysql_user}") for t in cmd]
     return cmd
+
+
+async def _run_with_mc_setup(svc, pod_name: str, namespace: str, env: dict[str, str], mc_cmd: list[str], timeout: int = 20) -> dict:
+    """
+    Configure the mc alias 'local' then run an mc command.
+    MinIO credentials come from MINIO_ROOT_USER/PASSWORD or MINIO_ACCESS_KEY/SECRET_KEY env vars.
+    """
+    access_key = (env.get("MINIO_ROOT_USER") or env.get("MINIO_ACCESS_KEY") or "minioadmin")
+    secret_key = (env.get("MINIO_ROOT_PASSWORD") or env.get("MINIO_SECRET_KEY") or "minioadmin")
+    # Set alias first, then run the actual command — chained with sh -c
+    shell_cmd = (
+        f"mc alias set local http://127.0.0.1:9000 {access_key} {secret_key} --quiet 2>/dev/null; "
+        + " ".join(mc_cmd)
+    )
+    args = ["exec", pod_name, "-n", namespace, "--", "sh", "-c", shell_cmd]
+    return await svc._kubectl(args, timeout=timeout)
 
 
 async def _resolve_cluster(cluster_name: str | None = None):
@@ -254,26 +279,31 @@ async def inspect_service(body: InspectRequest):
 
     svc = await _resolve_cluster(body.cluster)
     env = await _read_pod_env(svc, body.pod_name, body.namespace)
-    cmd = _build_command(action, env, body.service_type)
-    args = ["exec", body.pod_name, "-n", body.namespace, "--"] + cmd
-    result = await svc._kubectl(args, timeout=20)
 
-    # If role error and no user was detected, retry stripping -U entirely
-    if result["exit_code"] != 0 and "does not exist" in result.get("stderr", "") and body.service_type == "postgres":
-        stripped: list[str] = []
-        skip = False
-        for tok in cmd:
-            if skip:
-                skip = False
-                continue
-            if tok == "-U":
-                skip = True
-                continue
-            stripped.append(tok)
-        args2 = ["exec", body.pod_name, "-n", body.namespace, "--"] + stripped
-        result2 = await svc._kubectl(args2, timeout=20)
-        if result2["exit_code"] == 0:
-            result = result2
+    # MinIO: mc commands need the alias configured first
+    if body.service_type == "minio" and action["cmd"][0] == "mc":
+        result = await _run_with_mc_setup(svc, body.pod_name, body.namespace, env, action["cmd"])
+    else:
+        cmd = _build_command(action, env, body.service_type)
+        args = ["exec", body.pod_name, "-n", body.namespace, "--"] + cmd
+        result = await svc._kubectl(args, timeout=20)
+
+        # If role error and no user was detected, retry stripping -U entirely
+        if result["exit_code"] != 0 and "does not exist" in result.get("stderr", "") and body.service_type == "postgres":
+            stripped: list[str] = []
+            skip = False
+            for tok in cmd:
+                if skip:
+                    skip = False
+                    continue
+                if tok == "-U":
+                    skip = True
+                    continue
+                stripped.append(tok)
+            args2 = ["exec", body.pod_name, "-n", body.namespace, "--"] + stripped
+            result2 = await svc._kubectl(args2, timeout=20)
+            if result2["exit_code"] == 0:
+                result = result2
 
     return {
         "action": body.action_id,
