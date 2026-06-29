@@ -29,7 +29,7 @@ const PRIMARY: NavItem[] = [
 const RESOURCES: NavItem[] = [
   { icon: <GitBranch size={15} />, label: 'Repositories', path: '/app/repos' },
   { icon: <Database size={15} />, label: 'Resources', path: '/app/resources' },
-  { icon: <Clock size={15} />, label: 'History', path: '/app/history', stub: true },
+  { icon: <Clock size={15} />, label: 'History', path: '/app/history' },
   { icon: <GitBranch size={15} />, label: 'Deployments', path: '/app/deployments', stub: true },
 ];
 
