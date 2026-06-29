@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Github, Lock, Globe, Star, GitFork, Search, RefreshCw, ExternalLink, Rocket } from 'lucide-react';
+import { GitBranch, Lock, Globe, Star, GitFork, Search, RefreshCw, ExternalLink, Rocket } from 'lucide-react';
 
 interface Repo {
   id: number;
@@ -69,7 +69,7 @@ export function ReposPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Github size={22} style={{ color: 'var(--accent)' }} />
+          <GitBranch size={22} style={{ color: 'var(--accent)' }} />
           <div>
             <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Repositories</h1>
             {repos.length > 0 && (
@@ -140,7 +140,7 @@ export function ReposPage() {
       {/* Repo grid */}
       {!isLoading && filtered.length === 0 && !isError && (
         <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
-          <Github size={36} style={{ opacity: 0.25, marginBottom: 12 }} />
+          <GitBranch size={36} style={{ opacity: 0.25, marginBottom: 12 }} />
           <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
             {repos.length === 0 ? 'No repositories found' : 'No repositories match your search'}
           </p>
@@ -182,6 +182,7 @@ export function ReposPage() {
                   href={repo.url}
                   target="_blank"
                   rel="noopener noreferrer"
+                  title={`Open ${repo.full_name} on GitHub`}
                   onClick={(e) => e.stopPropagation()}
                   style={{ color: 'var(--text-muted)', flexShrink: 0, padding: 2 }}
                 >

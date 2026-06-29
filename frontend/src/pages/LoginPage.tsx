@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom';
-import { Github } from 'lucide-react';
+import { GitBranch } from 'lucide-react';
 
 const V = {
   bg: '#0d1117', surface: '#161b22', border: '#30363d',
@@ -52,7 +52,7 @@ export function LoginPage() {
             onMouseEnter={(e) => (e.currentTarget.style.background = '#2ea043')}
             onMouseLeave={(e) => (e.currentTarget.style.background = '#238636')}
           >
-            <Github size={20} /> Continue with GitHub
+            <GitBranch size={20} /> Continue with GitHub
           </a>
 
           <p style={{ textAlign: 'center', color: V.muted, fontSize: 12, margin: '20px 0 0', lineHeight: 1.6 }}>
