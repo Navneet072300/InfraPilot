@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import QRCode from 'react-qr-code';
 import {
   Plus, Trash2, Edit2, CheckCircle2, Loader2,
-  GitBranch, Shield, Cloud, Database, Server, Star, AlertTriangle, X,
+  GitBranch, Shield, Server, Star, AlertTriangle, X,
   Eye, EyeOff, User, Bell, Cpu, CreditCard, Users, FileText,
   Smartphone, Globe, Copy, RefreshCw, ChevronRight, ChevronLeft,
   Lock, ToggleLeft, ToggleRight, ExternalLink,
