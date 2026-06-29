@@ -141,30 +141,22 @@ def _build_command(action: dict, env: dict[str, str], service_type: str) -> list
     cmd = list(action["cmd"])
     if service_type == "postgres":
         pg_user = _pg_user_from_env(env)
-        pg_db = _pg_db_from_env(env)
-        # Replace hardcoded -U postgres with detected user (or drop -U if empty)
-        result: list[str] = []
+        # Walk the command and replace the value after -U with the detected user,
+        # or drop -U <value> entirely when no user was detected.
+        out: list[str] = []
         skip_next = False
-        for i, token in enumerate(cmd):
+        for tok in cmd:
             if skip_next:
                 skip_next = False
                 continue
-            if token == "-U":
+            if tok == "-U":
                 if pg_user:
-                    result += ["-U", pg_user]
-                # if no user detected, omit -U (psql will use OS user)
-                skip_next = True
+                    out += ["-U", pg_user]
+                # else: omit -U entirely — psql connects as the container OS user
+                skip_next = True  # skip the next token (old hardcoded username)
                 continue
-            if token == "postgres" and i > 0 and cmd[i - 1] == "-U":
-                continue  # already handled above
-            if token == r"\dt *.*" and pg_db:
-                # Connect to the real DB for \dt
-                result.append(r"\dt")
-                if not any(t == "-d" for t in result):
-                    result = ["-d", pg_db] + result
-                continue
-            result.append(token)
-        return result
+            out.append(tok)
+        return out
     if service_type == "mysql":
         mysql_user = env.get("MYSQL_USER") or env.get("MARIADB_USER") or "root"
         return [t.replace("-uroot", f"-u{mysql_user}") for t in cmd]
