@@ -882,6 +882,7 @@ function ConnectedPlatformsTab() {
 
   // GitHub PAT
   const [githubPat, setGithubPat] = useState('');
+  const [savedPatMask, setSavedPatMask] = useState('');   // masked value from server
   const [patExpiry, setPatExpiry] = useState('');
   const [patSaving, setPatSaving] = useState(false);
   const [patSaved, setPatSaved] = useState(false);
@@ -889,6 +890,8 @@ function ConnectedPlatformsTab() {
   const [patValid, setPatValid] = useState<boolean | null>(null);
   const [patUsername, setPatUsername] = useState<string | null>(null);
   const [showPat, setShowPat] = useState(false);
+  const [editingPat, setEditingPat] = useState(false);
+  const [deletingPat, setDeletingPat] = useState(false);
 
   const { data: clusters = [], isLoading } = useQuery({
     queryKey: ['settings-clusters'],
@@ -899,6 +902,8 @@ function ConnectedPlatformsTab() {
   useEffect(() => {
     fetch('/api/settings/platform').then((r) => r.json()).then((d) => {
       if (d.github?.pat_expires_at) setPatExpiry(d.github.pat_expires_at);
+      if (d.github?.pat) { setSavedPatMask(d.github.pat); setGithubPat(d.github.pat); }
+      if (d.github?.username) setPatUsername(d.github.username);
     }).catch(() => {});
   }, []);
 
@@ -950,6 +955,8 @@ function ConnectedPlatformsTab() {
         if (data.username) setPatUsername(data.username);
         setPatSaving(true);
         await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.pat', value: token }) });
+        setSavedPatMask(token);
+        setEditingPat(false);
         setPatSaved(true);
         setTimeout(() => setPatSaved(false), 3000);
       } else {
@@ -973,6 +980,23 @@ function ConnectedPlatformsTab() {
       e.preventDefault();
       setGithubPat(pasted);
       validateAndSaveGithubPat(pasted);
+    }
+  }
+
+  async function deletePat() {
+    if (!confirm('Remove the saved GitHub token?')) return;
+    setDeletingPat(true);
+    try {
+      await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.pat', value: '' }) });
+      await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.username', value: '' }) });
+      setGithubPat('');
+      setSavedPatMask('');
+      setPatUsername(null);
+      setPatValid(null);
+      setPatExpiry('');
+      setEditingPat(false);
+    } finally {
+      setDeletingPat(false);
     }
   }
 
@@ -1023,59 +1047,101 @@ function ConnectedPlatformsTab() {
           </a>
         </div>
 
-        <p style={{ color: V.muted, fontSize: '0.78rem', margin: '0 0 0.875rem', lineHeight: 1.6 }}>
-          Click <strong style={{ color: V.text }}>Generate PAT</strong> → GitHub opens with{' '}
-          <code style={{ background: V.surface, padding: '1px 4px', borderRadius: 4, fontSize: '0.75rem' }}>repo</code> and{' '}
-          <code style={{ background: V.surface, padding: '1px 4px', borderRadius: 4, fontSize: '0.75rem' }}>workflow</code>{' '}
-          scopes pre-selected → generate → paste below. Token is validated and saved automatically.
-        </p>
-
-        <div style={{ display: 'flex', gap: 8, marginBottom: '0.75rem' }}>
-          <div style={{ position: 'relative', flex: 1 }}>
-            <input
-              type={showPat ? 'text' : 'password'}
-              value={githubPat}
-              onChange={(e) => { setGithubPat(e.target.value); setPatValid(null); }}
-              onPaste={handlePatPaste}
-              placeholder="Paste token here — ghp_xxxxxxxxxxxx"
-              style={inp({
-                paddingRight: '2.5rem',
-                borderColor: patValid === true ? V.green : patValid === false ? V.red : V.border,
-              })}
-            />
-            <button type="button" onClick={() => setShowPat(!showPat)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: V.muted }}>
-              {showPat ? <EyeOff size={14} /> : <Eye size={14} />}
-            </button>
+        {/* Connected view — show when PAT is saved and not editing */}
+        {savedPatMask && !editingPat ? (
+          <div style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 9, padding: '12px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: V.green, background: 'rgba(63,185,80,0.12)', padding: '2px 8px', borderRadius: 100, whiteSpace: 'nowrap' }}>● Connected</span>
+                <code style={{ fontSize: '0.78rem', color: V.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {savedPatMask.includes('***') ? savedPatMask : `${savedPatMask.slice(0, 8)}${'•'.repeat(16)}`}
+                </code>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <button
+                  type="button"
+                  onClick={() => { setGithubPat(''); setPatValid(null); setEditingPat(true); }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: 'transparent', border: `1px solid ${V.border}`, borderRadius: 6, color: V.accent, fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  <Edit2 size={12} /> Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={deletePat}
+                  disabled={deletingPat}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: 'transparent', border: `1px solid ${V.border}`, borderRadius: 6, color: V.red, fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {deletingPat ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Trash2 size={12} />} Delete
+                </button>
+              </div>
+            </div>
+            {expiryDays !== null && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+                <span style={{ fontSize: '0.75rem', color: V.muted }}>Expires:</span>
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, borderRadius: 4, padding: '2px 7px', background: expiryDays <= 0 ? 'rgba(248,81,73,0.15)' : expiryDays <= 7 ? 'rgba(210,153,34,0.15)' : 'rgba(63,185,80,0.12)', color: expiryDays <= 0 ? V.red : expiryDays <= 7 ? V.yellow : V.green }}>
+                  {expiryDays <= 0 ? 'EXPIRED' : `in ${expiryDays} days`}
+                </span>
+              </div>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={saveGithubPat}
-            disabled={patSaving || patValidating || !githubPat || githubPat.includes('***')}
-            style={{ padding: '0.5rem 1rem', borderRadius: 8, border: 'none', background: patSaved ? V.green : V.accent, color: '#fff', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600, minWidth: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, whiteSpace: 'nowrap' }}
-          >
-            {patValidating ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Checking…</> : patSaving ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Saving…</> : patSaved ? '✓ Saved' : 'Validate & Save'}
-          </button>
-        </div>
+        ) : (
+          <>
+            <p style={{ color: V.muted, fontSize: '0.78rem', margin: '0 0 0.875rem', lineHeight: 1.6 }}>
+              Click <strong style={{ color: V.text }}>Generate PAT</strong> → GitHub opens with{' '}
+              <code style={{ background: V.surface, padding: '1px 4px', borderRadius: 4, fontSize: '0.75rem' }}>repo</code>,{' '}
+              <code style={{ background: V.surface, padding: '1px 4px', borderRadius: 4, fontSize: '0.75rem' }}>workflow</code> and{' '}
+              <code style={{ background: V.surface, padding: '1px 4px', borderRadius: 4, fontSize: '0.75rem' }}>write:packages</code>{' '}
+              pre-selected → generate → paste below. Token is validated and saved automatically.
+            </p>
 
-        {/* Inline feedback */}
-        {patValid === false && (
-          <p style={{ fontSize: '0.78rem', color: V.red, marginBottom: '0.5rem' }}>
-            ✗ Token invalid or missing <code>repo</code> / <code>workflow</code> scopes. Try generating a new one.
-          </p>
-        )}
-        {patValid === true && (
-          <p style={{ fontSize: '0.78rem', color: V.green, marginBottom: '0.5rem' }}>
-            ✓ Token verified and saved.
-          </p>
-        )}
+            <div style={{ display: 'flex', gap: 8, marginBottom: '0.75rem' }}>
+              <div style={{ position: 'relative', flex: 1 }}>
+                <input
+                  type={showPat ? 'text' : 'password'}
+                  value={githubPat}
+                  onChange={(e) => { setGithubPat(e.target.value); setPatValid(null); }}
+                  onPaste={handlePatPaste}
+                  placeholder="Paste token here — ghp_xxxxxxxxxxxx"
+                  style={inp({
+                    paddingRight: '2.5rem',
+                    borderColor: patValid === true ? V.green : patValid === false ? V.red : V.border,
+                  })}
+                />
+                <button type="button" onClick={() => setShowPat(!showPat)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: V.muted }}>
+                  {showPat ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={saveGithubPat}
+                disabled={patSaving || patValidating || !githubPat || githubPat.includes('***')}
+                style={{ padding: '0.5rem 1rem', borderRadius: 8, border: 'none', background: patSaved ? V.green : V.accent, color: '#fff', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600, minWidth: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, whiteSpace: 'nowrap' }}
+              >
+                {patValidating ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Checking…</> : patSaving ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Saving…</> : patSaved ? '✓ Saved' : 'Validate & Save'}
+              </button>
+            </div>
 
-        {expiryDays !== null && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: '0.5rem' }}>
-            <span style={{ fontSize: '0.78rem', color: V.muted }}>Expires:</span>
-            <span style={{ fontSize: '0.78rem', fontWeight: 600, borderRadius: 4, padding: '2px 7px', whiteSpace: 'nowrap', background: expiryDays <= 0 ? 'rgba(248,81,73,0.15)' : expiryDays <= 7 ? 'rgba(210,153,34,0.15)' : 'rgba(63,185,80,0.12)', color: expiryDays <= 0 ? V.red : expiryDays <= 7 ? V.yellow : V.green }}>
-              {expiryDays <= 0 ? 'EXPIRED' : `in ${expiryDays} days`}
-            </span>
-          </div>
+            {patValid === false && (
+              <p style={{ fontSize: '0.78rem', color: V.red, marginBottom: '0.5rem' }}>
+                ✗ Token invalid or missing scopes. Try generating a new one.
+              </p>
+            )}
+            {patValid === true && (
+              <p style={{ fontSize: '0.78rem', color: V.green, marginBottom: '0.5rem' }}>
+                ✓ Token verified and saved.
+              </p>
+            )}
+
+            {editingPat && (
+              <button
+                type="button"
+                onClick={() => { setEditingPat(false); setGithubPat(savedPatMask); setPatValid(null); }}
+                style={{ background: 'none', border: 'none', color: V.muted, fontSize: '0.78rem', cursor: 'pointer', padding: 0, marginTop: 4 }}
+              >
+                ← Cancel
+              </button>
+            )}
+          </>
         )}
       </SectionCard>
 
