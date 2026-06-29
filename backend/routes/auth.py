@@ -457,8 +457,11 @@ async def github_callback(code: str, state: str = "", request: Request = None):
         # Persist the GitHub access token so the app can list repos
         try:
             from config import unified_store as _us
+            from routes.settings import _fetch_pat_expiry
             await _us.set_platform_setting("github.pat", access_token)
             await _us.set_platform_setting("github.username", gh_user.get("login", ""))
+            expiry = await _fetch_pat_expiry(access_token)
+            await _us.set_platform_setting("github.pat_expires_at", expiry or "")
         except Exception as _e:
             logger.warning("Could not persist GitHub token: %s", _e)
 

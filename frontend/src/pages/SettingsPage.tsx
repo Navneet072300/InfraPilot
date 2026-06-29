@@ -1087,12 +1087,41 @@ function ConnectedPlatformsTab() {
               </div>
             </div>
             {expiryDays !== null && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
-                <span style={{ fontSize: '0.75rem', color: V.muted }}>Expires:</span>
-                <span style={{ fontSize: '0.75rem', fontWeight: 600, borderRadius: 4, padding: '2px 7px', background: expiryDays <= 0 ? 'rgba(248,81,73,0.15)' : expiryDays <= 7 ? 'rgba(210,153,34,0.15)' : 'rgba(63,185,80,0.12)', color: expiryDays <= 0 ? V.red : expiryDays <= 7 ? V.yellow : V.green }}>
-                  {expiryDays <= 0 ? 'EXPIRED' : `in ${expiryDays} days`}
-                </span>
-              </div>
+              expiryDays <= 14 ? (
+                /* Warning / expired banner */
+                <div style={{ marginTop: 12, display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', background: expiryDays <= 0 ? 'rgba(248,81,73,0.08)' : 'rgba(210,153,34,0.08)', border: `1px solid ${expiryDays <= 0 ? 'rgba(248,81,73,0.3)' : 'rgba(210,153,34,0.3)'}`, borderRadius: 8 }}>
+                  <span style={{ fontSize: 16, flexShrink: 0 }}>{expiryDays <= 0 ? '🔴' : '⚠️'}</span>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: '0.78rem', fontWeight: 700, color: expiryDays <= 0 ? V.red : V.yellow, margin: '0 0 3px' }}>
+                      {expiryDays <= 0 ? 'Token expired' : `Token expires in ${expiryDays} day${expiryDays === 1 ? '' : 's'}`}
+                    </p>
+                    <p style={{ fontSize: '0.72rem', color: V.muted, margin: 0, lineHeight: 1.5 }}>
+                      {expiryDays <= 0
+                        ? 'Private repo deploys are blocked. Generate a new PAT and paste it below.'
+                        : 'Generate a new PAT now to avoid interruption to private repo deployments.'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => window.open('https://github.com/settings/tokens/new?scopes=repo,workflow,write:packages&description=InfraPilot', '_blank')}
+                    style={{ flexShrink: 0, padding: '4px 10px', background: expiryDays <= 0 ? V.red : V.yellow, border: 'none', borderRadius: 5, color: '#000', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  >
+                    Regenerate
+                  </button>
+                </div>
+              ) : (
+                /* Healthy — small inline badge */
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+                  <span style={{ fontSize: '0.75rem', color: V.muted }}>Expires:</span>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, borderRadius: 4, padding: '2px 7px', background: 'rgba(63,185,80,0.12)', color: V.green }}>
+                    in {expiryDays} days
+                  </span>
+                  <span style={{ fontSize: '0.72rem', color: V.muted }}>({patExpiry})</span>
+                </div>
+              )
+            )}
+            {expiryDays === null && savedPatMask && !editingPat && (
+              <p style={{ fontSize: '0.72rem', color: V.muted, marginTop: 8 }}>No expiry set — token does not expire.</p>
             )}
           </div>
         ) : (

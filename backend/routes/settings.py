@@ -180,10 +180,41 @@ async def get_platform_config():
     }
 
 
+async def _fetch_pat_expiry(pat: str) -> str | None:
+    """
+    Ask GitHub API for token expiry via the github-authentication-token-expiration
+    response header. Returns an ISO-8601 date string or None if not set / no expiry.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {pat}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+            )
+        raw = resp.headers.get("github-authentication-token-expiration")  # "2025-01-01 00:00:00 UTC"
+        if not raw:
+            return None
+        # Normalise to ISO-8601 date string (YYYY-MM-DD)
+        from datetime import datetime
+        dt = datetime.strptime(raw.strip(), "%Y-%m-%d %H:%M:%S %Z")
+        return dt.date().isoformat()
+    except Exception:
+        return None
+
+
 @router.patch("/platform")
 async def update_platform_config(body: PlatformSettingInput):
-    if "***" not in body.value:
-        await set_platform_setting(body.key, body.value)
+    if "***" in body.value:
+        return {"ok": True}  # masked value — ignore, don't overwrite real token
+    await set_platform_setting(body.key, body.value)
+    # When a GitHub PAT is saved, auto-detect its expiry from the GitHub API
+    if body.key == "github.pat" and body.value:
+        expiry = await _fetch_pat_expiry(body.value)
+        await set_platform_setting("github.pat_expires_at", expiry or "")
     return {"ok": True}
 
 
