@@ -944,24 +944,34 @@ function ConnectedPlatformsTab() {
     setPatValid(null);
     setPatUsername(null);
     try {
-      const r = await fetch('/api/github/validate', {
+      const vr = await fetch('/api/github/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pat: token }),
       });
-      const data = await r.json();
-      if (data.success || data.valid) {
-        setPatValid(true);
-        if (data.username) setPatUsername(data.username);
-        setPatSaving(true);
-        await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.pat', value: token }) });
-        setSavedPatMask(token);
-        setEditingPat(false);
-        setPatSaved(true);
-        setTimeout(() => setPatSaved(false), 3000);
-      } else {
+      const vdata = await vr.json();
+      if (!(vdata.success || vdata.valid)) {
         setPatValid(false);
+        return;
       }
+      const username = vdata.username ?? '';
+      setPatValid(true);
+      if (username) setPatUsername(username);
+      setPatSaving(true);
+      // Save PAT and username — check that each write succeeded
+      const [pr, ur] = await Promise.all([
+        fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.pat', value: token }) }),
+        username ? fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.username', value: username }) }) : Promise.resolve(new Response('{}', { status: 200 })),
+      ]);
+      if (!pr.ok) {
+        setPatValid(false);
+        return;
+      }
+      setSavedPatMask(token);
+      if (username) setPatUsername(username);
+      setEditingPat(false);
+      setPatSaved(true);
+      setTimeout(() => setPatSaved(false), 3000);
     } catch {
       setPatValid(false);
     } finally {
@@ -976,7 +986,8 @@ function ConnectedPlatformsTab() {
 
   function handlePatPaste(e: React.ClipboardEvent<HTMLInputElement>) {
     const pasted = e.clipboardData.getData('text').trim();
-    if (pasted.startsWith('ghp_') || pasted.startsWith('github_pat_')) {
+    // Accept classic PATs (ghp_), fine-grained PATs (github_pat_), and OAuth tokens (gho_)
+    if (pasted.startsWith('ghp_') || pasted.startsWith('github_pat_') || pasted.startsWith('gho_')) {
       e.preventDefault();
       setGithubPat(pasted);
       validateAndSaveGithubPat(pasted);

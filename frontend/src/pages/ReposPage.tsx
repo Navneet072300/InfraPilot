@@ -118,29 +118,24 @@ export function ReposPage() {
         </div>
       </div>
 
-      {/* Error state */}
+      {/* Error / not-configured state */}
       {(isError || data?.error) && (
-        <div style={{ background: 'rgba(248,81,73,0.08)', border: '1px solid rgba(248,81,73,0.3)', borderRadius: 10, padding: '20px 24px', marginBottom: 20 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--error)', marginBottom: 6 }}>Could not load repositories</p>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 14px' }}>
-            {data?.error ?? 'Make sure your GitHub account is connected in Settings → GitHub.'}
+        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '32px 28px', textAlign: 'center', maxWidth: 480, margin: '0 auto' }}>
+          <GitBranch size={36} style={{ color: 'var(--accent)', marginBottom: 16 }} />
+          <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
+            {data?.auth_required ? 'GitHub not connected' : 'Could not load repositories'}
           </p>
-          {data?.auth_required && (
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <a
-                href="/api/auth/github"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 16px', background: 'var(--accent)', border: 'none', borderRadius: 7, color: '#fff', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}
-              >
-                <GitBranch size={13} /> Re-authenticate with GitHub
-              </a>
-              <a
-                href="/app/settings"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 16px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--text-secondary)', fontSize: 13, textDecoration: 'none' }}
-              >
-                Add PAT in Settings
-              </a>
-            </div>
-          )}
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 24, lineHeight: 1.6 }}>
+            {data?.auth_required
+              ? 'Generate a Personal Access Token in GitHub and save it in Settings to view your repositories here.'
+              : (data?.error ?? 'Make sure your GitHub account is connected in Settings → GitHub.')}
+          </p>
+          <a
+            href="/app/settings"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 20px', background: 'var(--accent)', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}
+          >
+            <GitBranch size={14} /> Save GitHub PAT
+          </a>
         </div>
       )}
 
