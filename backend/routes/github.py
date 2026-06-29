@@ -65,5 +65,14 @@ async def validate_token(body: ValidateRequest):
 @router.get("/github/repos")
 async def list_repos(per_page: int = 100, page: int = 1):
     """List all repos (public + private) for the authenticated GitHub user."""
-    gh = _get_github()
+    from config.unified_store import get_platform_setting
+    # unified_store is the source of truth — it covers both DB and JSON-file backends
+    pat = await get_platform_setting("github.pat")
+    username = await get_platform_setting("github.username")
+    if not pat:
+        cfg = settings.load_config()
+        gh_cfg = cfg.get("github", {})
+        pat = gh_cfg.get("pat")
+        username = username or gh_cfg.get("username")
+    gh = GitHubService(pat=pat or None, username=username or None)
     return gh.list_repos(per_page=per_page, page=page)

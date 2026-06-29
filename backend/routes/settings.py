@@ -168,10 +168,12 @@ async def test_cluster_connection(name: str, body: ClusterUpdateInput | None = N
 async def get_platform_config():
     github_pat = await get_platform_setting("github.pat")
     github_pat_expires_at = await get_platform_setting("github.pat_expires_at")
+    github_username = await get_platform_setting("github.username")
     return {
         "github": {
             "pat": _mask(github_pat) if github_pat else "",
             "pat_expires_at": github_pat_expires_at or "",
+            "username": github_username or "",
         },
         "vault": {"stub": True},
         "cloudflare": {"stub": True},
