@@ -16,7 +16,6 @@ import HelpPage from './pages/HelpPage';
 import SubscriptionPage from './pages/SubscriptionPage';
 import { ReposPage } from './pages/ReposPage';
 import { HistoryPage } from './pages/HistoryPage';
-import { DataExplorer } from './pages/DataExplorer';
 import { LoginPage } from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
 import { AuthCallback } from './components/auth/AuthCallback';
@@ -120,7 +119,6 @@ function AppShell() {
         <Route path="monitor"      element={<MonitorMode />} />
         <Route path="repos"        element={<ReposPage />} />
         <Route path="history"      element={<HistoryPage />} />
-        <Route path="explore"      element={<DataExplorer />} />
         <Route path="resources"    element={<ResourcesPage />} />
         <Route path="settings"     element={<SettingsPage />} />
         <Route path="profile"      element={<ProfilePage />} />
