@@ -45,7 +45,7 @@ export function ReposPage() {
     queryFn: async () => {
       const r = await fetch(`/api/github/repos?per_page=50&page=${page}`);
       if (!r.ok) throw new Error('Failed to load repositories');
-      return r.json() as Promise<{ repos: Repo[]; has_more: boolean; error?: string }>;
+      return r.json() as Promise<{ repos: Repo[]; has_more: boolean; error?: string; auth_required?: boolean }>;
     },
     staleTime: 60_000,
   });
@@ -122,9 +122,25 @@ export function ReposPage() {
       {(isError || data?.error) && (
         <div style={{ background: 'rgba(248,81,73,0.08)', border: '1px solid rgba(248,81,73,0.3)', borderRadius: 10, padding: '20px 24px', marginBottom: 20 }}>
           <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--error)', marginBottom: 6 }}>Could not load repositories</p>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0 }}>
-            {data?.error ?? 'Make sure your GitHub account is connected in Settings → Connect Platforms → GitHub.'}
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 14px' }}>
+            {data?.error ?? 'Make sure your GitHub account is connected in Settings → GitHub.'}
           </p>
+          {data?.auth_required && (
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <a
+                href="/api/auth/github"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 16px', background: 'var(--accent)', border: 'none', borderRadius: 7, color: '#fff', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}
+              >
+                <GitBranch size={13} /> Re-authenticate with GitHub
+              </a>
+              <a
+                href="/app/settings"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 16px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--text-secondary)', fontSize: 13, textDecoration: 'none' }}
+              >
+                Add PAT in Settings
+              </a>
+            </div>
+          )}
         </div>
       )}
 

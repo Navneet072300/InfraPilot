@@ -44,6 +44,8 @@ class GitHubService:
 
     def list_repos(self, per_page: int = 100, page: int = 1) -> dict:
         """List all repos (public + private) the authenticated user can access."""
+        if not self._pat:
+            return {"repos": [], "auth_required": True, "error": "No GitHub token configured. Go to Settings → GitHub and add a Personal Access Token."}
         try:
             client = self._client()
             user = client.get_user()
@@ -73,7 +75,11 @@ class GitHubService:
             return {"repos": result, "page": page, "has_more": len(result) == per_page}
         except Exception as e:
             logger.error("list_repos error: %s", e)
-            return {"repos": [], "error": str(e)}
+            msg = str(e)
+            # 401 means token is expired, revoked, or missing repo scope
+            if "401" in msg or "Bad credentials" in msg or "Requires authentication" in msg:
+                return {"repos": [], "auth_required": True, "error": "GitHub token is expired or missing repo scope. Sign out and sign back in, or add a new PAT in Settings → GitHub."}
+            return {"repos": [], "error": msg}
 
     def analyze_repo(self, repo_url: str) -> dict:
         """Inspect a repo via GitHub API to detect language, Dockerfile, manifests, etc."""
