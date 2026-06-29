@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Rocket, Search, Play, Pause, RotateCcw, CheckCircle2, AlertCircle, Loader2, Upload, X } from 'lucide-react';
 import { useAgent } from '../../hooks/useAgent';
 import { useClusterStore } from '../../store/clusterStore';
@@ -49,12 +50,12 @@ function parseEnvFile(content: string): Record<string, string> {
   return result;
 }
 
-function IntakeForm({ onAnalyze }: { onAnalyze: (cfg: Omit<PipelineConfig, 'analysis' | 'clarifications'>) => void }) {
+function IntakeForm({ onAnalyze, initialRepoUrl = '' }: { onAnalyze: (cfg: Omit<PipelineConfig, 'analysis' | 'clarifications'>) => void; initialRepoUrl?: string }) {
   const { clusters, activeCluster } = useClusterStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     app_name: '',
-    repo_url: '',
+    repo_url: initialRepoUrl,
     private_repo: false,
     gitops_repo: '',
     gitops_same: true,
@@ -406,6 +407,9 @@ function AnalysisCard({ analysis, onConfirm, onBack }: { analysis: RepoAnalysis 
 // ─── Main PipelineMode ────────────────────────────────────────────────────────
 
 export function PipelineMode() {
+  const [searchParams] = useSearchParams();
+  const initialRepoUrl = searchParams.get('repo') ?? '';
+
   const [phase, setPhase] = useState<Phase>('intake');
   const [pipelineCfg, setPipelineCfg] = useState<PipelineConfig | null>(null);
   const [analysis, setAnalysis] = useState<RepoAnalysis | null>(null);
@@ -521,7 +525,7 @@ export function PipelineMode() {
 
       {/* Main content */}
       <div style={{ flex: 1, overflow: 'auto', padding: '24px 20px', display: 'flex', justifyContent: phase === 'running' || phase === 'done' ? 'flex-start' : 'center' }}>
-        {phase === 'intake' && <IntakeForm onAnalyze={handleAnalyze} />}
+        {phase === 'intake' && <IntakeForm onAnalyze={handleAnalyze} initialRepoUrl={initialRepoUrl} />}
 
         {phase === 'analyzing' && (
           <AnalysisCard analysis={analyzing ? null : analysis} onConfirm={() => setPhase('ready')} onBack={() => setPhase('intake')} />
