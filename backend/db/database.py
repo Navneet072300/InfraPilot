@@ -47,6 +47,8 @@ async def _apply_schema_migrations(conn) -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT FALSE",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_pending_secret VARCHAR(64)",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()",
+        # user_settings — columns added incrementally
+        "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS experience_level VARCHAR(20) DEFAULT 'devops'",
     ]
     for sql in migrations:
         try:
