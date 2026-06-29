@@ -101,6 +101,76 @@ SAFE_COMMANDS: dict[str, list[dict]] = {
 }
 
 
+async def _read_pod_env(svc, pod_name: str, namespace: str) -> dict[str, str]:
+    """Read env vars from a pod using kubectl get pod -o json (no exec needed)."""
+    from services.k8s_service import KubernetesService as _KS
+    result = await svc._kubectl(["get", "pod", pod_name, "-n", namespace, "-o", "json"])
+    if result["exit_code"] != 0:
+        return {}
+    try:
+        import json as _json
+        pod = _json.loads(result["stdout"])
+        env: dict[str, str] = {}
+        for container in pod.get("spec", {}).get("containers", []):
+            for e in container.get("env", []):
+                val = e.get("value")
+                if val is not None:
+                    env[e["name"]] = val
+        return env
+    except Exception:
+        return {}
+
+
+def _pg_user_from_env(env: dict[str, str]) -> str:
+    """Pick the PostgreSQL user from common env var names, fallback to current OS user."""
+    for key in ("POSTGRES_USER", "PGUSER", "POSTGRESQL_USERNAME", "DB_USER", "DATABASE_USER"):
+        if key in env and env[key]:
+            return env[key]
+    return ""  # empty = let psql use the OS user (works in official image)
+
+
+def _pg_db_from_env(env: dict[str, str]) -> str:
+    for key in ("POSTGRES_DB", "PGDATABASE", "POSTGRESQL_DATABASE", "DB_NAME", "DATABASE_NAME"):
+        if key in env and env[key]:
+            return env[key]
+    return "postgres"
+
+
+def _build_command(action: dict, env: dict[str, str], service_type: str) -> list[str]:
+    """Substitute detected credentials into a command template."""
+    cmd = list(action["cmd"])
+    if service_type == "postgres":
+        pg_user = _pg_user_from_env(env)
+        pg_db = _pg_db_from_env(env)
+        # Replace hardcoded -U postgres with detected user (or drop -U if empty)
+        result: list[str] = []
+        skip_next = False
+        for i, token in enumerate(cmd):
+            if skip_next:
+                skip_next = False
+                continue
+            if token == "-U":
+                if pg_user:
+                    result += ["-U", pg_user]
+                # if no user detected, omit -U (psql will use OS user)
+                skip_next = True
+                continue
+            if token == "postgres" and i > 0 and cmd[i - 1] == "-U":
+                continue  # already handled above
+            if token == r"\dt *.*" and pg_db:
+                # Connect to the real DB for \dt
+                result.append(r"\dt")
+                if not any(t == "-d" for t in result):
+                    result = ["-d", pg_db] + result
+                continue
+            result.append(token)
+        return result
+    if service_type == "mysql":
+        mysql_user = env.get("MYSQL_USER") or env.get("MARIADB_USER") or "root"
+        return [t.replace("-uroot", f"-u{mysql_user}") for t in cmd]
+    return cmd
+
+
 async def _resolve_cluster(cluster_name: str | None = None):
     from services.k8s_service import KubernetesService
     clusters = await list_clusters(masked=False)
@@ -191,8 +261,27 @@ async def inspect_service(body: InspectRequest):
         raise HTTPException(400, f"Unknown action '{body.action_id}' for type '{body.service_type}'")
 
     svc = await _resolve_cluster(body.cluster)
-    args = ["exec", body.pod_name, "-n", body.namespace, "--"] + action["cmd"]
+    env = await _read_pod_env(svc, body.pod_name, body.namespace)
+    cmd = _build_command(action, env, body.service_type)
+    args = ["exec", body.pod_name, "-n", body.namespace, "--"] + cmd
     result = await svc._kubectl(args, timeout=20)
+
+    # If role error and no user was detected, retry stripping -U entirely
+    if result["exit_code"] != 0 and "does not exist" in result.get("stderr", "") and body.service_type == "postgres":
+        stripped: list[str] = []
+        skip = False
+        for tok in cmd:
+            if skip:
+                skip = False
+                continue
+            if tok == "-U":
+                skip = True
+                continue
+            stripped.append(tok)
+        args2 = ["exec", body.pod_name, "-n", body.namespace, "--"] + stripped
+        result2 = await svc._kubectl(args2, timeout=20)
+        if result2["exit_code"] == 0:
+            result = result2
 
     return {
         "action": body.action_id,
@@ -201,6 +290,7 @@ async def inspect_service(body: InspectRequest):
         "exit_code": result["exit_code"],
         "stdout": result["stdout"],
         "stderr": result["stderr"],
+        "detected_user": _pg_user_from_env(env) if body.service_type == "postgres" else None,
     }
 
 
@@ -257,7 +347,9 @@ Only use action IDs from the list above. If none fit, set action_id to null and 
         action = next((a for a in available if a["id"] == action_id), None)
         if action:
             svc = await _resolve_cluster(body.cluster)
-            args = ["exec", body.pod_name, "-n", body.namespace, "--"] + action["cmd"]
+            env = await _read_pod_env(svc, body.pod_name, body.namespace)
+            cmd = _build_command(action, env, body.service_type)
+            args = ["exec", body.pod_name, "-n", body.namespace, "--"] + cmd
             r = await svc._kubectl(args, timeout=20)
             result = {"exit_code": r["exit_code"], "stdout": r["stdout"], "stderr": r["stderr"]}
     elif action_id and not body.confirmed:
