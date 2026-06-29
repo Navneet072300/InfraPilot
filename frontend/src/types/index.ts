@@ -227,9 +227,7 @@ export interface ArchEdge {
 export interface ArchitectureData {
   diagram_nodes: ArchNode[];
   diagram_edges: ArchEdge[];
-  terraform_outline: string;
-  k8s_manifests: string;
-  cicd_pipeline: string;
+  architecture_explanation: string;
   cost_breakdown: { service: string; monthly: number; description: string }[];
 }
 

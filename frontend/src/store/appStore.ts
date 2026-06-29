@@ -20,7 +20,7 @@ interface AppState {
   // Design
   designInput: string;
   designBudget: number;
-  designRegion: string;
+  designCloud: string;
   designCompliance: string[];
   architectureData: ArchitectureData | null;
   architectureRaw: string;
@@ -43,7 +43,7 @@ interface AppState {
 
   setDesignInput: (v: string) => void;
   setDesignBudget: (v: number) => void;
-  setDesignRegion: (v: string) => void;
+  setDesignCloud: (v: string) => void;
   setDesignCompliance: (v: string[]) => void;
   setArchitectureData: (d: ArchitectureData | null) => void;
   appendArchitectureRaw: (s: string) => void;
@@ -67,12 +67,12 @@ export const useAppStore = create<AppState>((set) => ({
 
   designInput: '',
   designBudget: 1000,
-  designRegion: 'us-east-1',
+  designCloud: '',
   designCompliance: [],
   architectureData: null,
   architectureRaw: '',
   isDesigning: false,
-  designActiveTab: 'terraform',
+  designActiveTab: 'architecture',
 
   setActiveMode: (m) => set({ activeMode: m }),
   setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
@@ -96,7 +96,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   setDesignInput: (v) => set({ designInput: v }),
   setDesignBudget: (v) => set({ designBudget: v }),
-  setDesignRegion: (v) => set({ designRegion: v }),
+  setDesignCloud: (v) => set({ designCloud: v }),
   setDesignCompliance: (v) => set({ designCompliance: v }),
   setArchitectureData: (d) => set({ architectureData: d }),
   appendArchitectureRaw: (s) => set((st) => ({ architectureRaw: st.architectureRaw + s })),

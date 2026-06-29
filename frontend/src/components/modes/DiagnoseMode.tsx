@@ -17,98 +17,6 @@ import type {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const QUICK_FILLS = [
-  {
-    label: 'ImagePullBackOff',
-    value: `Events:
-LAST SEEN   TYPE      REASON      OBJECT
-14m         Normal    Scheduled   pod/backend-7d8f9b2c1-x9m4p
-13m         Normal    Pulling     pod/backend-7d8f9b2c1-x9m4p   Pulling image "private-reg.io/recruitpro/backend:v1.2.0"
-13m         Warning   Failed      pod/backend-7d8f9b2c1-x9m4p   Failed to pull image: rpc error: code = Unknown desc = failed to pull and unpack image: failed to resolve reference "private-reg.io/recruitpro/backend:v1.2.0": unexpected status code 401 Unauthorized
-13m         Warning   Failed      pod/backend-7d8f9b2c1-x9m4p   Error: ErrImagePull
-8m          Warning   BackOff     pod/backend-7d8f9b2c1-x9m4p   Back-off pulling image "private-reg.io/recruitpro/backend:v1.2.0"
-8m          Warning   Failed      pod/backend-7d8f9b2c1-x9m4p   Error: ImagePullBackOff
-
-Pod Status:
-NAME                          READY   STATUS             RESTARTS   AGE
-backend-7d8f9b2c1-x9m4p      0/1     ImagePullBackOff   0          14m
-backend-7d8f9b2c1-ab3cd      1/1     Running            0          3d
-backend-7d8f9b2c1-ef5gh      1/1     Running            0          3d`,
-  },
-  {
-    label: 'OOMKilled',
-    value: `Container: api-server
-Status: OOMKilled  |  Restarts: 12  |  Limit: 256Mi
-Last OOM: 3 minutes ago
-
-$ kubectl logs api-deployment-8b4f5c-kp7qm --previous
-[14:23:44] INFO: Processing batch job — loading 50000 records
-[14:23:45] INFO: Heap allocated: 251MB
-[14:23:45] FATAL: Killed
-signal: killed
-
-Events:
-Warning  OOMKilling  3m  kubelet  Memory cgroup out of memory: Kill process 8821 score 1000`,
-  },
-  {
-    label: 'CrashLoopBackOff',
-    value: `$ kubectl get pods -n production
-NAME                      READY   STATUS             RESTARTS   AGE
-backend-5f8d9c-x2p3q     0/1     CrashLoopBackOff   8          11m
-
-$ kubectl logs backend-5f8d9c-x2p3q --previous
-Error: Cannot connect to database at postgres:5432
-  ConnectionRefusedError: connect ECONNREFUSED 10.0.1.55:5432
-  at TCPConnectWrap.afterConnect [as oncomplete]
-
-Environment:
-DATABASE_URL=postgresql://app:secret@postgres:5432/appdb
-NODE_ENV=production
-
-Events:
-Warning  BackOff  2m (x8 over 11m)  kubelet  Back-off restarting failed container`,
-  },
-  {
-    label: 'Pending Forever',
-    value: `$ kubectl get pod data-job-7x9pq -n ml-workloads
-NAME              READY   STATUS    RESTARTS   AGE
-data-job-7x9pq   0/1     Pending   0          47m
-
-Events:
-Warning  FailedScheduling  47m (x23 over 47m)  default-scheduler
-  0/3 nodes are available:
-  1 node(s) had taint that the pod didn't tolerate,
-  2 node(s) didn't match Pod's node affinity/selector.
-
-Node Affinity (required):
-  kubernetes.io/arch=arm64
-  accelerator=nvidia-a100
-
-Nodes:
-  node-1: arch=amd64, no accelerator label
-  node-2: arch=amd64, no accelerator label
-  node-3: taint dedicated=gpu:NoSchedule`,
-  },
-  {
-    label: '502 Gateway',
-    value: `nginx error log:
-[error] upstream connect error or disconnect/reset before headers.
-reset reason: connection timeout
-upstream: "http://10.0.1.25:8080/api/orders"
-upstream response time: 60.003, request time: 60.003
-
-$ kubectl top pods -n production
-NAME                  CPU(cores)   MEMORY(bytes)
-api-5f9d8c-x2p3      4m           131Mi
-api-5f9d8c-y4q5      3m           128Mi
-postgres-0            2401m        7812Mi   ← 2.4 CPU (limit: 2)
-
-$ kubectl get hpa -n production
-NAME          REFERENCE        TARGETS   MINPODS  MAXPODS  REPLICAS
-api-hpa       Deployment/api   94%/70%   2        10       2        ← at min replicas`,
-  },
-];
-
 const SEV_COLOR: Record<string, string> = {
   critical: '#f85149', high: '#f97316', medium: '#f0b429', low: '#57ab5a',
 };
@@ -624,7 +532,7 @@ export function DiagnoseMode() {
 
   // Input state
   const [inputTab, setInputTab] = useState<'paste' | 'cluster'>('paste');
-  const [logInput, setLogInput] = useState(QUICK_FILLS[0].value);
+  const [logInput, setLogInput] = useState('');
   const [userContext, setUserContext] = useState('');
   const [showCtx, setShowCtx] = useState(false);
   const [selectedPod, setSelectedPod] = useState('');
@@ -798,19 +706,6 @@ export function DiagnoseMode() {
                 onFocus={e => (e.target.style.borderColor = 'var(--border-focus)')}
                 onBlur={e => (e.target.style.borderColor = 'var(--border)')}
               />
-              <div>
-                <p style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Quick fill</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                  {QUICK_FILLS.map(q => (
-                    <button key={q.label} type="button" onClick={() => setLogInput(q.value)}
-                      style={{ padding: '3px 9px', border: '1px solid var(--border)', borderRadius: 100, background: 'transparent', color: 'var(--text-secondary)', fontSize: 11, cursor: 'pointer' }}
-                      onMouseEnter={e => { (e.target as HTMLButtonElement).style.borderColor = 'var(--accent)'; (e.target as HTMLButtonElement).style.color = 'var(--accent)'; }}
-                      onMouseLeave={e => { (e.target as HTMLButtonElement).style.borderColor = 'var(--border)'; (e.target as HTMLButtonElement).style.color = 'var(--text-secondary)'; }}>
-                      {q.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </>
           )}
 

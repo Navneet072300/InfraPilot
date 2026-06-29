@@ -11,27 +11,36 @@ import { Compass, AlertCircle } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { useStream } from '../../hooks/useStream';
 import type { ArchitectureData } from '../../types';
-import { CodeBlock } from '../shared/CodeBlock';
 
+// Generic service-type colours — no cloud vendor names
 const NODE_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-  alb:        { bg: '#1a1a2e', border: '#f97316', text: '#fdba74' },
-  eks:        { bg: '#0f1b2e', border: '#3b82f6', text: '#93c5fd' },
-  rds:        { bg: '#0d1f18', border: '#22c55e', text: '#86efac' },
-  redis:      { bg: '#1f1520', border: '#a855f7', text: '#d8b4fe' },
-  s3:         { bg: '#1a1a0e', border: '#eab308', text: '#fde047' },
-  cloudfront: { bg: '#1f1010', border: '#ef4444', text: '#fca5a5' },
-  ec2:        { bg: '#1a1a2e', border: '#f97316', text: '#fdba74' },
-  vpc:        { bg: '#0a1a2e', border: '#0ea5e9', text: '#7dd3fc' },
-  igw:        { bg: '#1f1a10', border: '#f59e0b', text: '#fcd34d' },
-  nat:        { bg: '#10181f', border: '#06b6d4', text: '#67e8f9' },
+  loadbalancer:  { bg: '#1f1810', border: '#f97316', text: '#fdba74' },
+  lb:            { bg: '#1f1810', border: '#f97316', text: '#fdba74' },
+  compute:       { bg: '#0f1b2e', border: '#3b82f6', text: '#93c5fd' },
+  server:        { bg: '#0f1b2e', border: '#3b82f6', text: '#93c5fd' },
+  kubernetes:    { bg: '#0f1b2e', border: '#60a5fa', text: '#bfdbfe' },
+  container:     { bg: '#0f1b2e', border: '#60a5fa', text: '#bfdbfe' },
+  database:      { bg: '#0d1f18', border: '#22c55e', text: '#86efac' },
+  db:            { bg: '#0d1f18', border: '#22c55e', text: '#86efac' },
+  cache:         { bg: '#1f1520', border: '#a855f7', text: '#d8b4fe' },
+  storage:       { bg: '#1a1a0e', border: '#eab308', text: '#fde047' },
+  cdn:           { bg: '#1f1010', border: '#ef4444', text: '#fca5a5' },
+  network:       { bg: '#0a1a2e', border: '#0ea5e9', text: '#7dd3fc' },
+  vpc:           { bg: '#0a1a2e', border: '#0ea5e9', text: '#7dd3fc' },
+  vnet:          { bg: '#0a1a2e', border: '#0ea5e9', text: '#7dd3fc' },
+  gateway:       { bg: '#1f1a10', border: '#f59e0b', text: '#fcd34d' },
+  queue:         { bg: '#10181f', border: '#06b6d4', text: '#67e8f9' },
+  monitoring:    { bg: '#1a1020', border: '#ec4899', text: '#f9a8d4' },
+  dns:           { bg: '#1a1a2e', border: '#818cf8', text: '#c7d2fe' },
+  firewall:      { bg: '#1f100a', border: '#fb923c', text: '#fed7aa' },
+  default:       { bg: '#1a1a2e', border: '#6366f1', text: '#a5b4fc' },
 };
 
-const REGIONS = ['us-east-1', 'us-west-2', 'eu-west-1', 'ap-southeast-1', 'ap-northeast-1'];
-const COMPLIANCE_OPTIONS = ['PCI DSS', 'SOC 2', 'HIPAA', 'ISO 27001', 'FedRAMP'];
+const COMPLIANCE_OPTIONS = ['PCI DSS', 'SOC 2', 'HIPAA', 'ISO 27001', 'FedRAMP', 'GDPR'];
 
 function buildReactFlowNodes(nodes: ArchitectureData['diagram_nodes']): Node[] {
   return nodes.map((n) => {
-    const colors = NODE_COLORS[n.type] ?? NODE_COLORS['ec2'];
+    const colors = NODE_COLORS[n.type?.toLowerCase()] ?? NODE_COLORS['default'];
     return {
       id: n.id,
       position: { x: n.x, y: n.y },
@@ -39,7 +48,9 @@ function buildReactFlowNodes(nodes: ArchitectureData['diagram_nodes']): Node[] {
         label: (
           <div style={{ textAlign: 'center', padding: '4px' }}>
             <div style={{ fontSize: '11px', fontWeight: 700, color: colors.text }}>{n.label}</div>
-            <div style={{ fontSize: '10px', color: '#888', marginTop: '2px' }}>${n.costPerMonth}/mo</div>
+            {n.costPerMonth > 0 && (
+              <div style={{ fontSize: '10px', color: '#888', marginTop: '2px' }}>${n.costPerMonth}/mo</div>
+            )}
           </div>
         ),
       },
@@ -66,17 +77,63 @@ function buildReactFlowEdges(edges: ArchitectureData['diagram_edges']): Edge[] {
 }
 
 const DESIGN_TABS = [
-  { id: 'terraform', label: 'Terraform' },
-  { id: 'k8s', label: 'K8s Manifests' },
-  { id: 'cicd', label: 'CI/CD' },
+  { id: 'architecture', label: 'Architecture' },
   { id: 'cost', label: 'Cost Breakdown' },
 ];
+
+// Render architecture_explanation as structured paragraphs
+function ArchitectureExplanation({ text }: { text: string }) {
+  if (!text) return null;
+  const sections = text.split(/\n(?=#{1,3} |\*\*[A-Z])/).filter(Boolean);
+  return (
+    <div style={{ overflowY: 'auto', height: '100%', padding: '4px 8px' }}>
+      {sections.map((block, i) => {
+        // Heading lines (## or **Title**)
+        const headingMatch = block.match(/^#{1,3} (.+)/) || block.match(/^\*\*(.+?)\*\*/);
+        if (headingMatch) {
+          const heading = headingMatch[1];
+          const rest = block.replace(/^#{1,3} .+\n?/, '').replace(/^\*\*.+?\*\*\n?/, '');
+          return (
+            <div key={i} style={{ marginBottom: 16 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                {heading}
+              </p>
+              {rest.trim() && (
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+                  {rest.trim()}
+                </p>
+              )}
+            </div>
+          );
+        }
+        // Bullet lists
+        if (block.startsWith('- ') || block.startsWith('• ')) {
+          const bullets = block.split('\n').filter((l) => l.trim());
+          return (
+            <ul key={i} style={{ margin: '0 0 14px 0', padding: '0 0 0 18px' }}>
+              {bullets.map((b, j) => (
+                <li key={j} style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: 3 }}>
+                  {b.replace(/^[-•]\s*/, '')}
+                </li>
+              ))}
+            </ul>
+          );
+        }
+        return (
+          <p key={i} style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: 14, whiteSpace: 'pre-wrap' }}>
+            {block.trim()}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
 
 export function DesignMode() {
   const {
     designInput, setDesignInput,
     designBudget, setDesignBudget,
-    designRegion, setDesignRegion,
+    designCloud, setDesignCloud,
     designCompliance, setDesignCompliance,
     architectureData, setArchitectureData,
     appendArchitectureRaw,
@@ -91,7 +148,6 @@ export function DesignMode() {
     (chunk: string) => {
       rawRef.current += chunk;
       appendArchitectureRaw(chunk);
-      // Try to parse JSON as it streams in
       try {
         const parsed = JSON.parse(rawRef.current) as ArchitectureData;
         if (parsed.diagram_nodes) setArchitectureData(parsed);
@@ -108,7 +164,7 @@ export function DesignMode() {
       const parsed = JSON.parse(rawRef.current) as ArchitectureData;
       if (parsed.diagram_nodes) setArchitectureData(parsed);
     } catch {
-      // Raw fallback handled in render
+      // Raw fallback
     }
   }, [setIsDesigning, setArchitectureData]);
 
@@ -132,10 +188,10 @@ export function DesignMode() {
     await start({
       requirements: designInput,
       budget: designBudget,
-      region: designRegion,
+      cloud: designCloud || 'any',
       compliance: designCompliance,
     });
-  }, [designInput, designBudget, designRegion, designCompliance, isDesigning, start, setIsDesigning, setArchitectureData]);
+  }, [designInput, designBudget, designCloud, designCompliance, isDesigning, start, setIsDesigning, setArchitectureData]);
 
   const toggleCompliance = (c: string) =>
     setDesignCompliance(
@@ -147,21 +203,9 @@ export function DesignMode() {
   const rfNodes = architectureData ? buildReactFlowNodes(architectureData.diagram_nodes) : [];
   const rfEdges = architectureData ? buildReactFlowEdges(architectureData.diagram_edges) : [];
 
-  const activeTabContent = (() => {
-    if (!architectureData) return '';
-    switch (designActiveTab) {
-      case 'terraform': return architectureData.terraform_outline;
-      case 'k8s': return architectureData.k8s_manifests;
-      case 'cicd': return architectureData.cicd_pipeline;
-      default: return '';
-    }
-  })();
-
-  const activeTabLang = designActiveTab === 'k8s' || designActiveTab === 'cicd' ? 'yaml' : 'hcl';
-
   return (
     <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
-      {/* Left: input */}
+      {/* Left: input panel */}
       <div
         style={{
           width: '300px',
@@ -183,8 +227,8 @@ export function DesignMode() {
         <textarea
           value={designInput}
           onChange={(e) => setDesignInput(e.target.value)}
-          placeholder="Describe your system requirements, e.g. 'E-commerce platform with 100k daily users, auto-scaling, multi-AZ, Redis caching'..."
-          rows={6}
+          placeholder="Describe your system — e.g. 'Real-time analytics platform handling 500k events/sec, high availability, disaster recovery across two data centres, PostgreSQL with read replicas, Redis caching layer'..."
+          rows={7}
           style={{
             width: '100%',
             background: 'var(--bg-base)',
@@ -202,11 +246,42 @@ export function DesignMode() {
           onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
         />
 
+        {/* Cloud / Platform */}
+        <div>
+          <label style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
+            Cloud / Platform
+          </label>
+          <input
+            type="text"
+            value={designCloud}
+            onChange={(e) => setDesignCloud(e.target.value)}
+            placeholder="e.g. AWS, GCP, Azure, on-premise, bare metal…"
+            style={{
+              width: '100%',
+              background: 'var(--bg-base)',
+              border: '1px solid var(--border)',
+              borderRadius: '5px',
+              color: 'var(--text-primary)',
+              fontSize: '13px',
+              padding: '7px 10px',
+              outline: 'none',
+              fontFamily: 'inherit',
+            }}
+            onFocus={(e) => (e.target.style.borderColor = 'var(--border-focus)')}
+            onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
+          />
+          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: 4 }}>
+            Leave blank for cloud-neutral recommendations
+          </p>
+        </div>
+
         {/* Budget slider */}
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
             <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>Monthly Budget</span>
-            <span style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 600 }}>${designBudget.toLocaleString()}</span>
+            <span style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 600 }}>
+              {designBudget === 0 ? 'No limit' : `$${designBudget.toLocaleString()}`}
+            </span>
           </div>
           <input
             type="range"
@@ -218,35 +293,13 @@ export function DesignMode() {
             style={{ width: '100%', accentColor: 'var(--accent)' }}
           />
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
-            <span>$0</span><span>$10k</span>
+            <span>No limit</span><span>$10k/mo</span>
           </div>
-        </div>
-
-        {/* Region */}
-        <div>
-          <label style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '6px' }}>Region</label>
-          <select
-            value={designRegion}
-            onChange={(e) => setDesignRegion(e.target.value)}
-            style={{
-              width: '100%',
-              background: 'var(--bg-base)',
-              border: '1px solid var(--border)',
-              borderRadius: '5px',
-              color: 'var(--text-primary)',
-              fontSize: '13px',
-              padding: '6px 10px',
-              outline: 'none',
-              fontFamily: 'inherit',
-            }}
-          >
-            {REGIONS.map((r) => <option key={r}>{r}</option>)}
-          </select>
         </div>
 
         {/* Compliance */}
         <div>
-          <label style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '8px' }}>Compliance</label>
+          <label style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '8px' }}>Compliance Requirements</label>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {COMPLIANCE_OPTIONS.map((c) => {
               const checked = designCompliance.includes(c);
@@ -273,6 +326,7 @@ export function DesignMode() {
         )}
 
         <button
+          type="button"
           onClick={handleDesign}
           disabled={isDesigning || !designInput.trim()}
           style={{
@@ -296,22 +350,26 @@ export function DesignMode() {
         </button>
       </div>
 
-      {/* Right: diagram + artifacts */}
+      {/* Right: diagram + analysis */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Empty state */}
         {!architectureData && !isDesigning && (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '12px', color: 'var(--text-muted)' }}>
             <Compass size={40} style={{ opacity: 0.3 }} />
             <p style={{ fontSize: '14px' }}>Describe your requirements and click Design Architecture</p>
+            <p style={{ fontSize: '12px', maxWidth: 420, textAlign: 'center', lineHeight: 1.6 }}>
+              Works with any cloud, on-premise, bare metal, or hybrid setup.
+              Specify a platform above for targeted recommendations, or leave it blank for cloud-neutral advice.
+            </p>
           </div>
         )}
 
         {/* Loading */}
         {isDesigning && !architectureData && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', padding: '24px' }}>
-            <p style={{ color: 'var(--accent)', fontSize: '13px' }}>● Generating architecture...</p>
-            {[300, 200, 250, 180, 220].map((w, i) => (
-              <div key={i} className="skeleton" style={{ height: '16px', width: `${w}px`, maxWidth: '100%' }} />
+            <p style={{ color: 'var(--accent)', fontSize: '13px' }}>● Designing architecture...</p>
+            {[320, 260, 290, 200, 240, 180].map((w, i) => (
+              <div key={i} className="skeleton" style={{ height: '14px', width: `${w}px`, maxWidth: '100%' }} />
             ))}
           </div>
         )}
@@ -326,16 +384,17 @@ export function DesignMode() {
               </ReactFlow>
             </div>
 
-            {/* Artifact tabs */}
+            {/* Tabs */}
             <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
               {DESIGN_TABS.map((tab) => {
                 const active = designActiveTab === tab.id;
                 return (
                   <button
                     key={tab.id}
+                    type="button"
                     onClick={() => setDesignActiveTab(tab.id)}
                     style={{
-                      padding: '8px 16px',
+                      padding: '8px 20px',
                       background: 'transparent',
                       border: 'none',
                       borderBottom: active ? '2px solid var(--accent)' : '2px solid transparent',
@@ -351,38 +410,42 @@ export function DesignMode() {
               })}
             </div>
 
-            {/* Artifact content */}
-            <div style={{ flex: 1, overflow: 'hidden', padding: '12px' }}>
-              {designActiveTab === 'cost' ? (
+            {/* Tab content */}
+            <div style={{ flex: 1, overflow: 'hidden', padding: '16px' }}>
+              {designActiveTab === 'architecture' ? (
+                <ArchitectureExplanation text={architectureData.architecture_explanation} />
+              ) : (
                 <div style={{ overflow: 'auto', height: '100%' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ background: 'var(--bg-surface)' }}>
-                        {['Service', 'Monthly Cost', 'Description'].map((h) => (
+                        {['Component', 'Est. Monthly Cost', 'Notes'].map((h) => (
                           <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border)' }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {architectureData.cost_breakdown.map((row, i) => (
-                        <tr key={i}>
-                          <td style={{ padding: '8px 12px', fontSize: '13px', color: 'var(--text-primary)', borderBottom: '1px solid var(--border)' }}>{row.service}</td>
-                          <td style={{ padding: '8px 12px', fontSize: '13px', color: 'var(--accent)', fontWeight: 600, borderBottom: '1px solid var(--border)' }}>${row.monthly}/mo</td>
-                          <td style={{ padding: '8px 12px', fontSize: '13px', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>{row.description}</td>
+                        <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td style={{ padding: '9px 12px', fontSize: '13px', color: 'var(--text-primary)' }}>{row.service}</td>
+                          <td style={{ padding: '9px 12px', fontSize: '13px', color: 'var(--accent)', fontWeight: 600 }}>
+                            {row.monthly === 0 ? 'Variable' : `$${row.monthly.toLocaleString()}/mo`}
+                          </td>
+                          <td style={{ padding: '9px 12px', fontSize: '13px', color: 'var(--text-secondary)' }}>{row.description}</td>
                         </tr>
                       ))}
                       <tr style={{ background: 'var(--bg-surface)' }}>
-                        <td style={{ padding: '8px 12px', fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>Total</td>
-                        <td style={{ padding: '8px 12px', fontSize: '13px', fontWeight: 700, color: 'var(--success)' }}>
-                          ${architectureData.cost_breakdown.reduce((s, r) => s + r.monthly, 0)}/mo
+                        <td style={{ padding: '9px 12px', fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>Total estimate</td>
+                        <td style={{ padding: '9px 12px', fontSize: '13px', fontWeight: 700, color: 'var(--success)' }}>
+                          ${architectureData.cost_breakdown.reduce((s, r) => s + r.monthly, 0).toLocaleString()}/mo
                         </td>
-                        <td />
+                        <td style={{ padding: '9px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                          Costs are estimates. Actual pricing depends on provider, region, and usage.
+                        </td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
-              ) : (
-                <CodeBlock content={activeTabContent} language={activeTabLang} filename={designActiveTab} />
               )}
             </div>
           </>
