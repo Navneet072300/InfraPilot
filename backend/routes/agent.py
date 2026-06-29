@@ -106,8 +106,17 @@ async def _pipeline_gen(req: PipelineRequest, run_id: str | None = None) -> Asyn
     ai = AIService()
     cfg = settings.load_config()
     gh_cfg = cfg.get("github", {})
-    pat = req.github_pat or gh_cfg.get("pat")
-    username = req.github_username or gh_cfg.get("username")
+    # Prefer what the frontend sent, fall back to unified_store (DB), then JSON config
+    pat = req.github_pat or None
+    username = req.github_username or None
+    if not pat:
+        try:
+            from config.unified_store import get_platform_setting as _gps
+            pat = await _gps("github.pat") or gh_cfg.get("pat")
+            username = username or await _gps("github.username") or gh_cfg.get("username")
+        except Exception:
+            pat = gh_cfg.get("pat")
+            username = username or gh_cfg.get("username")
     gitops_repo = req.gitops_repo or req.repo_url
     registry = req.registry or "ghcr.io"
     app = req.app_name

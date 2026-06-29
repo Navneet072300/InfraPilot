@@ -167,7 +167,7 @@ export function ReposPage() {
       setGatedRepo(repo);
       return;
     }
-    navigate(`/app/pipeline?repo=${encodeURIComponent(repo.clone_url)}`);
+    navigate(`/app/pipeline?repo=${encodeURIComponent(repo.clone_url)}${repo.private ? '&private=true' : ''}`);
   }
 
   const repos = data?.repos ?? [];

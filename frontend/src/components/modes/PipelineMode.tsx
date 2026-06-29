@@ -1,6 +1,6 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Rocket, Search, Play, Pause, RotateCcw, CheckCircle2, AlertCircle, Loader2, Upload, X } from 'lucide-react';
+import { Rocket, Search, Play, Pause, RotateCcw, CheckCircle2, AlertCircle, Loader2, Upload, X, KeyRound, ExternalLink } from 'lucide-react';
 import { useAgent } from '../../hooks/useAgent';
 import { useClusterStore } from '../../store/clusterStore';
 import { TaskList } from '../shared/TaskList';
@@ -50,13 +50,14 @@ function parseEnvFile(content: string): Record<string, string> {
   return result;
 }
 
-function IntakeForm({ onAnalyze, initialRepoUrl = '' }: { onAnalyze: (cfg: Omit<PipelineConfig, 'analysis' | 'clarifications'>) => void; initialRepoUrl?: string }) {
+function IntakeForm({ onAnalyze, initialRepoUrl = '', initialPrivate = false }: { onAnalyze: (cfg: Omit<PipelineConfig, 'analysis' | 'clarifications'>) => void; initialRepoUrl?: string; initialPrivate?: boolean }) {
   const { clusters, activeCluster } = useClusterStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [savedCreds, setSavedCreds] = useState<{ username: string; hasPat: boolean } | null>(null);
   const [form, setForm] = useState({
     app_name: '',
     repo_url: initialRepoUrl,
-    private_repo: false,
+    private_repo: initialPrivate,
     gitops_repo: '',
     gitops_same: true,
     gitops_path: '/deployments',
@@ -72,6 +73,18 @@ function IntakeForm({ onAnalyze, initialRepoUrl = '' }: { onAnalyze: (cfg: Omit<
     env_file_name: '',
     rotate_vault_secret: false,
   });
+
+  // Load saved GitHub credentials once on mount
+  useEffect(() => {
+    fetch('/api/settings/platform')
+      .then((r) => r.json())
+      .then((data) => {
+        const pat = data?.github?.pat ?? '';
+        const username = data?.github?.username ?? '';
+        if (pat) setSavedCreds({ username, hasPat: true });
+      })
+      .catch(() => {});
+  }, []);
 
   const inputStyle = {
     width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border)',
@@ -136,14 +149,42 @@ function IntakeForm({ onAnalyze, initialRepoUrl = '' }: { onAnalyze: (cfg: Omit<
         </div>
 
         {form.private_repo && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', padding: '12px', background: 'var(--bg-hover)', borderRadius: '6px' }}>
-            <Field label="GitHub Username">
-              <input value={form.github_username} onChange={(e) => setForm((f) => ({ ...f, github_username: e.target.value }))} placeholder="octocat" style={inputStyle} />
-            </Field>
-            <Field label="Personal Access Token">
-              <input type="password" value={form.github_pat} onChange={(e) => setForm((f) => ({ ...f, github_pat: e.target.value }))} placeholder="ghp_..." style={inputStyle} />
-            </Field>
-          </div>
+          savedCreds?.hasPat ? (
+            /* Saved credentials detected — no manual entry needed */
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.2)', borderRadius: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(52,211,153,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <KeyRound size={14} style={{ color: 'var(--success)' }} />
+                </div>
+                <div>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--success)', margin: 0 }}>GitHub credentials saved</p>
+                  {savedCreds.username && (
+                    <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '2px 0 0' }}>
+                      Deploying as <strong style={{ color: 'var(--text-secondary)' }}>{savedCreds.username}</strong>
+                    </p>
+                  )}
+                </div>
+              </div>
+              <a href="/app/settings" style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-muted)', textDecoration: 'none' }}>
+                Change <ExternalLink size={10} />
+              </a>
+            </div>
+          ) : (
+            /* No saved credentials — show manual fields with settings link */
+            <div style={{ padding: '12px', background: 'var(--bg-hover)', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <Field label="GitHub Username">
+                  <input value={form.github_username} onChange={(e) => setForm((f) => ({ ...f, github_username: e.target.value }))} placeholder="octocat" style={inputStyle} />
+                </Field>
+                <Field label="Personal Access Token">
+                  <input type="password" value={form.github_pat} onChange={(e) => setForm((f) => ({ ...f, github_pat: e.target.value }))} placeholder="ghp_..." style={inputStyle} />
+                </Field>
+              </div>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>
+                Or <a href="/app/settings" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>save your PAT in Settings</a> once and never enter it again.
+              </p>
+            </div>
+          )
         )}
 
         <div>
@@ -409,6 +450,7 @@ function AnalysisCard({ analysis, onConfirm, onBack }: { analysis: RepoAnalysis 
 export function PipelineMode() {
   const [searchParams] = useSearchParams();
   const initialRepoUrl = searchParams.get('repo') ?? '';
+  const initialPrivate = searchParams.get('private') === 'true';
 
   const [phase, setPhase] = useState<Phase>('intake');
   const [pipelineCfg, setPipelineCfg] = useState<PipelineConfig | null>(null);
@@ -525,7 +567,7 @@ export function PipelineMode() {
 
       {/* Main content */}
       <div style={{ flex: 1, overflow: 'auto', padding: '24px 20px', display: 'flex', justifyContent: phase === 'running' || phase === 'done' ? 'flex-start' : 'center' }}>
-        {phase === 'intake' && <IntakeForm onAnalyze={handleAnalyze} initialRepoUrl={initialRepoUrl} />}
+        {phase === 'intake' && <IntakeForm onAnalyze={handleAnalyze} initialRepoUrl={initialRepoUrl} initialPrivate={initialPrivate} />}
 
         {phase === 'analyzing' && (
           <AnalysisCard analysis={analyzing ? null : analysis} onConfirm={() => setPhase('ready')} onBack={() => setPhase('intake')} />
