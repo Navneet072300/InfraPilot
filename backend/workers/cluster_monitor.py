@@ -120,7 +120,7 @@ async def poll_all_clusters():
     try:
         clusters = await unified_store.list_clusters(masked=False)
     except Exception as e:
-        logger.debug("Monitor: could not list clusters: %s", e)
+        logger.info("Monitor: could not list clusters: %s", e)
         return
 
     active = [c for c in clusters if c.get("active")]
@@ -137,21 +137,33 @@ async def _safe_poll_cluster(cluster: dict):
     try:
         await poll_cluster(cluster)
     except Exception as e:
-        logger.debug("Monitor: cluster %s poll failed: %s", cluster.get("name"), e)
+        logger.info("Monitor: cluster %s poll failed: %s", cluster.get("name"), e)
 
 
 async def poll_cluster(cluster: dict):
     svc = KubernetesService(cluster)
 
-    # Fetch in parallel — fail gracefully per resource type
-    results = await asyncio.gather(
-        _safe_get_pods(svc),
-        _safe_get_nodes(svc),
-        return_exceptions=True,
-    )
+    # Get all namespaces first, then fetch pods across all of them
+    try:
+        namespaces = await svc.get_namespaces()
+    except Exception:
+        namespaces = ["default"]
 
-    pods = results[0] if not isinstance(results[0], Exception) else []
-    nodes = results[1] if not isinstance(results[1], Exception) else []
+    logger.info("Monitor: polling cluster %s — %d namespaces", cluster.get("name"), len(namespaces))
+
+    # Fetch pods from all namespaces + nodes in parallel
+    pod_tasks = [_safe_get_pods(svc, ns) for ns in namespaces]
+    results = await asyncio.gather(*pod_tasks, _safe_get_nodes(svc), return_exceptions=True)
+
+    # Flatten pods from all namespaces
+    pods: list[dict] = []
+    for r in results[:-1]:
+        if isinstance(r, list):
+            pods.extend(r)
+
+    nodes = results[-1] if isinstance(results[-1], list) else []
+
+    logger.info("Monitor: cluster %s — %d pods, %d nodes", cluster.get("name"), len(pods), len(nodes))
 
     await check_pods(cluster, pods)
     await check_nodes(cluster, nodes)
@@ -160,17 +172,19 @@ async def poll_cluster(cluster: dict):
     await check_recoveries(cluster, pods, nodes)
 
 
-async def _safe_get_pods(svc: KubernetesService) -> list[dict]:
+async def _safe_get_pods(svc: KubernetesService, namespace: str = "default") -> list[dict]:
     try:
-        return await svc.get_pods("default") or []
-    except Exception:
+        return await svc.get_pods(namespace) or []
+    except Exception as e:
+        logger.debug("Monitor: get_pods(%s) failed: %s", namespace, e)
         return []
 
 
 async def _safe_get_nodes(svc: KubernetesService) -> list[dict]:
     try:
         return await svc.get_nodes() or []
-    except Exception:
+    except Exception as e:
+        logger.debug("Monitor: get_nodes failed: %s", e)
         return []
 
 
@@ -199,15 +213,31 @@ async def check_pods(cluster: dict, pods: list[dict]):
 async def check_nodes(cluster: dict, nodes: list[dict]):
     for node in nodes:
         status = node.get("status", "Ready")
-        if status != "Ready":
+        name = node.get("name", "")
+        if status == "NotReady":
             await handle_new_issue(cluster, {
                 "issue_type": "NodeNotReady",
                 "severity": "critical",
                 "title": "Node not ready",
                 "resource_type": "node",
-                "resource_name": node.get("name", ""),
+                "resource_name": name,
                 "namespace": None,
             })
+        # Check pressure conditions returned by get_nodes
+        for condition, label, sev in [
+            ("memory_pressure", "Node memory pressure", "high"),
+            ("disk_pressure", "Node disk pressure", "high"),
+            ("pid_pressure", "Node PID pressure", "medium"),
+        ]:
+            if node.get(condition):
+                await handle_new_issue(cluster, {
+                    "issue_type": condition.replace("_", " ").title().replace(" ", ""),
+                    "severity": sev,
+                    "title": label,
+                    "resource_type": "node",
+                    "resource_name": name,
+                    "namespace": None,
+                })
 
 
 async def check_recoveries(cluster: dict, pods: list[dict], nodes: list[dict]):

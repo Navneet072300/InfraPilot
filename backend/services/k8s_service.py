@@ -419,10 +419,8 @@ class KubernetesService:
                 spec = item.get("spec", {})
                 status = item.get("status", {})
                 conditions = status.get("conditions", [])
-                ready = next(
-                    (c["status"] == "True" for c in conditions if c["type"] == "Ready"),
-                    False,
-                )
+                cond_map = {c["type"]: c["status"] == "True" for c in conditions}
+                ready = cond_map.get("Ready", False)
                 labels = meta.get("labels", {})
                 roles = [
                     k.split("/")[1]
@@ -439,6 +437,9 @@ class KubernetesService:
                     "cpu_capacity": capacity.get("cpu", ""),
                     "memory_capacity": capacity.get("memory", ""),
                     "os": status.get("nodeInfo", {}).get("osImage", ""),
+                    "memory_pressure": cond_map.get("MemoryPressure", False),
+                    "disk_pressure": cond_map.get("DiskPressure", False),
+                    "pid_pressure": cond_map.get("PIDPressure", False),
                 })
             return nodes
         except Exception:
