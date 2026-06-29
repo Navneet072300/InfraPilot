@@ -1014,12 +1014,6 @@ function ConnectedPlatformsTab() {
   const expiryDays = daysUntil(patExpiry);
   const envColor = (env: string) => env === 'prod' ? V.red : env === 'staging' ? V.yellow : V.green;
 
-  const STUBS = [
-    { icon: <Shield size={18} />, title: 'HashiCorp Vault', desc: 'Secret management and dynamic credentials.' },
-    { icon: <Server size={18} />, title: 'ArgoCD', desc: 'GitOps continuous delivery for Kubernetes.' },
-    { icon: <Cloud size={18} />, title: 'Cloudflare', desc: 'Tunnel + DNS management.' },
-    { icon: <Database size={18} />, title: 'Grafana', desc: 'Metrics dashboards and alerting.' },
-  ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -1235,21 +1229,6 @@ function ConnectedPlatformsTab() {
         )}
       </SectionCard>
 
-      {/* Stubs */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-        {STUBS.map(({ icon, title, desc }) => (
-          <div key={title} style={{ background: V.bg, border: `1px solid ${V.border}`, borderRadius: 10, padding: '0.875rem', opacity: 0.65 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <span style={{ color: V.muted }}>{icon}</span>
-                <span style={{ color: V.text, fontWeight: 600, fontSize: '0.875rem' }}>{title}</span>
-              </div>
-              <span title="Real integration coming soon" style={{ background: 'rgba(210,153,34,0.15)', color: V.yellow, borderRadius: 4, padding: '1px 6px', fontSize: '0.68rem', fontWeight: 700 }}>STUBBED</span>
-            </div>
-            <p style={{ color: V.muted, fontSize: '0.775rem', margin: 0 }}>{desc}</p>
-          </div>
-        ))}
-      </div>
 
       {/* Cluster modals */}
       {modal === 'add' && <ClusterForm onSave={(data) => createMut.mutate(data)} onClose={() => setModal(null)} loading={createMut.isPending} error={mutErr} />}
