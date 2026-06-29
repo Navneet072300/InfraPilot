@@ -42,6 +42,39 @@ class GitHubService:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def list_repos(self, per_page: int = 100, page: int = 1) -> dict:
+        """List all repos (public + private) the authenticated user can access."""
+        try:
+            client = self._client()
+            user = client.get_user()
+            repos = user.get_repos(sort="updated", direction="desc")
+            result = []
+            start = (page - 1) * per_page
+            for i, repo in enumerate(repos):
+                if i < start:
+                    continue
+                if len(result) >= per_page:
+                    break
+                result.append({
+                    "id": repo.id,
+                    "name": repo.name,
+                    "full_name": repo.full_name,
+                    "description": repo.description or "",
+                    "private": repo.private,
+                    "url": repo.html_url,
+                    "clone_url": repo.clone_url,
+                    "default_branch": repo.default_branch,
+                    "language": repo.language or "",
+                    "stars": repo.stargazers_count,
+                    "forks": repo.forks_count,
+                    "updated_at": repo.updated_at.isoformat() if repo.updated_at else "",
+                    "topics": repo.get_topics(),
+                })
+            return {"repos": result, "page": page, "has_more": len(result) == per_page}
+        except Exception as e:
+            logger.error("list_repos error: %s", e)
+            return {"repos": [], "error": str(e)}
+
     def analyze_repo(self, repo_url: str) -> dict:
         """Inspect a repo via GitHub API to detect language, Dockerfile, manifests, etc."""
         try:

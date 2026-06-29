@@ -385,7 +385,7 @@ async def github_auth():
     url = (
         "https://github.com/login/oauth/authorize"
         f"?client_id={GITHUB_CLIENT_ID}&redirect_uri={GITHUB_REDIRECT_URI}"
-        f"&scope=user:email&state={state}"
+        f"&scope=user:email,repo&state={state}"
     )
     return RedirectResponse(url)
 
@@ -454,10 +454,18 @@ async def github_callback(code: str, state: str = "", request: Request = None):
                 await session.commit()
                 await session.refresh(user)
 
+        # Persist the GitHub access token so the app can list repos
+        try:
+            from config import unified_store as _us
+            await _us.set_platform_setting("github.pat", access_token)
+            await _us.set_platform_setting("github.username", gh_user.get("login", ""))
+        except Exception as _e:
+            logger.warning("Could not persist GitHub token: %s", _e)
+
         token = create_access_token({"sub": str(user.id)})
         await _record_session(user.id, token, request)
         await audit_service.log(user.id, primary_email, "login", "github")
-        logger.info("GitHub OAuth login: email=%s", primary_email)
+        logger.info("GitHub OAuth login: email=%s user=%s", primary_email, gh_user.get("login"))
         redirect = RedirectResponse(f"{FRONTEND_URL}/auth/callback", status_code=302)
         _set_session_cookie(redirect, token)
         return redirect

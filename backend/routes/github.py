@@ -60,3 +60,10 @@ async def push_files(body: PushRequest):
 async def validate_token(body: ValidateRequest):
     gh = GitHubService(pat=body.pat, username=body.username)
     return gh.validate()
+
+
+@router.get("/github/repos")
+async def list_repos(per_page: int = 100, page: int = 1):
+    """List all repos (public + private) for the authenticated GitHub user."""
+    gh = _get_github()
+    return gh.list_repos(per_page=per_page, page=page)
