@@ -143,7 +143,6 @@ function SetupGuide({ title, onSaved }: { title: string; onSaved: (t: string) =>
 
 export function GitHubPATSetup({ onTokenSaved, existingToken, daysUntilExpiry, connectedUsername, repoCount, tokenAddedDaysAgo }: Props) {
   const [rotating, setRotating] = useState(false);
-  const [removing, setRemoving] = useState(false);
 
   if (existingToken && !rotating) {
     const expiringSoon = daysUntilExpiry !== null && daysUntilExpiry !== undefined && daysUntilExpiry < 14;
@@ -205,7 +204,6 @@ export function GitHubPATSetup({ onTokenSaved, existingToken, daysUntilExpiry, c
             type="button"
             onClick={() => {
               if (confirm('Remove GitHub connection?')) {
-                setRemoving(true);
                 onTokenSaved('');
               }
             }}
