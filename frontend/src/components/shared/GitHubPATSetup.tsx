@@ -41,8 +41,8 @@ function SetupGuide({ title, onSaved }: { title: string; onSaved: (t: string) =>
         body: JSON.stringify({ pat: token }),
       });
       const data = await r.json();
-      if (data.valid) {
-        setTestResult({ ok: true, msg: 'Connected successfully' });
+      if (data.success || data.valid) {
+        setTestResult({ ok: true, msg: `Connected${data.username ? ` as @${data.username}` : ' successfully'}` });
         onSaved(token);
       } else {
         setTestResult({ ok: false, msg: data.error || 'Token invalid or missing repo/workflow scopes' });
