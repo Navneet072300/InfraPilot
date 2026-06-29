@@ -959,7 +959,7 @@ function ConnectedPlatformsTab() {
       if (username) setPatUsername(username);
       setPatSaving(true);
       // Save PAT and username — check that each write succeeded
-      const [pr, ur] = await Promise.all([
+      const [pr] = await Promise.all([
         fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.pat', value: token }) }),
         username ? fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.username', value: username }) }) : Promise.resolve(new Response('{}', { status: 200 })),
       ]);
