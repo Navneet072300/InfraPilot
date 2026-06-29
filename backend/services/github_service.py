@@ -42,44 +42,50 @@ class GitHubService:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def list_repos(self, per_page: int = 100, page: int = 1) -> dict:
-        """List all repos (public + private) the authenticated user can access."""
+    async def list_repos_async(self, per_page: int = 50, page: int = 1) -> dict:
+        """List repos using async httpx — avoids blocking the event loop."""
         if not self._pat:
             return {"repos": [], "auth_required": True, "error": "No GitHub token configured. Go to Settings → GitHub and add a Personal Access Token."}
+        headers = {
+            "Authorization": f"Bearer {self._pat}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        import httpx
         try:
-            client = self._client()
-            user = client.get_user()
-            repos = user.get_repos(sort="updated", direction="desc")
-            result = []
-            start = (page - 1) * per_page
-            for i, repo in enumerate(repos):
-                if i < start:
-                    continue
-                if len(result) >= per_page:
-                    break
-                result.append({
-                    "id": repo.id,
-                    "name": repo.name,
-                    "full_name": repo.full_name,
-                    "description": repo.description or "",
-                    "private": repo.private,
-                    "url": repo.html_url,
-                    "clone_url": repo.clone_url,
-                    "default_branch": repo.default_branch,
-                    "language": repo.language or "",
-                    "stars": repo.stargazers_count,
-                    "forks": repo.forks_count,
-                    "updated_at": repo.updated_at.isoformat() if repo.updated_at else "",
-                    "topics": repo.get_topics(),
-                })
-            return {"repos": result, "page": page, "has_more": len(result) == per_page}
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                resp = await client.get(
+                    "https://api.github.com/user/repos",
+                    headers=headers,
+                    params={"per_page": per_page, "page": page, "sort": "updated", "direction": "desc", "affiliation": "owner,collaborator,organization_member"},
+                )
+            if resp.status_code == 401:
+                return {"repos": [], "auth_required": True, "error": "GitHub token is expired or missing repo scope. Add a new PAT in Settings → GitHub."}
+            if resp.status_code != 200:
+                return {"repos": [], "error": f"GitHub API error {resp.status_code}: {resp.text[:200]}"}
+            raw = resp.json()
+            result = [
+                {
+                    "id": r["id"],
+                    "name": r["name"],
+                    "full_name": r["full_name"],
+                    "description": r.get("description") or "",
+                    "private": r["private"],
+                    "url": r["html_url"],
+                    "clone_url": r["clone_url"],
+                    "default_branch": r.get("default_branch", "main"),
+                    "language": r.get("language") or "",
+                    "stars": r.get("stargazers_count", 0),
+                    "forks": r.get("forks_count", 0),
+                    "updated_at": r.get("updated_at", ""),
+                    "topics": r.get("topics", []),
+                }
+                for r in raw
+            ]
+            return {"repos": result, "page": page, "has_more": len(raw) == per_page}
         except Exception as e:
             logger.error("list_repos error: %s", e)
-            msg = str(e)
-            # 401 means token is expired, revoked, or missing repo scope
-            if "401" in msg or "Bad credentials" in msg or "Requires authentication" in msg:
-                return {"repos": [], "auth_required": True, "error": "GitHub token is expired or missing repo scope. Sign out and sign back in, or add a new PAT in Settings → GitHub."}
-            return {"repos": [], "error": msg}
+            return {"repos": [], "error": str(e)}
 
     def analyze_repo(self, repo_url: str) -> dict:
         """Inspect a repo via GitHub API to detect language, Dockerfile, manifests, etc."""

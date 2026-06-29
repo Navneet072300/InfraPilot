@@ -75,4 +75,4 @@ async def list_repos(per_page: int = 100, page: int = 1):
         pat = gh_cfg.get("pat")
         username = username or gh_cfg.get("username")
     gh = GitHubService(pat=pat or None, username=username or None)
-    return gh.list_repos(per_page=per_page, page=page)
+    return await gh.list_repos_async(per_page=per_page, page=page)
