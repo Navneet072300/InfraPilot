@@ -1003,7 +1003,7 @@ function ConnectedPlatformsTab() {
           </div>
           {/* Generate PAT button — top right */}
           <a
-            href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=InfraPilot"
+            href="https://github.com/settings/tokens/new?scopes=repo,workflow,write:packages&description=InfraPilot"
             target="_blank"
             rel="noopener noreferrer"
             style={{

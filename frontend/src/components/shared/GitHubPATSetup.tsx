@@ -62,7 +62,7 @@ function SetupGuide({ title, onSaved }: { title: string; onSaved: (t: string) =>
       </p>
 
       <a
-        href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=InfraPilot"
+        href="https://github.com/settings/tokens/new?scopes=repo,workflow,write:packages&description=InfraPilot"
         target="_blank"
         rel="noopener noreferrer"
         style={{
