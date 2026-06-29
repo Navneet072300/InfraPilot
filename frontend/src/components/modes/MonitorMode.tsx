@@ -443,6 +443,15 @@ function IssuesPanel({ incidents, summary }: { incidents: Incident[]; summary?: 
     qc.invalidateQueries({ queryKey: ['incidents'] });
   }
 
+  async function handleResolve(id: string, what: string) {
+    await fetch(`/api/incidents/${id}/fix-manual`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ what_changed: what || 'Manually resolved', verification: '' }),
+    });
+    qc.invalidateQueries({ queryKey: ['incidents'] });
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Summary cards */}
@@ -556,6 +565,13 @@ function IssuesPanel({ incidents, summary }: { incidents: Incident[]; summary?: 
                   </div>
                 )}
               </div>
+              <button
+                type="button"
+                onClick={() => handleResolve(inc.id, inc.title)}
+                style={{ padding: '5px 12px', background: 'rgba(87,171,90,0.12)', border: '1px solid var(--success)', borderRadius: 5, color: 'var(--success)', fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}
+              >
+                <CheckCircle2 size={11} /> Mark Resolved
+              </button>
             </div>
           </div>
         );
