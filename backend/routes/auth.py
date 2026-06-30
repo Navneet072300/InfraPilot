@@ -456,14 +456,19 @@ async def github_callback(code: str, state: str = "", request: Request = None):
                 await session.commit()
                 await session.refresh(user)
 
-        # Persist the GitHub access token so the app can list repos
+        # Persist the GitHub access token so the app can list repos.
+        # Never overwrite a manually saved PAT — the OAuth token has narrower
+        # scopes and no expiry header, which would wipe the stored expiry date.
         try:
             from config import unified_store as _us
             from routes.settings import _fetch_pat_expiry
-            await _us.set_platform_setting("github.pat", access_token)
             await _us.set_platform_setting("github.username", gh_user.get("login", ""))
-            expiry = await _fetch_pat_expiry(access_token)
-            await _us.set_platform_setting("github.pat_expires_at", expiry or "")
+            existing_pat = await _us.get_platform_setting("github.pat")
+            if not existing_pat:
+                await _us.set_platform_setting("github.pat", access_token)
+                expiry = await _fetch_pat_expiry(access_token)
+                if expiry:
+                    await _us.set_platform_setting("github.pat_expires_at", expiry)
         except Exception as _e:
             logger.warning("Could not persist GitHub token: %s", _e)
 
