@@ -23,6 +23,7 @@ import { useClusterStore } from './store/clusterStore';
 import { useAuthStore } from './store/authStore';
 import { UserTypeScreen } from './components/shared/UserTypeScreen';
 import { useThemeStore } from './store/themeStore';
+import { ToastContainer } from './components/shared/ToastContainer';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -140,6 +141,7 @@ export default function App() {
       <BrowserRouter>
         <AuthProvider>
         <ConfigLoader>
+          <ToastContainer />
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/login"  element={<RedirectIfAuthed><LoginPage /></RedirectIfAuthed>} />

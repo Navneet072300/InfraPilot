@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { CheckCircle2, ExternalLink, Eye, EyeOff, RefreshCw, Trash2 } from 'lucide-react';
+import { toast } from '../../store/toastStore';
 
 interface Props {
   onTokenSaved: (token: string) => void;
@@ -186,8 +187,10 @@ export function GitHubPATSetup({ onTokenSaved, existingToken, daysUntilExpiry, c
                   body: JSON.stringify({ pat: existingToken }),
                 });
                 const d = await r.json();
-                alert(d.valid ? '✓ Connection is working' : `✗ ${d.error}`);
-              } catch { alert('Connection test failed'); }
+                d.valid
+                  ? toast.success('Connection working', 'GitHub PAT is valid and authenticated.')
+                  : toast.error('Connection failed', d.error ?? 'PAT validation returned an error.');
+              } catch { toast.error('Connection test failed', 'Could not reach the validation endpoint.'); }
             }}
             style={{ padding: '5px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-secondary)', fontSize: 11, cursor: 'pointer' }}
           >
