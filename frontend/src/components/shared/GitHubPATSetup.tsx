@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CheckCircle2, ExternalLink, Eye, EyeOff, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from '../../store/toastStore';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface Props {
   onTokenSaved: (token: string) => void;
@@ -144,6 +145,7 @@ function SetupGuide({ title, onSaved }: { title: string; onSaved: (t: string) =>
 
 export function GitHubPATSetup({ onTokenSaved, existingToken, daysUntilExpiry, connectedUsername, repoCount, tokenAddedDaysAgo }: Props) {
   const [rotating, setRotating] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   if (existingToken && !rotating) {
     const expiringSoon = daysUntilExpiry !== null && daysUntilExpiry !== undefined && daysUntilExpiry < 14;
@@ -205,15 +207,21 @@ export function GitHubPATSetup({ onTokenSaved, existingToken, daysUntilExpiry, c
           </button>
           <button
             type="button"
-            onClick={() => {
-              if (confirm('Remove GitHub connection?')) {
-                onTokenSaved('');
-              }
-            }}
+            onClick={() => setConfirmRemove(true)}
             style={{ padding: '5px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--error)', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
           >
             <Trash2 size={11} /> Remove
           </button>
+          {confirmRemove && (
+            <ConfirmDialog
+              title="Remove GitHub connection?"
+              message="This will delete your saved PAT. You will need to reconnect to access private repositories."
+              confirmLabel="Remove"
+              danger
+              onConfirm={() => { setConfirmRemove(false); onTokenSaved(''); }}
+              onCancel={() => setConfirmRemove(false)}
+            />
+          )}
         </div>
       </div>
     );

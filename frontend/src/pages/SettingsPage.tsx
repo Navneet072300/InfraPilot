@@ -17,6 +17,7 @@ import type {
   TeamMember, TeamInvite, AuditEntry,
 } from '../types/settings';
 import { DEFAULT_NOTIF_PREFS } from '../types/settings';
+import { ConfirmDialog } from '../components/shared/ConfirmDialog';
 
 const V = {
   bg: 'var(--bg-base)', surface: 'var(--bg-surface)', border: 'var(--border)',
@@ -892,6 +893,7 @@ function ConnectedPlatformsTab() {
   const [showPat, setShowPat] = useState(false);
   const [editingPat, setEditingPat] = useState(false);
   const [deletingPat, setDeletingPat] = useState(false);
+  const [confirmDeletePat, setConfirmDeletePat] = useState(false);
 
   const { data: clusters = [], isLoading } = useQuery({
     queryKey: ['settings-clusters'],
@@ -995,7 +997,6 @@ function ConnectedPlatformsTab() {
   }
 
   async function deletePat() {
-    if (!confirm('Remove the saved GitHub token?')) return;
     setDeletingPat(true);
     try {
       await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.pat', value: '' }) });
@@ -1072,12 +1073,22 @@ function ConnectedPlatformsTab() {
                 </button>
                 <button
                   type="button"
-                  onClick={deletePat}
+                  onClick={() => setConfirmDeletePat(true)}
                   disabled={deletingPat}
                   style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: 'transparent', border: `1px solid ${V.border}`, borderRadius: 6, color: V.red, fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
                 >
                   {deletingPat ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Trash2 size={12} />} Delete
                 </button>
+                {confirmDeletePat && (
+                  <ConfirmDialog
+                    title="Remove GitHub token?"
+                    message="Your saved PAT will be deleted. You will need to reconnect to access private repositories."
+                    confirmLabel="Delete"
+                    danger
+                    onConfirm={() => { setConfirmDeletePat(false); deletePat(); }}
+                    onCancel={() => setConfirmDeletePat(false)}
+                  />
+                )}
               </div>
             </div>
             {expiryDays !== null && (
