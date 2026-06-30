@@ -1,17 +1,17 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
-/* ── Dark theme (default) — softer, eye-soothing ── */
+/* ── Dark theme (default) — mid-dark, easy on the eyes ── */
 :root,
 [data-theme="dark"] {
-  --bg-base:       #111117;
-  --bg-surface:    #18181f;
-  --bg-hover:      #20202a;
-  --border:        #2c2c3c;
+  --bg-base:       #1c1c26;
+  --bg-surface:    #23232f;
+  --bg-hover:      #2a2a38;
+  --border:        #38384e;
   --border-focus:  #818cf8;
-  --text-primary:  #e4e4ef;
-  --text-secondary:#9090aa;
-  --text-muted:    #5c5c78;
+  --text-primary:  #eaeaf4;
+  --text-secondary:#9898b8;
+  --text-muted:    #65657e;
   --accent:        #818cf8;
   --accent-glow:   rgba(129, 140, 248, 0.15);
   --success:       #34d399;
