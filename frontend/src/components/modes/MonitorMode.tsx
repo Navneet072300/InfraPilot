@@ -399,10 +399,11 @@ function UsageBar({ pct, color }: { pct: number; color: string }) {
 // ─── Issues panel ────────────────────────────────────────────────────────────
 
 const SEV_COLOR_MAP: Record<string, string> = {
-  critical: 'var(--error)',
-  high: '#f97316',
-  medium: 'var(--warning)',
-  low: 'var(--info, #60a5fa)',
+  all:      '#818cf8',
+  critical: '#f87171',
+  high:     '#f97316',
+  medium:   '#fbbf24',
+  low:      '#60a5fa',
 };
 const SEV_ICON_MAP: Record<string, React.ReactNode> = {
   critical: <AlertOctagon size={10} />,
@@ -477,7 +478,7 @@ function IssuesPanel({ incidents, summary }: { incidents: Incident[]; summary?: 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {['all', 'critical', 'high', 'medium', 'low'].map((sev) => {
-          const col = SEV_COLOR_MAP[sev] || 'var(--accent)';
+          const col = SEV_COLOR_MAP[sev];
           const active = sevFilter === sev;
           return (
             <button
