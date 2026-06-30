@@ -14,26 +14,26 @@ import type { ArchitectureData } from '../../types';
 
 // Generic service-type colours — no cloud vendor names
 const NODE_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-  loadbalancer:  { bg: '#1f1810', border: '#f97316', text: '#fdba74' },
-  lb:            { bg: '#1f1810', border: '#f97316', text: '#fdba74' },
-  compute:       { bg: '#0f1b2e', border: '#3b82f6', text: '#93c5fd' },
-  server:        { bg: '#0f1b2e', border: '#3b82f6', text: '#93c5fd' },
-  kubernetes:    { bg: '#0f1b2e', border: '#60a5fa', text: '#bfdbfe' },
-  container:     { bg: '#0f1b2e', border: '#60a5fa', text: '#bfdbfe' },
-  database:      { bg: '#0d1f18', border: '#22c55e', text: '#86efac' },
-  db:            { bg: '#0d1f18', border: '#22c55e', text: '#86efac' },
-  cache:         { bg: '#1f1520', border: '#a855f7', text: '#d8b4fe' },
-  storage:       { bg: '#1a1a0e', border: '#eab308', text: '#fde047' },
-  cdn:           { bg: '#1f1010', border: '#ef4444', text: '#fca5a5' },
-  network:       { bg: '#0a1a2e', border: '#0ea5e9', text: '#7dd3fc' },
-  vpc:           { bg: '#0a1a2e', border: '#0ea5e9', text: '#7dd3fc' },
-  vnet:          { bg: '#0a1a2e', border: '#0ea5e9', text: '#7dd3fc' },
-  gateway:       { bg: '#1f1a10', border: '#f59e0b', text: '#fcd34d' },
-  queue:         { bg: '#10181f', border: '#06b6d4', text: '#67e8f9' },
-  monitoring:    { bg: '#1a1020', border: '#ec4899', text: '#f9a8d4' },
-  dns:           { bg: '#1a1a2e', border: '#818cf8', text: '#c7d2fe' },
-  firewall:      { bg: '#1f100a', border: '#fb923c', text: '#fed7aa' },
-  default:       { bg: '#1a1a2e', border: '#6366f1', text: '#a5b4fc' },
+  loadbalancer:  { bg: 'color-mix(in srgb, #f97316 10%, var(--bg-surface))', border: '#f97316', text: '#f97316' },
+  lb:            { bg: 'color-mix(in srgb, #f97316 10%, var(--bg-surface))', border: '#f97316', text: '#f97316' },
+  compute:       { bg: 'color-mix(in srgb, #3b82f6 10%, var(--bg-surface))', border: '#3b82f6', text: '#3b82f6' },
+  server:        { bg: 'color-mix(in srgb, #3b82f6 10%, var(--bg-surface))', border: '#3b82f6', text: '#3b82f6' },
+  kubernetes:    { bg: 'color-mix(in srgb, #60a5fa 10%, var(--bg-surface))', border: '#60a5fa', text: '#60a5fa' },
+  container:     { bg: 'color-mix(in srgb, #60a5fa 10%, var(--bg-surface))', border: '#60a5fa', text: '#60a5fa' },
+  database:      { bg: 'color-mix(in srgb, var(--success) 10%, var(--bg-surface))', border: 'var(--success)', text: 'var(--success)' },
+  db:            { bg: 'color-mix(in srgb, var(--success) 10%, var(--bg-surface))', border: 'var(--success)', text: 'var(--success)' },
+  cache:         { bg: 'color-mix(in srgb, #a855f7 10%, var(--bg-surface))', border: '#a855f7', text: '#a855f7' },
+  storage:       { bg: 'color-mix(in srgb, #eab308 10%, var(--bg-surface))', border: '#eab308', text: '#eab308' },
+  cdn:           { bg: 'color-mix(in srgb, var(--error) 10%, var(--bg-surface))', border: 'var(--error)', text: 'var(--error)' },
+  network:       { bg: 'color-mix(in srgb, #0ea5e9 10%, var(--bg-surface))', border: '#0ea5e9', text: '#0ea5e9' },
+  vpc:           { bg: 'color-mix(in srgb, #0ea5e9 10%, var(--bg-surface))', border: '#0ea5e9', text: '#0ea5e9' },
+  vnet:          { bg: 'color-mix(in srgb, #0ea5e9 10%, var(--bg-surface))', border: '#0ea5e9', text: '#0ea5e9' },
+  gateway:       { bg: 'color-mix(in srgb, var(--warning) 10%, var(--bg-surface))', border: 'var(--warning)', text: 'var(--warning)' },
+  queue:         { bg: 'color-mix(in srgb, #06b6d4 10%, var(--bg-surface))', border: '#06b6d4', text: '#06b6d4' },
+  monitoring:    { bg: 'color-mix(in srgb, #ec4899 10%, var(--bg-surface))', border: '#ec4899', text: '#ec4899' },
+  dns:           { bg: 'color-mix(in srgb, var(--accent) 10%, var(--bg-surface))', border: 'var(--accent)', text: 'var(--accent)' },
+  firewall:      { bg: 'color-mix(in srgb, #fb923c 10%, var(--bg-surface))', border: '#fb923c', text: '#fb923c' },
+  default:       { bg: 'color-mix(in srgb, var(--accent) 10%, var(--bg-surface))', border: 'var(--accent)', text: 'var(--accent)' },
 };
 
 const COMPLIANCE_OPTIONS = ['PCI DSS', 'SOC 2', 'HIPAA', 'ISO 27001', 'FedRAMP', 'GDPR'];
@@ -49,7 +49,7 @@ function buildReactFlowNodes(nodes: ArchitectureData['diagram_nodes']): Node[] {
           <div style={{ textAlign: 'center', padding: '4px' }}>
             <div style={{ fontSize: '11px', fontWeight: 700, color: colors.text }}>{n.label}</div>
             {n.costPerMonth > 0 && (
-              <div style={{ fontSize: '10px', color: '#888', marginTop: '2px' }}>${n.costPerMonth}/mo</div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>${n.costPerMonth}/mo</div>
             )}
           </div>
         ),
@@ -71,8 +71,8 @@ function buildReactFlowEdges(edges: ArchitectureData['diagram_edges']): Edge[] {
     source: e.source,
     target: e.target,
     label: e.label,
-    style: { stroke: '#4f46e5', strokeWidth: 1.5 },
-    labelStyle: { fill: '#8b8b9e', fontSize: 10 },
+    style: { stroke: 'var(--accent)', strokeWidth: 1.5 },
+    labelStyle: { fill: 'var(--text-muted)', fontSize: 10 },
   }));
 }
 
@@ -379,7 +379,7 @@ export function DesignMode() {
             {/* React Flow diagram */}
             <div style={{ height: '360px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
               <ReactFlow nodes={rfNodes} edges={rfEdges} fitView>
-                <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#2a2a35" />
+                <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--border)" />
                 <Controls style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }} />
               </ReactFlow>
             </div>

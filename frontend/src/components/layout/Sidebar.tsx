@@ -35,10 +35,10 @@ const RESOURCES: NavItem[] = [
 
 const PLAN_LABEL: Record<Plan, string> = { free: 'Free', pro: 'Pro', team: 'Team', enterprise: 'Enterprise' };
 const PLAN_COLOR: Record<Plan, string> = {
-  free: '#8b949e',
-  pro: '#58a6ff',
-  team: '#bc8cff',
-  enterprise: '#bc8cff',
+  free: 'var(--text-secondary)',
+  pro: 'var(--accent)',
+  team: 'var(--accent)',
+  enterprise: 'var(--accent)',
 };
 
 interface Props {
@@ -182,7 +182,7 @@ export function Sidebar({ collapsed, onToggle }: Props) {
         ) : (
           /* Expanded: IP logo + name + collapse button */
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0 14px', width: '100%' }}>
-            <div style={{ width: '24px', height: '24px', borderRadius: '6px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 800, color: '#fff', flexShrink: 0 }}>
+            <div style={{ width: '24px', height: '24px', borderRadius: '6px', background: 'linear-gradient(135deg, var(--accent), #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 800, color: '#fff', flexShrink: 0 }}>
               IP
             </div>
             <span style={{ fontWeight: 800, fontSize: '14px', letterSpacing: '-0.01em', flex: 1 }}>InfraPilot</span>
@@ -228,7 +228,7 @@ export function Sidebar({ collapsed, onToggle }: Props) {
             <div
               style={{
                 width: 32, height: 32, borderRadius: '50%',
-                background: avatar ? 'transparent' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                background: avatar ? 'transparent' : 'linear-gradient(135deg, var(--accent), #8b5cf6)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: '11px', fontWeight: 700, color: '#fff',
                 overflow: 'hidden',

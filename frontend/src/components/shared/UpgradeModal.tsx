@@ -3,9 +3,9 @@ import { X, Check, ChevronRight, Compass, Activity, Bot, Shield, Key, Users, Fil
 import type { PlanFeature } from '../../types';
 
 const V = {
-  bg: '#0a0a0f', surface: '#141419', border: '#2a2a35',
-  text: '#e6edf3', muted: '#8b949e', accent: '#4f46e5',
-  accentLight: '#6366f1', green: '#3fb950', red: '#f85149',
+  bg: 'var(--bg-base)', surface: 'var(--bg-surface)', border: 'var(--border)',
+  text: 'var(--text-primary)', muted: 'var(--text-secondary)', accent: 'var(--accent)',
+  accentLight: 'var(--accent)', green: 'var(--success)', red: 'var(--error)',
 } as const;
 
 const PLAN_PRICE: Record<string, { monthly: number; annual: number }> = {

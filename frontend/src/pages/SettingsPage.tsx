@@ -19,9 +19,9 @@ import type {
 import { DEFAULT_NOTIF_PREFS } from '../types/settings';
 
 const V = {
-  bg: '#0d1117', surface: '#161b22', border: '#30363d',
-  text: '#e6edf3', muted: '#8b949e', accent: '#58a6ff',
-  green: '#3fb950', red: '#f85149', yellow: '#d29922', purple: '#bc8cff',
+  bg: 'var(--bg-base)', surface: 'var(--bg-surface)', border: 'var(--border)',
+  text: 'var(--text-primary)', muted: 'var(--text-secondary)', accent: 'var(--accent)',
+  green: 'var(--success)', red: 'var(--error)', yellow: 'var(--warning)', purple: 'var(--accent)',
 } as const;
 
 type Tab = 'general' | 'security' | 'platforms' | 'notifications' | 'ai' | 'billing' | 'team' | 'audit';
@@ -285,7 +285,7 @@ function GeneralTab() {
   const [form, setForm] = useState<GeneralSettings>({
     name: user?.name || '',
     email: user?.email || '',
-    avatar_color: user?.avatar_color || '#6366f1',
+    avatar_color: user?.avatar_color || 'var(--accent)',
     timezone: 'UTC',
     default_environment: 'dev',
     default_iac_tool: 'terraform',
@@ -324,7 +324,7 @@ function GeneralTab() {
     }
   }
 
-  const AVATAR_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#58a6ff'];
+  const AVATAR_COLORS = ['var(--accent)', '#8b5cf6', '#ec4899', 'var(--error)', '#f97316', '#eab308', 'var(--success)', '#06b6d4', 'var(--accent)'];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -501,7 +501,7 @@ function passwordStrength(pw: string): { score: 0 | 1 | 2 | 3 | 4; label: string
   if (/[0-9]/.test(pw)) score++;
   if (/[^A-Za-z0-9]/.test(pw)) score++;
   const labels = ['', 'Weak', 'Fair', 'Strong', 'Very Strong'];
-  const colors = ['', V.red, V.yellow, '#3fb950', '#58a6ff'];
+  const colors = ['', V.red, V.yellow, 'var(--success)', 'var(--accent)'];
   return { score: score as 0 | 1 | 2 | 3 | 4, label: labels[score], color: colors[score] };
 }
 
@@ -1871,7 +1871,7 @@ export default function SettingsPage() {
       <div style={{
         width: 200, flexShrink: 0, borderRight: `1px solid ${V.border}`,
         padding: '1.5rem 0.75rem', display: 'flex', flexDirection: 'column', gap: 2,
-        background: '#0a0a0f',
+        background: 'var(--bg-base)',
       }}>
         <div style={{ color: V.muted, fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '0.75rem', paddingLeft: '0.5rem' }}>
           Settings

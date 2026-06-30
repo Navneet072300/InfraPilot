@@ -15,10 +15,10 @@ const TOOLS = ['Terraform', 'Kubernetes', 'Ansible', 'CDK', 'Pulumi'];
 const CONTEXT_PILLS = ['AWS', 'Azure', 'GCP', 'Terraform', 'High Availability', 'Multi-AZ', 'Kubernetes'];
 
 const EXT_COLOR: Record<string, string> = {
-  tf: '#bc8cff', hcl: '#bc8cff',
+  tf: 'var(--accent)', hcl: 'var(--accent)',
   yaml: 'var(--accent)', yml: 'var(--accent)',
-  json: '#d2a679',
-  md: '#f59e0b',
+  json: 'var(--warning)',
+  md: 'var(--warning)',
   sh: 'var(--success)',
   py: '#ffa657',
 };
@@ -137,7 +137,7 @@ function MarkdownView({ content }: { content: string }) {
     } else if (line.startsWith('# ')) {
       elems.push(<h1 key={i} style={{ fontSize: 16, color: 'var(--text-primary)', margin: '20px 0 10px', borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>{renderInline(line.slice(2))}</h1>);
     } else if (line.startsWith('## ')) {
-      elems.push(<h2 key={i} style={{ fontSize: 13, color: '#f59e0b', margin: '16px 0 8px', fontWeight: 700 }}>{renderInline(line.slice(3))}</h2>);
+      elems.push(<h2 key={i} style={{ fontSize: 13, color: 'var(--warning)', margin: '16px 0 8px', fontWeight: 700 }}>{renderInline(line.slice(3))}</h2>);
     } else if (line.startsWith('### ')) {
       elems.push(<h3 key={i} style={{ fontSize: 12, color: 'var(--text-primary)', margin: '12px 0 6px', fontWeight: 600 }}>{renderInline(line.slice(4))}</h3>);
     } else if (/^\d+\. /.test(line)) {
@@ -174,7 +174,7 @@ function FileTreeNode({ node, depth, activeTab, onSelect, open, toggleOpen }: {
           onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
           onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
           {isOpen ? <ChevronDown size={11} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} /> : <ChevronRight size={11} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />}
-          {isOpen ? <FolderOpen size={13} style={{ color: '#d2a679', flexShrink: 0 }} /> : <Folder size={13} style={{ color: '#d2a679', flexShrink: 0 }} />}
+          {isOpen ? <FolderOpen size={13} style={{ color: 'var(--warning)', flexShrink: 0 }} /> : <Folder size={13} style={{ color: 'var(--warning)', flexShrink: 0 }} />}
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.name}</span>
         </button>
         {isOpen && node.children.map(c => <FileTreeNode key={c.path} node={c} depth={depth + 1} activeTab={activeTab} onSelect={onSelect} open={open} toggleOpen={toggleOpen} />)}
@@ -423,7 +423,7 @@ export function GenerateMode() {
 
         {/* Empty state */}
         {!hasFiles && !isGenerating && (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#484f58', gap: 10 }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', gap: 10 }}>
             <Sparkles size={42} style={{ opacity: 0.15 }} />
             <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Describe your infrastructure and click Generate</p>
             <p style={{ fontSize: 12 }}>Supports Terraform · Kubernetes · Ansible · CDK · Pulumi</p>
@@ -510,7 +510,7 @@ export function GenerateMode() {
               const guide = generatedFiles.find(f => f.path === 'guideme.md');
               if (guide) setActiveFileTab('guideme.md');
             }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
-              <FileText size={13} style={{ color: '#f59e0b' }} /> Implement Myself
+              <FileText size={13} style={{ color: 'var(--warning)' }} /> Implement Myself
             </button>
             <button type="button" onClick={() => setShowCredModal(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 6, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 0 12px var(--accent-glow)' }}>
               <Zap size={13} /> Auto-Implement

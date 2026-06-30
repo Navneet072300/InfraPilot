@@ -23,7 +23,7 @@ function FreeUsageChip() {
   const limit = 50;
   const remaining = Math.max(0, limit - used);
   const pct = (used / limit) * 100;
-  const color = pct >= 90 ? '#f85149' : pct >= 70 ? '#d29922' : '#3fb950';
+  const color = pct >= 90 ? 'var(--error)' : pct >= 70 ? 'var(--warning)' : 'var(--success)';
 
   return (
     <button

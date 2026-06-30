@@ -23,20 +23,20 @@ export function AppLayout({ children }: Props) {
       {/* Demo mode banner */}
       {isDemoMode && (
         <div style={{ background: 'rgba(210,153,34,0.12)', borderBottom: '1px solid rgba(210,153,34,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '6px 16px', flexShrink: 0 }}>
-          <span style={{ fontSize: 12, color: '#d29922', fontWeight: 600 }}>
+          <span style={{ fontSize: 12, color: 'var(--warning)', fontWeight: 600 }}>
             👁 Demo Mode — data is mocked, nothing is saved
           </span>
           <button
             type="button"
             onClick={() => navigate('/signup')}
-            style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: '#d29922', border: 'none', borderRadius: 5, padding: '3px 10px', cursor: 'pointer' }}
+            style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: 'var(--warning)', border: 'none', borderRadius: 5, padding: '3px 10px', cursor: 'pointer' }}
           >
             Sign up free
           </button>
           <button
             type="button"
             onClick={exitDemo}
-            style={{ fontSize: 11, color: '#8b949e', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+            style={{ fontSize: 11, color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
           >
             Exit demo
           </button>

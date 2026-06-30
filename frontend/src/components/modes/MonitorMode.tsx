@@ -27,7 +27,7 @@ interface Incident {
 // ─── Demo data (cost/drift) ───────────────────────────────────────────────────
 const SPEND_DATA = [
   { service: 'EC2', monthly: 842, color: '#f97316' },
-  { service: 'RDS', monthly: 380, color: '#22c55e' },
+  { service: 'RDS', monthly: 380, color: 'var(--success)' },
   { service: 'EKS', monthly: 320, color: '#3b82f6' },
   { service: 'CloudFront', monthly: 185, color: '#a855f7' },
   { service: 'S3', monthly: 43, color: '#eab308' },
@@ -123,7 +123,7 @@ function TokenFixForm({ cluster, onClose, onSaved }: TokenFixFormProps) {
     }
   }
 
-  const V = { border: '#30363d', surface: '#1c2128', bg: '#0d1117', text: '#e6edf3', muted: '#8b949e', accent: '#58a6ff', green: '#3fb950', red: '#f85149', yellow: '#d29922' };
+  const V = { border: 'var(--border)', surface: 'var(--bg-surface)', bg: 'var(--bg-base)', text: 'var(--text-primary)', muted: 'var(--text-secondary)', accent: 'var(--accent)', green: 'var(--success)', red: 'var(--error)', yellow: 'var(--warning)' };
 
   return (
     <div style={{ background: V.bg, border: `1px solid ${V.border}`, borderRadius: 10, padding: '1rem', marginTop: '0.5rem' }}>
@@ -247,7 +247,7 @@ function ClusterHealthCard({ cluster }: { cluster: ClusterConfig }) {
   const tokenExpired = !healthy && isTokenError(health?.error);
   const errorMsg = health?.error;
 
-  const envColor = cluster.environment === 'prod' ? '#f85149' : cluster.environment === 'staging' ? '#d29922' : '#3fb950';
+  const envColor = cluster.environment === 'prod' ? 'var(--error)' : cluster.environment === 'staging' ? 'var(--warning)' : 'var(--success)';
 
   function handleSaved() {
     qc.invalidateQueries({ queryKey: ['monitor-health', cluster.name] });
@@ -272,8 +272,8 @@ function ClusterHealthCard({ cluster }: { cluster: ClusterConfig }) {
                 width: 12,
                 height: 12,
                 borderRadius: '50%',
-                background: healthy === undefined ? 'var(--border)' : healthy ? '#3fb950' : '#f85149',
-                boxShadow: healthy ? '0 0 6px #3fb95066' : healthy === false ? '0 0 6px #f8514966' : 'none',
+                background: healthy === undefined ? 'var(--border)' : healthy ? 'var(--success)' : 'var(--error)',
+                boxShadow: healthy ? '0 0 6px var(--success)66' : healthy === false ? '0 0 6px var(--error)66' : 'none',
               }} />
             )}
           </div>
@@ -283,7 +283,7 @@ function ClusterHealthCard({ cluster }: { cluster: ClusterConfig }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
               <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '13px' }}>{cluster.name}</span>
               {cluster.active && (
-                <span style={{ background: 'rgba(88,166,255,0.12)', color: '#58a6ff', borderRadius: '4px', padding: '1px 6px', fontSize: '10px', fontWeight: 700 }}>ACTIVE</span>
+                <span style={{ background: 'rgba(88,166,255,0.12)', color: 'var(--accent)', borderRadius: '4px', padding: '1px 6px', fontSize: '10px', fontWeight: 700 }}>ACTIVE</span>
               )}
               <span style={{ background: `${envColor}18`, color: envColor, borderRadius: '4px', padding: '1px 6px', fontSize: '10px', fontWeight: 600 }}>{cluster.environment.toUpperCase()}</span>
             </div>
@@ -305,7 +305,7 @@ function ClusterHealthCard({ cluster }: { cluster: ClusterConfig }) {
               </button>
             )}
             <button type="button" onClick={() => setShowFix(!showFix)} title={tokenExpired ? 'Fix Token' : 'Edit Credentials'}
-              style={{ padding: '4px 8px', background: tokenExpired ? 'rgba(248,81,73,0.1)' : 'transparent', border: `1px solid ${tokenExpired ? '#f85149' : 'var(--border)'}`, borderRadius: '5px', color: tokenExpired ? '#f85149' : 'var(--text-muted)', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: tokenExpired ? 600 : 400 }}>
+              style={{ padding: '4px 8px', background: tokenExpired ? 'rgba(248,81,73,0.1)' : 'transparent', border: `1px solid ${tokenExpired ? 'var(--error)' : 'var(--border)'}`, borderRadius: '5px', color: tokenExpired ? 'var(--error)' : 'var(--text-muted)', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: tokenExpired ? 600 : 400 }}>
               {tokenExpired ? (
                 <><ShieldAlert size={12} /> Fix Token</>
               ) : (
@@ -335,13 +335,13 @@ function ClusterHealthCard({ cluster }: { cluster: ClusterConfig }) {
       {/* Delete confirmation */}
       {deleteConfirm && (
         <div style={{ margin: '0 12px 12px', background: 'rgba(248,81,73,0.06)', border: '1px solid rgba(248,81,73,0.35)', borderRadius: 8, padding: '10px 14px' }}>
-          <p style={{ fontSize: '12px', fontWeight: 600, color: '#f85149', margin: '0 0 4px' }}>Remove cluster?</p>
+          <p style={{ fontSize: '12px', fontWeight: 600, color: 'var(--error)', margin: '0 0 4px' }}>Remove cluster?</p>
           <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '0 0 10px', lineHeight: 1.5 }}>
             <strong style={{ color: 'var(--text-primary)' }}>{cluster.name}</strong> will be removed from InfraPilot. This cannot be undone.
           </p>
           <div style={{ display: 'flex', gap: 6 }}>
             <button type="button" disabled={deleting} onClick={handleDelete}
-              style={{ flex: 1, padding: '5px', background: '#f85149', border: 'none', borderRadius: 5, color: '#fff', fontSize: '11px', fontWeight: 600, cursor: 'pointer', opacity: deleting ? 0.6 : 1 }}>
+              style={{ flex: 1, padding: '5px', background: 'var(--error)', border: 'none', borderRadius: 5, color: '#fff', fontSize: '11px', fontWeight: 600, cursor: 'pointer', opacity: deleting ? 0.6 : 1 }}>
               {deleting ? 'Removing…' : 'Remove'}
             </button>
             <button type="button" onClick={() => setDeleteConfirm(false)}

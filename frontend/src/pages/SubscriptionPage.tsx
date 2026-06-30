@@ -3,9 +3,9 @@ import { Check, X, ChevronDown, ChevronUp, Zap, Shield, Users, Building2, Credit
 import { useProfileStore } from '../store/profileStore';
 
 const V = {
-  bg: '#0a0a0f', surface: '#141419', surface2: '#1a1a21', border: '#2a2a35',
-  text: 'var(--text-primary)', muted: 'var(--text-secondary)', accent: '#4f46e5', accentLight: '#6366f1',
-  green: 'var(--success)', red: 'var(--error)', yellow: 'var(--warning)', purple: '#bc8cff',
+  bg: 'var(--bg-base)', surface: 'var(--bg-surface)', surface2: '#1a1a21', border: 'var(--border)',
+  text: 'var(--text-primary)', muted: 'var(--text-secondary)', accent: 'var(--accent)', accentLight: 'var(--accent)',
+  green: 'var(--success)', red: 'var(--error)', yellow: 'var(--warning)', purple: 'var(--accent)',
 } as const;
 
 type BillingCycle = 'monthly' | 'annual';

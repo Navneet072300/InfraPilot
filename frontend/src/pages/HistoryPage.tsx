@@ -21,15 +21,15 @@ interface AuditResponse {
 }
 
 const ACTION_LABELS: Record<string, { label: string; color: string; bg: string }> = {
-  'pipeline.run':       { label: 'Pipeline',   color: '#a78bfa', bg: 'rgba(167,139,250,0.12)' },
-  'pipeline.abort':     { label: 'Pipeline',   color: '#a78bfa', bg: 'rgba(167,139,250,0.12)' },
+  'pipeline.run':       { label: 'Pipeline',   color: 'var(--accent)', bg: 'rgba(167,139,250,0.12)' },
+  'pipeline.abort':     { label: 'Pipeline',   color: 'var(--accent)', bg: 'rgba(167,139,250,0.12)' },
   'diagnose':           { label: 'Diagnose',   color: '#38bdf8', bg: 'rgba(56,189,248,0.12)' },
   'kubectl':            { label: 'Kubectl',    color: '#fb923c', bg: 'rgba(251,146,60,0.12)' },
   'login':              { label: 'Auth',       color: '#94a3b8', bg: 'rgba(148,163,184,0.1)' },
   'logout':             { label: 'Auth',       color: '#94a3b8', bg: 'rgba(148,163,184,0.1)' },
   'password.changed':   { label: 'Account',   color: '#94a3b8', bg: 'rgba(148,163,184,0.1)' },
-  '2fa.enabled':        { label: 'Security',  color: '#34d399', bg: 'rgba(52,211,153,0.1)'  },
-  '2fa.disabled':       { label: 'Security',  color: '#f87171', bg: 'rgba(248,113,113,0.1)' },
+  '2fa.enabled':        { label: 'Security',  color: 'var(--success)', bg: 'rgba(52,211,153,0.1)'  },
+  '2fa.disabled':       { label: 'Security',  color: 'var(--error)', bg: 'rgba(248,113,113,0.1)' },
 };
 
 const ACTION_FILTERS = [

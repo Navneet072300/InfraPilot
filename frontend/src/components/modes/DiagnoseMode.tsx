@@ -18,7 +18,7 @@ import type {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const SEV_COLOR: Record<string, string> = {
-  critical: '#f85149', high: '#f97316', medium: '#f0b429', low: '#57ab5a',
+  critical: 'var(--error)', high: 'var(--warning)', medium: 'var(--warning)', low: 'var(--success)',
 };
 const SEV_BG: Record<string, string> = {
   critical: 'rgba(248,81,73,0.12)', high: 'rgba(249,115,22,0.12)',
@@ -60,10 +60,10 @@ function CopyBtn({ text, small }: { text: string; small?: boolean }) {
 }
 
 function ConfBar({ pct }: { pct: number }) {
-  const c = pct >= 50 ? '#f97316' : pct >= 30 ? '#f0b429' : 'var(--text-muted)';
+  const c = pct >= 50 ? 'var(--warning)' : pct >= 30 ? 'var(--warning)' : 'var(--text-muted)';
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <div style={{ flex: 1, height: 3, background: '#21262d', borderRadius: 2, overflow: 'hidden' }}>
+      <div style={{ flex: 1, height: 3, background: 'var(--bg-hover)', borderRadius: 2, overflow: 'hidden' }}>
         <div style={{ width: `${pct}%`, height: '100%', background: c, borderRadius: 2 }} />
       </div>
       <span style={{ fontSize: 10, color: c, fontWeight: 600, minWidth: 28, textAlign: 'right' }}>{pct}%</span>
@@ -75,13 +75,13 @@ function CmdBlock({
   command, onRun, running,
 }: { command: string; onRun?: () => void; running?: boolean }) {
   return (
-    <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 6, margin: '6px 0', overflow: 'hidden' }}>
-      <pre style={{ margin: 0, padding: '8px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#e6edf3', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{command}</pre>
-      <div style={{ borderTop: '1px solid #21262d', padding: '4px 8px', display: 'flex', gap: 5 }}>
+    <div style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 6, margin: '6px 0', overflow: 'hidden' }}>
+      <pre style={{ margin: 0, padding: '8px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--text-primary)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{command}</pre>
+      <div style={{ borderTop: '1px solid var(--bg-hover)', padding: '4px 8px', display: 'flex', gap: 5 }}>
         <CopyBtn text={command} />
         {onRun && (
           <button type="button" onClick={onRun} disabled={running}
-            style={{ background: running ? 'transparent' : '#1f6feb', border: running ? '1px solid var(--border)' : 'none', borderRadius: 4, color: running ? 'var(--text-muted)' : '#fff', cursor: running ? 'not-allowed' : 'pointer', padding: '1px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
+            style={{ background: running ? 'transparent' : 'var(--accent)', border: running ? '1px solid var(--border)' : 'none', borderRadius: 4, color: running ? 'var(--text-muted)' : '#fff', cursor: running ? 'not-allowed' : 'pointer', padding: '1px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
           >
             {running ? <><Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} /> Running…</> : <><Terminal size={9} /> Run</>}
           </button>
@@ -101,7 +101,7 @@ function CauseCard({ cause, status, onStatusChange, onRunCommand, sessionId }: {
   sessionId: string | null;
 }) {
   const [open, setOpen] = useState(false);
-  const sc = { investigating: 'var(--text-muted)', confirmed: 'var(--success)', ruled_out: '#484f58' };
+  const sc = { investigating: 'var(--text-muted)', confirmed: 'var(--success)', ruled_out: 'var(--text-muted)' };
   const sl = { investigating: '⟳ Investigating', confirmed: '✓ Confirmed', ruled_out: '✗ Ruled out' };
 
   const handleStatus = async (s: CauseStatus) => {
@@ -115,7 +115,7 @@ function CauseCard({ cause, status, onStatusChange, onRunCommand, sessionId }: {
   };
 
   return (
-    <div style={{ border: `1px solid ${status === 'confirmed' ? 'rgba(87,171,90,0.5)' : status === 'ruled_out' ? '#21262d' : 'var(--border)'}`, borderRadius: 8, overflow: 'hidden', opacity: status === 'ruled_out' ? 0.45 : 1, transition: 'all 0.2s' }}>
+    <div style={{ border: `1px solid ${status === 'confirmed' ? 'rgba(87,171,90,0.5)' : status === 'ruled_out' ? 'var(--bg-hover)' : 'var(--border)'}`, borderRadius: 8, overflow: 'hidden', opacity: status === 'ruled_out' ? 0.45 : 1, transition: 'all 0.2s' }}>
       <div onClick={() => setOpen(o => !o)} style={{ padding: '10px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg-surface)', userSelect: 'none' }}>
         <div style={{ width: 7, height: 7, borderRadius: '50%', background: sc[status], flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -144,7 +144,7 @@ function CauseCard({ cause, status, onStatusChange, onRunCommand, sessionId }: {
           )}
           {cause.if_ruled_out && (
             <div style={{ padding: '7px 10px', background: 'rgba(72,79,88,0.15)', borderRadius: 5, borderLeft: '2px solid #484f58' }}>
-              <span style={{ fontSize: 10, color: '#6e7681', fontWeight: 700 }}>If ruled out: </span>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700 }}>If ruled out: </span>
               <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{cause.if_ruled_out}</span>
             </div>
           )}
@@ -188,7 +188,7 @@ function FixStepCard({ step, done, onDone, onRunCommand }: {
           )}
           {step.if_different && (
             <div style={{ marginTop: 4, padding: '5px 9px', background: 'rgba(240,180,41,0.07)', borderRadius: 5 }}>
-              <span style={{ fontSize: 10, color: '#f0b429', fontWeight: 700 }}>If different: </span>
+              <span style={{ fontSize: 10, color: 'var(--warning)', fontWeight: 700 }}>If different: </span>
               <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{step.if_different}</span>
             </div>
           )}
@@ -208,7 +208,7 @@ function CommandConfirmModal({ command, onConfirm, onCancel }: {
   command: string; onConfirm: () => void; onCancel: () => void;
 }) {
   const risk = getCommandRisk(command);
-  const riskColor = risk === 'destructive' ? '#f85149' : risk === 'write' ? '#f0b429' : 'var(--success)';
+  const riskColor = risk === 'destructive' ? 'var(--error)' : risk === 'write' ? 'var(--warning)' : 'var(--success)';
   const riskLabel = risk === 'destructive' ? 'DESTRUCTIVE' : risk === 'write' ? 'WRITE' : 'READ';
 
   return (
@@ -220,7 +220,7 @@ function CommandConfirmModal({ command, onConfirm, onCancel }: {
           <span style={{ marginLeft: 'auto', padding: '2px 8px', borderRadius: 100, background: `${riskColor}22`, border: `1px solid ${riskColor}`, color: riskColor, fontSize: 10, fontWeight: 700 }}>{riskLabel}</span>
         </div>
         <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12 }}>This command will run on your connected cluster:</p>
-        <pre style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 6, padding: '10px 14px', fontSize: 12, color: '#e6edf3', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: '0 0 20px' }}>{command}</pre>
+        <pre style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 14px', fontSize: 12, color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: '0 0 20px' }}>{command}</pre>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button type="button" onClick={onCancel}
             style={{ padding: '8px 18px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', fontSize: 13, cursor: 'pointer' }}>
@@ -513,7 +513,7 @@ function SREChatPanel({ sessionId, headerData, causes, causeStatuses }: {
               {msg.commandOutput && (
                 <div style={{ marginTop: 8 }}>
                   <p style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>Output:</p>
-                  <pre style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 5, padding: '6px 10px', fontSize: 10, color: '#7ee787', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'pre-wrap', margin: 0, maxHeight: 200, overflow: 'auto' }}>{msg.commandOutput}</pre>
+                  <pre style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 5, padding: '6px 10px', fontSize: 10, color: '#7ee787', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'pre-wrap', margin: 0, maxHeight: 200, overflow: 'auto' }}>{msg.commandOutput}</pre>
                 </div>
               )}
             </div>
@@ -799,7 +799,7 @@ export function DiagnoseMode() {
                         return (
                           <div key={pod.name} onClick={() => setSelectedPod(pod.name)}
                             style={{ padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, background: isSel ? 'rgba(99,102,241,0.1)' : 'transparent', borderLeft: isSel ? '2px solid var(--accent)' : '2px solid transparent' }}>
-                            <div style={{ width: 6, height: 6, borderRadius: '50%', background: isRun ? 'var(--success)' : pod.status === 'Pending' ? '#f0b429' : 'var(--error)', flexShrink: 0 }} />
+                            <div style={{ width: 6, height: 6, borderRadius: '50%', background: isRun ? 'var(--success)' : pod.status === 'Pending' ? 'var(--warning)' : 'var(--error)', flexShrink: 0 }} />
                             <span style={{ fontSize: 10, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{pod.name}</span>
                             {pod.restarts > 3 && <span style={{ fontSize: 9, background: 'rgba(248,81,73,0.15)', color: 'var(--error)', padding: '0 4px', borderRadius: 3 }}>{pod.restarts}</span>}
                             <span style={{ fontSize: 9, color: isRun ? 'var(--success)' : 'var(--error)' }}>{pod.status}</span>
@@ -951,7 +951,7 @@ export function DiagnoseMode() {
             {causes.length > 0 && (
               <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
                 <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <AlertCircle size={13} style={{ color: '#f0b429' }} />
+                  <AlertCircle size={13} style={{ color: 'var(--warning)' }} />
                   <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
                     Possible Causes{analyzing ? ' — Investigating…' : ` — ${causes.length} identified`}
                   </span>

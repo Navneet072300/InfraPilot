@@ -224,7 +224,7 @@ function TaskCard({ task, index, onPreview, mode, onRun }: TaskCardProps) {
         <div
           style={{
             borderTop: '1px solid var(--border)',
-            background: '#0d1117',
+            background: 'var(--bg-base)',
             maxHeight: '280px',
             overflow: 'auto',
             fontFamily: 'JetBrains Mono, monospace',

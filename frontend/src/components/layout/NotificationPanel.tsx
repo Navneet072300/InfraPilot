@@ -11,10 +11,10 @@ function timeAgo(d: Date) {
 }
 
 const TYPE_ICON: Record<NotifType, React.ReactNode> = {
-  info:    <Info size={14} color="#58a6ff" />,
-  success: <CheckCircle2 size={14} color="#3fb950" />,
-  warning: <AlertTriangle size={14} color="#d29922" />,
-  error:   <XCircle size={14} color="#f85149" />,
+  info:    <Info size={14} color="var(--accent)" />,
+  success: <CheckCircle2 size={14} color="var(--success)" />,
+  warning: <AlertTriangle size={14} color="var(--warning)" />,
+  error:   <XCircle size={14} color="var(--error)" />,
 };
 
 const TYPE_BORDER: Record<NotifType, string> = {
@@ -42,12 +42,12 @@ function NotifRow({ n }: { n: Notification }) {
       <div style={{ flexShrink: 0, marginTop: 2 }}>{TYPE_ICON[n.type]}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-          <span style={{ fontSize: '12px', fontWeight: n.read ? 400 : 600, color: n.read ? '#8b949e' : '#e6edf3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: '12px', fontWeight: n.read ? 400 : 600, color: n.read ? 'var(--text-secondary)' : 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {n.title}
           </span>
-          <span style={{ fontSize: '10px', color: '#8b949e', flexShrink: 0 }}>{timeAgo(n.timestamp)}</span>
+          <span style={{ fontSize: '10px', color: 'var(--text-secondary)', flexShrink: 0 }}>{timeAgo(n.timestamp)}</span>
         </div>
-        <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8b949e', lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+        <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
           {n.message}
         </p>
       </div>
@@ -55,7 +55,7 @@ function NotifRow({ n }: { n: Notification }) {
         type="button"
         onClick={(e) => { e.stopPropagation(); deleteNotif(n.id); }}
         title="Delete"
-        style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', color: '#8b949e', padding: '2px', opacity: 0.6, marginTop: -2 }}
+        style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px', opacity: 0.6, marginTop: -2 }}
       >
         <X size={12} />
       </button>
@@ -93,8 +93,8 @@ export function NotificationPanel({ open, onClose }: Props) {
         top: 'calc(100% + 6px)',
         right: 0,
         width: 340,
-        background: '#161b22',
-        border: '1px solid #30363d',
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
         borderRadius: 10,
         boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
         zIndex: 200,
@@ -102,12 +102,12 @@ export function NotificationPanel({ open, onClose }: Props) {
       }}
     >
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid #30363d' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Bell size={14} color="#e6edf3" />
-          <span style={{ fontSize: '13px', fontWeight: 600, color: '#e6edf3' }}>Notifications</span>
+          <Bell size={14} color="var(--text-primary)" />
+          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>Notifications</span>
           {hasUnread && (
-            <span style={{ fontSize: '10px', fontWeight: 700, background: 'rgba(248,81,73,0.15)', color: '#f85149', border: '1px solid rgba(248,81,73,0.3)', borderRadius: 8, padding: '1px 6px' }}>
+            <span style={{ fontSize: '10px', fontWeight: 700, background: 'rgba(248,81,73,0.15)', color: 'var(--error)', border: '1px solid rgba(248,81,73,0.3)', borderRadius: 8, padding: '1px 6px' }}>
               {notifications.filter((n) => !n.read).length} new
             </span>
           )}
@@ -116,7 +116,7 @@ export function NotificationPanel({ open, onClose }: Props) {
           <button
             type="button"
             onClick={markAllRead}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#58a6ff', fontSize: '11px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: '11px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}
           >
             <CheckCheck size={12} /> Mark all read
           </button>
@@ -126,7 +126,7 @@ export function NotificationPanel({ open, onClose }: Props) {
       {/* List */}
       <div style={{ maxHeight: 360, overflowY: 'auto' }}>
         {notifications.length === 0 ? (
-          <div style={{ padding: '2rem', textAlign: 'center', color: '#8b949e', fontSize: '12px' }}>
+          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '12px' }}>
             No notifications
           </div>
         ) : (
@@ -134,7 +134,7 @@ export function NotificationPanel({ open, onClose }: Props) {
             <div key={n.id}>
               <NotifRow n={n} />
               {i < notifications.length - 1 && (
-                <div style={{ height: '1px', background: '#21262d', margin: '0 14px' }} />
+                <div style={{ height: '1px', background: 'var(--bg-hover)', margin: '0 14px' }} />
               )}
             </div>
           ))
@@ -142,11 +142,11 @@ export function NotificationPanel({ open, onClose }: Props) {
       </div>
 
       {notifications.length > 0 && (
-        <div style={{ padding: '8px 14px', borderTop: '1px solid #30363d', textAlign: 'center' }}>
+        <div style={{ padding: '8px 14px', borderTop: '1px solid var(--border)', textAlign: 'center' }}>
           <button
             type="button"
             onClick={() => useNotificationStore.getState().notifications.forEach((n) => useNotificationStore.getState().deleteNotif(n.id))}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8b949e', fontSize: '11px' }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '11px' }}
           >
             Clear all
           </button>
@@ -171,7 +171,7 @@ export function NotificationBell({ onClick }: { onClick: () => void }) {
         <span style={{
           position: 'absolute', top: 1, right: 1,
           minWidth: 14, height: 14,
-          background: '#f85149',
+          background: 'var(--error)',
           borderRadius: 7,
           fontSize: 9,
           fontWeight: 700,

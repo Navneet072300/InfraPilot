@@ -10,10 +10,10 @@ import type { ProfileStats, ActivityItem, SavedCodeItem, SavedArchItem } from '.
 const V = {
   bg: 'var(--bg-base)', surface: 'var(--bg-surface)', border: 'var(--border)',
   text: 'var(--text-primary)', muted: 'var(--text-secondary)', accent: 'var(--accent)',
-  green: 'var(--success)', red: 'var(--error)', yellow: 'var(--warning)', purple: '#bc8cff',
+  green: 'var(--success)', red: 'var(--error)', yellow: 'var(--warning)', purple: 'var(--accent)',
 } as const;
 
-const PLAN_COLOR: Record<string, string> = { free: 'var(--text-secondary)', pro: 'var(--accent)', team: '#bc8cff', enterprise: '#bc8cff' };
+const PLAN_COLOR: Record<string, string> = { free: 'var(--text-secondary)', pro: 'var(--accent)', team: 'var(--accent)', enterprise: 'var(--accent)' };
 const PLAN_LABEL: Record<string, string> = { free: 'Free', pro: 'Pro', team: 'Team', enterprise: 'Enterprise' };
 const PLAN_LIMITS: Record<string, { requests: number }> = {
   free: { requests: 50 }, pro: { requests: 2000 }, team: { requests: 10000 }, enterprise: { requests: 999999 },
@@ -31,7 +31,7 @@ const ACTION_ICON: Record<string, React.ReactNode> = {
   login: <User size={14} />, default: <Activity size={14} />,
 };
 const ACTION_COLOR: Record<string, string> = {
-  pipeline: 'var(--accent)', generate: '#bc8cff', diagnose: 'var(--warning)',
+  pipeline: 'var(--accent)', generate: 'var(--accent)', diagnose: 'var(--warning)',
   deploy: 'var(--success)', login: 'var(--text-secondary)', default: 'var(--text-secondary)',
 };
 
@@ -79,7 +79,7 @@ export default function ProfilePage() {
     <div style={{ padding: '1.5rem 2rem', maxWidth: 900, margin: '0 auto' }}>
       {/* Identity card */}
       <div style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 12, padding: '1.5rem', display: 'flex', alignItems: 'flex-start', gap: '1.25rem', marginBottom: '1.5rem' }}>
-        <div style={{ width: 72, height: 72, borderRadius: '50%', flexShrink: 0, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, fontWeight: 700, color: '#fff' }}>
+        <div style={{ width: 72, height: 72, borderRadius: '50%', flexShrink: 0, background: 'linear-gradient(135deg, var(--accent), #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, fontWeight: 700, color: '#fff' }}>
           {initials}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>

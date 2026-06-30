@@ -8,7 +8,7 @@ import {
 const V = {
   bg: 'var(--bg-base)', surface: 'var(--bg-surface)', border: 'var(--border)',
   text: 'var(--text-primary)', muted: 'var(--text-secondary)', accent: 'var(--accent)',
-  green: 'var(--success)', red: 'var(--error)', yellow: 'var(--warning)', purple: '#bc8cff',
+  green: 'var(--success)', red: 'var(--error)', yellow: 'var(--warning)', purple: 'var(--accent)',
 } as const;
 
 // ─── Quick Start Cards ────────────────────────────────────────────────────────
