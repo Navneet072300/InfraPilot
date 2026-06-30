@@ -5,6 +5,7 @@ import { LandingPage } from './pages/LandingPage';
 import { Onboarding } from './pages/Onboarding';
 import { AppLayout } from './components/layout/AppLayout';
 import { PipelineMode } from './components/modes/PipelineMode';
+import { DeployMode } from './components/modes/DeployMode';
 import { GenerateMode } from './components/modes/GenerateMode';
 import { DiagnoseMode } from './components/modes/DiagnoseMode';
 import { DesignMode } from './components/modes/DesignMode';
@@ -122,6 +123,7 @@ function AppShell() {
         <Route path="design"       element={<DesignMode />} />
         <Route path="monitor"      element={<MonitorMode />} />
         <Route path="repos"        element={<ReposPage />} />
+        <Route path="deploy"       element={<DeployMode />} />
         <Route path="history"      element={<HistoryPage />} />
         <Route path="resources"    element={<ResourcesPage />} />
         <Route path="settings"     element={<SettingsPage />} />

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import {
   Rocket, Wand2, Stethoscope, Compass, Activity,
   Database, Clock, GitBranch, HelpCircle,
-  ChevronLeft, Menu, CreditCard, Camera, Lock, Home,
+  ChevronLeft, Menu, CreditCard, Camera, Lock, Home, Zap,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useProfileStore, type Plan } from '../../store/profileStore';
@@ -27,10 +27,10 @@ const PRIMARY: NavItem[] = [
 ];
 
 const RESOURCES: NavItem[] = [
+  { icon: <Zap size={15} />, label: 'Deploy', path: '/app/deploy' },
   { icon: <GitBranch size={15} />, label: 'Repositories', path: '/app/repos' },
   { icon: <Database size={15} />, label: 'Resources', path: '/app/resources' },
   { icon: <Clock size={15} />, label: 'History', path: '/app/history' },
-  { icon: <GitBranch size={15} />, label: 'Deployments', path: '/app/deployments', stub: true },
 ];
 
 const PLAN_LABEL: Record<Plan, string> = { free: 'Free', pro: 'Pro', team: 'Team', enterprise: 'Enterprise' };

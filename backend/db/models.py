@@ -134,6 +134,24 @@ class TeamInvite(Base):
     is_cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class DeployConfig(Base):
+    __tablename__ = "deploy_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    repo_full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    branch: Mapped[str] = mapped_column(String(100), default="main")
+    language: Mapped[str] = mapped_column(String(50), default="")
+    framework: Mapped[str] = mapped_column(String(100), default="")
+    ci_tool: Mapped[str] = mapped_column(String(50), default="")
+    registry: Mapped[str] = mapped_column(String(50), default="")
+    secrets_manager: Mapped[str] = mapped_column(String(50), default="")
+    deploy_target: Mapped[str] = mapped_column(String(50), default="")
+    port: Mapped[int] = mapped_column(Integer, default=8080)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
 class GenerateSession(Base):
     __tablename__ = "generate_sessions"
 
