@@ -36,7 +36,14 @@ const NODE_COLORS: Record<string, { bg: string; border: string; text: string }> 
   default:       { bg: 'color-mix(in srgb, var(--accent) 10%, var(--bg-surface))', border: 'var(--accent)', text: 'var(--accent)' },
 };
 
-const COMPLIANCE_OPTIONS = ['PCI DSS', 'SOC 2', 'HIPAA', 'ISO 27001', 'FedRAMP', 'GDPR'];
+const COMPLIANCE_OPTIONS = [
+  { id: 'PCI DSS',   label: 'Payment Card Security (PCI DSS)' },
+  { id: 'SOC 2',     label: 'Data Security & Privacy Audit (SOC 2)' },
+  { id: 'HIPAA',     label: 'Healthcare Data Protection (HIPAA)' },
+  { id: 'ISO 27001', label: 'Information Security Management (ISO 27001)' },
+  { id: 'FedRAMP',   label: 'US Government Cloud Security (FedRAMP)' },
+  { id: 'GDPR',      label: 'EU Data Privacy (GDPR)' },
+];
 
 function buildReactFlowNodes(nodes: ArchitectureData['diagram_nodes']): Node[] {
   return nodes.map((n) => {
@@ -275,13 +282,30 @@ export function DesignMode() {
           </p>
         </div>
 
-        {/* Budget slider */}
+        {/* Budget slider + manual input */}
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
             <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>Monthly Budget</span>
-            <span style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 600 }}>
-              {designBudget === 0 ? 'No limit' : `$${designBudget.toLocaleString()}`}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>$</span>
+              <input
+                type="number"
+                min={0}
+                max={10000}
+                step={100}
+                value={designBudget === 0 ? '' : designBudget}
+                placeholder="No limit"
+                onChange={(e) => setDesignBudget(e.target.value === '' ? 0 : Math.min(10000, Math.max(0, Number(e.target.value))))}
+                style={{
+                  width: 80, padding: '2px 6px', background: 'var(--bg-base)',
+                  border: '1px solid var(--border)', borderRadius: 5,
+                  color: 'var(--accent)', fontSize: '12px', fontWeight: 600,
+                  textAlign: 'right', outline: 'none',
+                }}
+                onFocus={(e) => (e.target.style.borderColor = 'var(--border-focus)')}
+                onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
+              />
+            </div>
           </div>
           <input
             type="range"
@@ -301,17 +325,17 @@ export function DesignMode() {
         <div>
           <label style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '8px' }}>Compliance Requirements</label>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {COMPLIANCE_OPTIONS.map((c) => {
-              const checked = designCompliance.includes(c);
+            {COMPLIANCE_OPTIONS.map(({ id, label }) => {
+              const checked = designCompliance.includes(id);
               return (
-                <label key={c} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <label key={id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     checked={checked}
-                    onChange={() => toggleCompliance(c)}
-                    style={{ accentColor: 'var(--accent)', width: '14px', height: '14px' }}
+                    onChange={() => toggleCompliance(id)}
+                    style={{ accentColor: 'var(--accent)', width: '14px', height: '14px', flexShrink: 0 }}
                   />
-                  <span style={{ fontSize: '12px', color: checked ? 'var(--text-primary)' : 'var(--text-muted)' }}>{c}</span>
+                  <span style={{ fontSize: '12px', color: checked ? 'var(--text-primary)' : 'var(--text-muted)' }}>{label}</span>
                 </label>
               );
             })}
