@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   GitBranch, Search, CheckCircle2, XCircle, AlertCircle,
   ChevronRight, Loader2, FileCode2, Rocket, Copy, Check,
-  Github, Server, Container, Shield, Database, Globe,
+  Server, Container, Shield, Database, Globe,
   Zap, Lock, Cloud, Package, Settings2, Terminal, RefreshCw,
   ExternalLink,
 } from 'lucide-react';
@@ -65,7 +65,7 @@ const CI_OPTIONS = [
     id: 'github-actions',
     label: 'GitHub Actions',
     sub: 'Cloud-native, no server needed. Best for GitHub repos.',
-    icon: <Github size={22} />,
+    icon: <Globe size={22} />,
     badge: 'Recommended',
   },
   {
@@ -223,9 +223,9 @@ function StepBar({ steps, current }: { steps: typeof STEPS; current: Step }) {
 }
 
 function OptionCard({
-  id, label, sub, icon, badge, selected, onClick,
+  label, sub, icon, badge, selected, onClick,
 }: {
-  id: string; label: string; sub: string; icon: React.ReactNode;
+  id?: string; label: string; sub: string; icon: React.ReactNode;
   badge?: string; selected: boolean; onClick: () => void;
 }) {
   return (
@@ -576,7 +576,7 @@ export function DeployMode() {
 
               {!reposLoading && repos.length === 0 && (
                 <div style={{ padding: '24px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, textAlign: 'center' }}>
-                  <Github size={28} style={{ color: 'var(--text-muted)', opacity: 0.3, marginBottom: 10 }} />
+                  <GitBranch size={28} style={{ color: 'var(--text-muted)', opacity: 0.3, marginBottom: 10 }} />
                   <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)' }}>No GitHub repositories found.</p>
                   <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>Go to <strong>Settings → GitHub</strong> and add a Personal Access Token first.</p>
                 </div>
