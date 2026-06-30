@@ -6,8 +6,8 @@ import { useProfileStore } from '../../store/profileStore';
 import { useThemeStore } from '../../store/themeStore';
 
 const V = {
-  surface: '#161b22', border: '#30363d', text: '#e6edf3',
-  muted: '#8b949e', accent: '#58a6ff', red: '#f85149',
+  surface: 'var(--bg-surface)', border: 'var(--border)', text: 'var(--text-primary)',
+  muted: 'var(--text-secondary)', accent: 'var(--accent)', red: 'var(--error)',
 } as const;
 
 const PLAN_COLOR: Record<string, string> = { free: '#8b949e', pro: '#58a6ff', team: '#bc8cff', enterprise: '#bc8cff' };

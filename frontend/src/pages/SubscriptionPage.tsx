@@ -4,8 +4,8 @@ import { useProfileStore } from '../store/profileStore';
 
 const V = {
   bg: '#0a0a0f', surface: '#141419', surface2: '#1a1a21', border: '#2a2a35',
-  text: '#e6edf3', muted: '#8b949e', accent: '#4f46e5', accentLight: '#6366f1',
-  green: '#3fb950', red: '#f85149', yellow: '#d29922', purple: '#bc8cff',
+  text: 'var(--text-primary)', muted: 'var(--text-secondary)', accent: '#4f46e5', accentLight: '#6366f1',
+  green: 'var(--success)', red: 'var(--error)', yellow: 'var(--warning)', purple: '#bc8cff',
 } as const;
 
 type BillingCycle = 'monthly' | 'annual';

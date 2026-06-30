@@ -8,12 +8,12 @@ import { useAuthStore } from '../store/authStore';
 import type { ProfileStats, ActivityItem, SavedCodeItem, SavedArchItem } from '../types/profile';
 
 const V = {
-  bg: '#0d1117', surface: '#161b22', border: '#30363d',
-  text: '#e6edf3', muted: '#8b949e', accent: '#58a6ff',
-  green: '#3fb950', red: '#f85149', yellow: '#d29922', purple: '#bc8cff',
+  bg: 'var(--bg-base)', surface: 'var(--bg-surface)', border: 'var(--border)',
+  text: 'var(--text-primary)', muted: 'var(--text-secondary)', accent: 'var(--accent)',
+  green: 'var(--success)', red: 'var(--error)', yellow: 'var(--warning)', purple: '#bc8cff',
 } as const;
 
-const PLAN_COLOR: Record<string, string> = { free: '#8b949e', pro: '#58a6ff', team: '#bc8cff', enterprise: '#bc8cff' };
+const PLAN_COLOR: Record<string, string> = { free: 'var(--text-secondary)', pro: 'var(--accent)', team: '#bc8cff', enterprise: '#bc8cff' };
 const PLAN_LABEL: Record<string, string> = { free: 'Free', pro: 'Pro', team: 'Team', enterprise: 'Enterprise' };
 const PLAN_LIMITS: Record<string, { requests: number }> = {
   free: { requests: 50 }, pro: { requests: 2000 }, team: { requests: 10000 }, enterprise: { requests: 999999 },
@@ -31,8 +31,8 @@ const ACTION_ICON: Record<string, React.ReactNode> = {
   login: <User size={14} />, default: <Activity size={14} />,
 };
 const ACTION_COLOR: Record<string, string> = {
-  pipeline: '#58a6ff', generate: '#bc8cff', diagnose: '#d29922',
-  deploy: '#3fb950', login: '#8b949e', default: '#8b949e',
+  pipeline: 'var(--accent)', generate: '#bc8cff', diagnose: 'var(--warning)',
+  deploy: 'var(--success)', login: 'var(--text-secondary)', default: 'var(--text-secondary)',
 };
 
 export default function ProfilePage() {
