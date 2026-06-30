@@ -282,43 +282,27 @@ export function DesignMode() {
           </p>
         </div>
 
-        {/* Budget slider + manual input */}
+        {/* Budget */}
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>Monthly Budget</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>$</span>
-              <input
-                type="number"
-                min={0}
-                max={10000}
-                step={100}
-                value={designBudget === 0 ? '' : designBudget}
-                placeholder="No limit"
-                onChange={(e) => setDesignBudget(e.target.value === '' ? 0 : Math.min(10000, Math.max(0, Number(e.target.value))))}
-                style={{
-                  width: 80, padding: '2px 6px', background: 'var(--bg-base)',
-                  border: '1px solid var(--border)', borderRadius: 5,
-                  color: 'var(--accent)', fontSize: '12px', fontWeight: 600,
-                  textAlign: 'right', outline: 'none',
-                }}
-                onFocus={(e) => (e.target.style.borderColor = 'var(--border-focus)')}
-                onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
-              />
-            </div>
+          <label style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '6px' }}>Monthly Budget</label>
+          <div style={{ position: 'relative' }}>
+            <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: '13px', color: 'var(--text-muted)', pointerEvents: 'none' }}>$</span>
+            <input
+              type="number"
+              min={0}
+              value={designBudget === 0 ? '' : designBudget}
+              placeholder="Enter amount (leave blank for no limit)"
+              onChange={(e) => setDesignBudget(e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
+              style={{
+                width: '100%', padding: '8px 10px 8px 22px',
+                background: 'var(--bg-base)', border: '1px solid var(--border)',
+                borderRadius: 6, color: 'var(--text-primary)', fontSize: '13px', outline: 'none',
+              }}
+              onFocus={(e) => (e.target.style.borderColor = 'var(--border-focus)')}
+              onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
+            />
           </div>
-          <input
-            type="range"
-            min={0}
-            max={10000}
-            step={100}
-            value={designBudget}
-            onChange={(e) => setDesignBudget(Number(e.target.value))}
-            style={{ width: '100%', accentColor: 'var(--accent)' }}
-          />
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
-            <span>No limit</span><span>$10k/mo</span>
-          </div>
+          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: 4 }}>Leave blank for no budget limit</p>
         </div>
 
         {/* Compliance */}
