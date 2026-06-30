@@ -428,7 +428,8 @@ async def github_callback(code: str, state: str = "", request: Request = None):
         primary_email = next((e["email"] for e in emails if isinstance(e, dict) and e.get("primary")), None)
         if not primary_email:
             primary_email = gh_user.get("email", "")
-        name = gh_user.get("name") or gh_user.get("login", "")
+        github_username = gh_user.get("login", "")
+        name = github_username  # always use GitHub username as display name
         avatar = gh_user.get("avatar_url", "")
         provider_id = str(gh_user.get("id", ""))
 
@@ -449,8 +450,9 @@ async def github_callback(code: str, state: str = "", request: Request = None):
                 await session.commit()
                 await session.refresh(user)
             else:
-                user.avatar_url = user.avatar_url or avatar
-                user.name = user.name or name
+                user.name = name  # always refresh to GitHub username
+                user.avatar_url = avatar or user.avatar_url
+                user.provider = "github"
                 await session.commit()
                 await session.refresh(user)
 

@@ -34,7 +34,8 @@ export function UserMenu() {
   }, [open]);
 
   const displayName = user?.name || name || 'User';
-  const email = user?.email || '';
+  const isGitHub = (user as any)?.provider === 'github';
+  const email = isGitHub ? `${displayName} · GitHub` : (user?.email || '');
   const planKey = (user?.plan || plan) as string;
   const planColor = PLAN_COLOR[planKey] ?? V.muted;
   const initials = displayName.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
