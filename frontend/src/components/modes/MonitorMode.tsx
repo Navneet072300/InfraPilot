@@ -502,7 +502,7 @@ function IssuesPanel({ incidents, summary }: { incidents: Incident[]; summary?: 
 
       {/* Incident cards */}
       {displayed.length === 0 && (
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 32, textAlign: 'center' }}>
+        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
           <CheckCircle2 size={28} style={{ color: 'var(--success)', marginBottom: 8 }} />
           <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>No active issues</p>
           <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>All clusters are healthy. Monitor checks every 60 seconds.</p>
