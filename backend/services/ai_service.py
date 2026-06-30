@@ -7,34 +7,54 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-DEVOPS_SYSTEM = """You are an expert DevOps engineer and infrastructure architect with deep knowledge of \
-Kubernetes, Terraform, GitHub Actions, ArgoCD, HashiCorp Vault, Kustomize, and Helm.
-Generate production-ready infrastructure code. Include:
-- Proper resource limits and requests
-- Health checks and readiness probes
-- Security contexts where appropriate
-- Meaningful comments explaining non-obvious choices
-- Best practices for the specified cloud/tool
+DEVOPS_SYSTEM = """You are an expert DevOps engineer with deep knowledge of the full DevOps toolchain: \
+Docker, Docker Compose, Kubernetes, Helm, Kustomize, Terraform, Pulumi, CDK, Ansible, \
+Jenkins, GitHub Actions, GitLab CI, CircleCI, ArgoCD, Flux, Prometheus, Grafana, \
+Nginx, Traefik, HashiCorp Vault, and all major clouds (AWS, GCP, Azure).
 
-Format multi-file output using EXACTLY this separator format:
---- FILE: path/to/file.yaml ---
-[content]
---- FILE: path/to/other.tf ---
-[content]
+Generate production-ready files for WHATEVER the user requests — not limited to cloud infra. \
+This includes but is not limited to:
+- Docker Compose files (docker-compose.yml)
+- Dockerfiles
+- Jenkinsfile (declarative or scripted pipeline)
+- GitHub Actions workflows (.github/workflows/*.yml)
+- GitLab CI (.gitlab-ci.yml)
+- CircleCI config (.circleci/config.yml)
+- Ansible playbooks and roles
+- Terraform / OpenTofu modules
+- Kubernetes manifests (Deployment, Service, Ingress, HPA, etc.)
+- Helm charts (Chart.yaml, values.yaml, templates/)
+- Kustomize overlays
+- ArgoCD / Flux GitOps configs
+- Makefile automation
+- Shell scripts (deploy.sh, setup.sh)
+- Nginx / Traefik configs
+- Prometheus / Grafana dashboards and alert rules
+- Any other DevOps tooling file
 
-Use real, complete configurations — not placeholders.
+Quality rules:
+- Use real, complete configurations — no placeholders or TODO comments
+- Include version pins where they matter
+- Follow tool-specific best practices and conventions
+- Add inline comments only for non-obvious choices
 
-REQUIRED: After all infrastructure files, always append a file named 'guideme.md' using the same --- FILE: guideme.md --- separator. Include exactly these sections:
+Format multi-file output using EXACTLY this separator format (no exceptions):
+--- FILE: path/to/filename ---
+[file content]
+--- FILE: another/file.yml ---
+[file content]
+
+REQUIRED: After all generated files, always append a file named 'guideme.md' using the same --- FILE: guideme.md --- separator. Include exactly:
 ## What Was Generated
-[2-3 sentence summary of what this infrastructure does]
+[2-3 sentence summary]
 ## Prerequisites
-[exact tools + versions: terraform >= x.y, kubectl >= x.y, aws-cli, etc.]
+[exact tool versions required]
 ## Step-by-Step Implementation
-[numbered steps with exact shell commands the user can copy-paste]
+[numbered steps with copy-paste shell commands]
 ## Verify It Worked
-[commands to confirm the deployment succeeded]
+[commands to confirm success]
 ## Troubleshooting
-[3-5 specific error messages and their fixes for this exact configuration]"""
+[3-5 specific error messages and their fixes]"""
 
 SRE_SYSTEM = """You are a senior SRE with expertise in Kubernetes troubleshooting and cloud infrastructure.
 Analyze the provided logs and events. Return structured diagnosis using EXACTLY these headers:
@@ -394,20 +414,41 @@ class AIService:
     async def stream_devops(
         self, prompt: str, tools: list[str] | None = None, context: str = ""
     ) -> AsyncGenerator[str, None]:
-        tools_str = ", ".join(tools) if tools else "Kubernetes, Terraform"
+        hints: list[str] = []
+
+        if tools:
+            hints.append(f"Primary tools for this task: {', '.join(tools)}.")
+
         ctx_lower = context.lower()
         if "azure" in ctx_lower and "aws" not in ctx_lower and "gcp" not in ctx_lower:
-            cloud_hint = "Target cloud: Azure. Use azurerm provider. AKS instead of EKS, Azure Storage instead of S3, Azure SQL/Cosmos instead of RDS."
+            hints.append("Target cloud: Azure. Use azurerm provider, AKS, Azure Storage, Azure SQL/Cosmos.")
         elif "gcp" in ctx_lower and "aws" not in ctx_lower and "azure" not in ctx_lower:
-            cloud_hint = "Target cloud: GCP. Use google provider. GKE instead of EKS, GCS instead of S3, Cloud SQL instead of RDS."
+            hints.append("Target cloud: GCP. Use google provider, GKE, GCS, Cloud SQL.")
         elif "aws" in ctx_lower and "azure" not in ctx_lower and "gcp" not in ctx_lower:
-            cloud_hint = "Target cloud: AWS. Use aws provider."
+            hints.append("Target cloud: AWS. Use aws provider.")
         elif context:
-            cloud_hint = f"Platform context: {context}. Match the Terraform provider and resource names to the specified cloud(s). If multiple clouds are selected, generate provider blocks for each."
-        else:
-            cloud_hint = "Default to AWS provider unless the prompt specifies otherwise."
+            hints.append(f"Platform context: {context}.")
 
-        system = DEVOPS_SYSTEM + f"\n\nPrimary tools for this task: {tools_str}.\n{cloud_hint}"
+        # Infer intent from prompt keywords when no tool selected
+        prompt_lower = prompt.lower()
+        if not tools or tools == []:
+            if any(k in prompt_lower for k in ("docker compose", "compose")):
+                hints.append("Generate docker-compose.yml.")
+            elif any(k in prompt_lower for k in ("dockerfile", "docker image")):
+                hints.append("Generate a Dockerfile.")
+            elif any(k in prompt_lower for k in ("jenkins", "jenkinsfile")):
+                hints.append("Generate a Jenkinsfile using declarative pipeline syntax.")
+            elif any(k in prompt_lower for k in ("github action", "workflow")):
+                hints.append("Generate GitHub Actions workflow files under .github/workflows/.")
+            elif any(k in prompt_lower for k in ("gitlab", ".gitlab-ci")):
+                hints.append("Generate a .gitlab-ci.yml pipeline.")
+            elif any(k in prompt_lower for k in ("ansible", "playbook")):
+                hints.append("Generate Ansible playbooks and roles.")
+            elif any(k in prompt_lower for k in ("helm", "chart")):
+                hints.append("Generate a Helm chart with Chart.yaml, values.yaml, and templates/.")
+
+        hint_str = "\n".join(hints) if hints else ""
+        system = DEVOPS_SYSTEM + (f"\n\n{hint_str}" if hint_str else "")
         async for chunk in self._stream(system, prompt):
             yield chunk
 

@@ -12,16 +12,37 @@ import { CodeBlock } from '../shared/CodeBlock';
 import type { GeneratedFile } from '../../types';
 
 /* ── constants ─────────────────────────────────────────────────────────── */
-const TOOLS = ['Terraform', 'Kubernetes', 'Ansible', 'CDK', 'Pulumi'];
-const CONTEXT_PILLS = ['AWS', 'Azure', 'GCP', 'Terraform', 'High Availability', 'Multi-AZ', 'Kubernetes'];
+const TOOLS = [
+  'Terraform', 'Kubernetes', 'Ansible', 'CDK', 'Pulumi',
+  'Docker', 'Jenkins', 'GitHub Actions', 'GitLab CI', 'Helm',
+  'ArgoCD', 'Nginx', 'Prometheus',
+];
+const CONTEXT_PILLS = [
+  'AWS', 'Azure', 'GCP',
+  'Docker Compose', 'Kubernetes', 'Terraform',
+  'High Availability', 'Multi-AZ',
+  'CI/CD', 'Monitoring',
+];
 
 const EXT_COLOR: Record<string, string> = {
+  // IaC
   tf: 'var(--accent)', hcl: 'var(--accent)',
-  yaml: 'var(--accent)', yml: 'var(--accent)',
+  // Config / manifests
+  yaml: '#60a5fa', yml: '#60a5fa',
   json: 'var(--warning)',
-  md: 'var(--warning)',
-  sh: 'var(--success)',
-  py: '#ffa657',
+  // Docs
+  md: '#a78bfa',
+  // Shell / scripts
+  sh: 'var(--success)', bash: 'var(--success)',
+  // Docker
+  dockerfile: '#38bdf8',
+  // Python / other code
+  py: '#ffa657', js: '#fbbf24', ts: '#3b82f6',
+  // Makefile, Jenkinsfile
+  makefile: '#f472b6', jenkinsfile: '#f472b6',
+  // Nginx / config
+  conf: '#94a3b8', nginx: '#94a3b8',
+  toml: '#fb7185', env: '#34d399',
 };
 
 const CLOUD_FIELDS: Record<string, { label: string; key: string; secret?: boolean; placeholder?: string; textarea?: boolean }[]> = {
@@ -74,6 +95,35 @@ interface HistorySession {
 }
 
 /* ── helpers ────────────────────────────────────────────────────────────── */
+function inferLanguage(filename: string): GeneratedFile['language'] {
+  const lower = filename.toLowerCase();
+  const base = lower.split('/').pop() ?? lower;
+  const ext = base.includes('.') ? base.split('.').pop()! : '';
+
+  // Exact filename matches
+  if (base === 'dockerfile') return 'bash';
+  if (base === 'jenkinsfile') return 'bash';
+  if (base === 'makefile') return 'bash';
+  if (base === 'vagrantfile') return 'bash';
+  if (base === '.env' || base === '.env.example') return 'bash';
+
+  // Extension map
+  const extMap: Record<string, GeneratedFile['language']> = {
+    tf: 'hcl', hcl: 'hcl',
+    yaml: 'yaml', yml: 'yaml',
+    json: 'json',
+    md: 'markdown', mdx: 'markdown',
+    sh: 'bash', bash: 'bash', zsh: 'bash',
+    py: 'bash',   // python rendered as bash for now
+    js: 'bash', ts: 'bash', mjs: 'bash',
+    conf: 'bash', nginx: 'bash', cfg: 'bash', ini: 'bash',
+    toml: 'bash', env: 'bash',
+    groovy: 'bash',   // Jenkinsfile
+    xml: 'bash',
+  };
+  return extMap[ext] ?? 'bash';
+}
+
 function parseLlmFiles(raw: string): GeneratedFile[] {
   const map = new Map<string, GeneratedFile>();
   const parts = raw.split(/---\s*FILE:\s*(.+?)\s*---/);
@@ -81,12 +131,7 @@ function parseLlmFiles(raw: string): GeneratedFile[] {
     const filename = parts[i].trim();
     const content = parts[i + 1].trim()
       .replace(/^```[a-z]*\n?/i, '').replace(/\n?```\s*$/i, '');
-    const ext = filename.split('.').pop()?.toLowerCase() ?? '';
-    const langMap: Record<string, GeneratedFile['language']> = {
-      tf: 'hcl', hcl: 'hcl', yaml: 'yaml', yml: 'yaml',
-      json: 'json', md: 'markdown', sh: 'bash',
-    };
-    map.set(filename, { path: filename, content, language: langMap[ext] ?? 'bash' });
+    map.set(filename, { path: filename, content, language: inferLanguage(filename) });
   }
   if (map.size === 0 && raw.trim()) {
     map.set('main.tf', { path: 'main.tf', content: raw.trim(), language: 'hcl' });
@@ -120,8 +165,16 @@ function detectCloud(files: GeneratedFile[]): string {
   const blob = files.map(f => f.path + ' ' + (f.content ?? '')).join(' ').toLowerCase();
   if (blob.includes('azurerm') || blob.includes('aks')) return 'azure';
   if (blob.includes('google_') || blob.includes('gke')) return 'gcp';
-  if (blob.includes('aws_') || blob.includes('eks')) return 'aws';
+  if (blob.includes('aws_') || blob.includes('eks') || blob.includes('amazon')) return 'aws';
   return 'k8s';
+}
+
+function getFileColor(filename: string): string {
+  const lower = filename.toLowerCase();
+  const base = lower.split('/').pop() ?? lower;
+  const ext = base.includes('.') ? base.split('.').pop()! : base;
+  if (['dockerfile', 'jenkinsfile', 'makefile', 'vagrantfile'].includes(base)) return '#f472b6';
+  return EXT_COLOR[ext] ?? 'var(--text-secondary)';
 }
 
 function relativeTime(iso: string): string {
@@ -207,8 +260,7 @@ function FileTreeNode({ node, depth, activeTab, onSelect, open, toggleOpen }: {
 }) {
   const isOpen = open.has(node.path);
   const isActive = node.isFile && node.path === activeTab;
-  const ext = node.name.split('.').pop()?.toLowerCase() ?? '';
-  const col = EXT_COLOR[ext] ?? 'var(--text-secondary)';
+  const col = getFileColor(node.name);
   if (node.isFile) {
     return (
       <button type="button" onClick={() => onSelect(node.path)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 5, padding: `3px 8px 3px ${8 + depth * 12}px`, border: 'none', background: isActive ? 'var(--bg-hover)' : 'transparent', color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', fontSize: 11.5, cursor: 'pointer', textAlign: 'left', borderLeft: isActive ? `2px solid ${col}` : '2px solid transparent', fontFamily: 'JetBrains Mono, monospace' }}>
@@ -436,8 +488,8 @@ export function GenerateMode() {
   } = useAppStore();
   const { activeCluster, activeNamespace } = useClusterStore();
 
-  const [selectedTools, setSelectedTools] = useState(['Terraform']);
-  const [selectedContext, setSelectedContext] = useState(['AWS', 'Terraform', 'High Availability']);
+  const [selectedTools, setSelectedTools] = useState<string[]>([]);
+  const [selectedContext, setSelectedContext] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showCredModal, setShowCredModal] = useState(false);
   const [termLines, setTermLines] = useState<TermLine[]>([]);
@@ -641,8 +693,8 @@ export function GenerateMode() {
         {!hasFiles && !isGenerating && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', gap: 10 }}>
             <Sparkles size={42} style={{ opacity: 0.15 }} />
-            <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Describe your infrastructure and click Generate</p>
-            <p style={{ fontSize: 12 }}>Supports Terraform · Kubernetes · Ansible · CDK · Pulumi</p>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Describe what you want to generate</p>
+            <p style={{ fontSize: 12 }}>Dockerfile · Docker Compose · Jenkinsfile · GitHub Actions · Terraform · Kubernetes · Ansible · Helm · Nginx · and more</p>
           </div>
         )}
 
@@ -666,8 +718,7 @@ export function GenerateMode() {
               {/* Breadcrumb bar (replaces tab bar) */}
               <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)', padding: '0 12px', height: 32, flexShrink: 0, gap: 6 }}>
                 {activeFile && (() => {
-                  const ext = activeFile.path.split('.').pop()?.toLowerCase() ?? '';
-                  const col = EXT_COLOR[ext] ?? 'var(--text-secondary)';
+                  const col = getFileColor(activeFile.path);
                   const parts = activeFile.path.split('/');
                   return (
                     <>
@@ -751,7 +802,7 @@ export function GenerateMode() {
           value={generateInput}
           onChange={e => setGenerateInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Describe the infrastructure you want to build…"
+          placeholder="e.g. Docker Compose for a Node.js app with Redis and Postgres, or a Jenkins pipeline for a React app, or a 3-node EKS cluster with Terraform…"
           rows={2}
           style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--text-primary)', fontSize: 13, padding: '9px 12px', resize: 'none', outline: 'none', fontFamily: 'inherit', lineHeight: 1.6, boxSizing: 'border-box', transition: 'border-color 0.15s' }}
           onFocus={e => (e.target.style.borderColor = 'var(--accent)')}
