@@ -4,6 +4,7 @@ import {
   TrendingUp, TrendingDown, AlertTriangle, RefreshCw, DollarSign,
   BarChart2, Loader2, CheckCircle2, Edit2, X, Eye, EyeOff,
   ShieldAlert, Activity, Trash2, Server, Layers, BellOff, Wrench,
+  AlertOctagon, AlertCircle, Info, Radio, BarChart3, Zap, ThumbsUp,
 } from 'lucide-react';
 import { useClusterStore } from '../../store/clusterStore';
 import { useClusterOverview, useNamespaces, useResources, useNodeMetrics } from '../../hooks/useKubernetes';
@@ -403,7 +404,12 @@ const SEV_COLOR_MAP: Record<string, string> = {
   medium: 'var(--warning)',
   low: 'var(--info, #60a5fa)',
 };
-const SEV_EMOJI_MAP: Record<string, string> = { critical: '🔴', high: '🟠', medium: '🟡', low: '🔵' };
+const SEV_ICON_MAP: Record<string, React.ReactNode> = {
+  critical: <AlertOctagon size={10} />,
+  high:     <AlertTriangle size={10} />,
+  medium:   <AlertCircle size={10} />,
+  low:      <Info size={10} />,
+};
 
 function timeAgo(iso: string): string {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -482,7 +488,7 @@ function IssuesPanel({ incidents, summary }: { incidents: Incident[]; summary?: 
               fontSize: 11, fontWeight: 600, cursor: 'pointer', textTransform: 'capitalize',
             }}
           >
-            {sev === 'all' ? 'All' : `${SEV_EMOJI_MAP[sev]} ${sev}`}
+            {sev === 'all' ? 'All' : <>{SEV_ICON_MAP[sev]} {sev}</>}
           </button>
         ))}
       </div>
@@ -490,7 +496,7 @@ function IssuesPanel({ incidents, summary }: { incidents: Incident[]; summary?: 
       {/* Incident cards */}
       {displayed.length === 0 && (
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 32, textAlign: 'center' }}>
-          <p style={{ fontSize: 20, marginBottom: 8 }}>✅</p>
+          <CheckCircle2 size={28} style={{ color: 'var(--success)', marginBottom: 8 }} />
           <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>No active issues</p>
           <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>All clusters are healthy. Monitor checks every 60 seconds.</p>
         </div>
@@ -506,14 +512,14 @@ function IssuesPanel({ incidents, summary }: { incidents: Incident[]; summary?: 
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: col, background: `${col}15`, padding: '2px 8px', borderRadius: 100, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  {SEV_EMOJI_MAP[sev]} {sev}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: col, background: `${col}15`, padding: '2px 8px', borderRadius: 100, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  {SEV_ICON_MAP[sev]} {sev}
                 </span>
                 {inc.status === 'acknowledged' && (
                   <span style={{ fontSize: 10, color: 'var(--warning)', fontWeight: 600 }}>ACK</span>
                 )}
                 {inc.status === 'fixing' && (
-                  <span style={{ fontSize: 10, color: 'var(--accent)', fontWeight: 600 }}>🔧 FIXING</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, color: 'var(--accent)', fontWeight: 600 }}><Wrench size={10} /> FIXING</span>
                 )}
                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{timeAgo(inc.detected_at)}</span>
               </div>
@@ -537,9 +543,9 @@ function IssuesPanel({ incidents, summary }: { incidents: Incident[]; summary?: 
                 <button
                   type="button"
                   onClick={() => handleAcknowledge(inc.id)}
-                  style={{ padding: '5px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-secondary)', fontSize: 11, cursor: 'pointer' }}
+                  style={{ padding: '5px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-secondary)', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
                 >
-                  🙋 Acknowledge
+                  <ThumbsUp size={11} /> Acknowledge
                 </button>
               )}
               <div style={{ position: 'relative' }}>
@@ -1001,10 +1007,10 @@ export function MonitorMode() {
   const incidents: Incident[] = incidentsData?.incidents ?? [];
   const activeIncidentCount = incidents.filter((i) => i.status === 'active').length;
 
-  const tabs: { id: MonitorTab; label: string; badge?: number }[] = [
-    { id: 'issues', label: '🚨 Issues', badge: activeIncidentCount || undefined },
-    { id: 'health', label: '💻 Cluster Health' },
-    { id: 'resources', label: '📊 Resources' },
+  const tabs: { id: MonitorTab; label: string; icon: React.ReactNode; badge?: number }[] = [
+    { id: 'issues',    label: 'Issues',         icon: <AlertTriangle size={13} />, badge: activeIncidentCount || undefined },
+    { id: 'health',    label: 'Cluster Health', icon: <Activity size={13} /> },
+    { id: 'resources', label: 'Resources',      icon: <BarChart3 size={13} /> },
   ];
 
   return (
@@ -1027,7 +1033,7 @@ export function MonitorMode() {
                   cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
                 }}
               >
-                {tab.label}
+                {tab.icon}{tab.label}
                 {tab.badge !== undefined && tab.badge > 0 && (
                   <span style={{ background: 'var(--error)', color: '#fff', borderRadius: 100, fontSize: 10, fontWeight: 700, padding: '1px 5px', minWidth: 16, textAlign: 'center' }}>
                     {tab.badge}
@@ -1055,7 +1061,7 @@ export function MonitorMode() {
                       fontSize: 11, fontWeight: liveMode === live ? 700 : 400, cursor: 'pointer',
                     }}
                   >
-                    {live ? '🔴 Live Data' : '📊 Demo Data'}
+                    {live ? <><Radio size={10} /> Live</> : <><BarChart3 size={10} /> Demo</>}
                   </button>
                 ))}
               </div>
@@ -1071,7 +1077,7 @@ export function MonitorMode() {
           <>
             {!liveMode && (
               <div style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid var(--warning)', borderRadius: 8, padding: '10px 16px', fontSize: 12, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                📊 Showing sample data. Connect a cluster and switch to Live Data to see real metrics.
+                Showing sample data. Connect a cluster and switch to Live to see real metrics.
               </div>
             )}
 
@@ -1240,7 +1246,7 @@ export function MonitorMode() {
           <>
             {!liveMode && (
               <div style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid var(--warning)', borderRadius: 8, padding: '10px 16px', fontSize: 12, color: 'var(--warning)' }}>
-                📊 Showing sample data. Switch to Live Data to see real cluster resources.
+                Showing sample data. Switch to Live to see real cluster resources.
               </div>
             )}
             <ResourceExplorerPanel />
