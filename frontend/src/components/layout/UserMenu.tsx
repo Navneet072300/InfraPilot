@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Settings, CreditCard, HelpCircle, LogOut, Moon, Sun, Globe } from 'lucide-react';
+import { User, Settings, CreditCard, HelpCircle, LogOut, Moon, Sun } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useProfileStore } from '../../store/profileStore';
 import { useThemeStore } from '../../store/themeStore';
@@ -127,7 +127,6 @@ export function UserMenu() {
             { icon: <Settings size={14} />, label: 'Settings', path: '/app/settings' },
             { icon: <CreditCard size={14} />, label: 'Billing', path: '/app/subscription' },
             { icon: <HelpCircle size={14} />, label: 'Help', path: '/app/help' },
-            { icon: <Globe size={14} />, label: 'Landing Page', path: '/' },
           ].map(({ icon, label, path }) => (
             <button
               key={path}

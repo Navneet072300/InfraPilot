@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import {
   Rocket, Wand2, Stethoscope, Compass, Activity,
   Database, Clock, GitBranch, HelpCircle,
-  ChevronLeft, Menu, CreditCard, Camera, Lock,
+  ChevronLeft, Menu, CreditCard, Camera, Lock, Home,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useProfileStore, type Plan } from '../../store/profileStore';
@@ -294,6 +294,7 @@ export function Sidebar({ collapsed, onToggle }: Props) {
 
         {/* Bottom nav */}
         <div style={{ paddingBottom: '6px' }}>
+          <BottomNavBtn icon={<Home size={15} />} label="Home" path="/" />
           <BottomNavBtn icon={<CreditCard size={15} />} label="Subscription" path="/app/subscription" />
           <BottomNavBtn icon={<HelpCircle size={15} />} label="Help" path="/app/help" />
         </div>
