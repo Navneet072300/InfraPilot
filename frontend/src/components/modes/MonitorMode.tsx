@@ -4,7 +4,7 @@ import {
   TrendingUp, TrendingDown, AlertTriangle, RefreshCw, DollarSign,
   BarChart2, Loader2, CheckCircle2, Edit2, X, Eye, EyeOff,
   ShieldAlert, Activity, Trash2, Server, Layers, BellOff, Wrench,
-  AlertOctagon, AlertCircle, Info, Radio, BarChart3, Zap, ThumbsUp,
+  AlertOctagon, AlertCircle, Info, BarChart3, Zap, ThumbsUp,
 } from 'lucide-react';
 import { useClusterStore } from '../../store/clusterStore';
 import { useClusterOverview, useNamespaces, useResources, useNodeMetrics } from '../../hooks/useKubernetes';
@@ -991,9 +991,6 @@ export function MonitorMode() {
   const budget = 2500;
   const budgetPct = Math.round((totalSpend / budget) * 100);
   const [activeTab, setActiveTab] = useState<MonitorTab>('issues');
-  const [liveMode, setLiveMode] = useState(false);
-  const { clusters } = useClusterStore();
-  const hasCluster = clusters.length > 0;
 
   // Incidents polling
   const { data: incidentsData } = useQuery({
@@ -1018,7 +1015,7 @@ export function MonitorMode() {
       <div style={{ maxWidth: '1100px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
         {/* Tab bar */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
+        <div style={{ borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', gap: 0 }}>
             {tabs.map((tab) => (
               <button
@@ -1042,31 +1039,6 @@ export function MonitorMode() {
               </button>
             ))}
           </div>
-
-          {/* Live/Demo toggle — only on health/resources tabs */}
-          {activeTab !== 'issues' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-              {!hasCluster && liveMode && (
-                <span style={{ fontSize: 11, color: 'var(--warning)' }}>No cluster connected</span>
-              )}
-              <div style={{ display: 'flex', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
-                {[false, true].map((live) => (
-                  <button
-                    key={String(live)}
-                    type="button"
-                    onClick={() => setLiveMode(live)}
-                    style={{
-                      padding: '5px 12px', background: liveMode === live ? (live ? 'rgba(239,68,68,0.15)' : 'var(--accent-glow)') : 'transparent',
-                      border: 'none', color: liveMode === live ? (live ? 'var(--error)' : 'var(--accent)') : 'var(--text-muted)',
-                      fontSize: 11, fontWeight: liveMode === live ? 700 : 400, cursor: 'pointer',
-                    }}
-                  >
-                    {live ? <><Radio size={10} /> Live</> : <><BarChart3 size={10} /> Demo</>}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Issues tab */}
@@ -1075,20 +1047,14 @@ export function MonitorMode() {
         {/* Health tab */}
         {activeTab === 'health' && (
           <>
-            {!liveMode && (
-              <div style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid var(--warning)', borderRadius: 8, padding: '10px 16px', fontSize: 12, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                Showing sample data. Connect a cluster and switch to Live to see real metrics.
-              </div>
-            )}
-
             {/* ① Cluster health — all clusters, green/red status, inline token fix */}
             <ClusterHealthSection />
 
             {/* ② Active cluster overview — nodes with CPU/memory bars, warning events */}
             <ClusterOverviewPanel />
 
-            {/* Cost & drift — demo only */}
-            {!liveMode && (
+            {/* Cost & drift */}
+            <>
               <>
                 {/* ③ Cost metric cards (demo) */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
@@ -1217,40 +1183,13 @@ export function MonitorMode() {
           </table>
         </div>
               </>
-            )}
-
-            {/* Live mode: honest placeholders for cost & drift */}
-            {liveMode && (
-              <>
-                <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 24, textAlign: 'center' }}>
-                  <p style={{ fontSize: 20, marginBottom: 8 }}>💰</p>
-                  <p style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 6 }}>Cost Integration — Coming Soon</p>
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.7 }}>
-                    Cost data from AWS Cost Explorer, Azure Cost Management, and GCP Billing will be available in the next release.
-                  </p>
-                </div>
-                <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 24, textAlign: 'center' }}>
-                  <p style={{ fontSize: 20, marginBottom: 8 }}>🔍</p>
-                  <p style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 6 }}>Drift Detection — Coming Soon</p>
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.7 }}>
-                    Infrastructure drift detection comparing live cluster state to IaC definitions will be available in the next release.
-                  </p>
-                </div>
-              </>
-            )}
+            </>
           </>
         )}
 
         {/* Resources tab */}
         {activeTab === 'resources' && (
-          <>
-            {!liveMode && (
-              <div style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid var(--warning)', borderRadius: 8, padding: '10px 16px', fontSize: 12, color: 'var(--warning)' }}>
-                Showing sample data. Switch to Live to see real cluster resources.
-              </div>
-            )}
-            <ResourceExplorerPanel />
-          </>
+          <ResourceExplorerPanel />
         )}
 
       </div>
