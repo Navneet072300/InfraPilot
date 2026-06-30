@@ -475,22 +475,29 @@ function IssuesPanel({ incidents, summary }: { incidents: Incident[]; summary?: 
       </div>
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: 6 }}>
-        {['all', 'critical', 'high', 'medium', 'low'].map((sev) => (
-          <button
-            key={sev}
-            type="button"
-            onClick={() => setSevFilter(sev)}
-            style={{
-              padding: '4px 12px', borderRadius: 100, border: `1px solid ${sevFilter === sev ? SEV_COLOR_MAP[sev] || 'var(--accent)' : 'var(--border)'}`,
-              background: sevFilter === sev ? `${SEV_COLOR_MAP[sev] || 'var(--accent)'}18` : 'transparent',
-              color: sevFilter === sev ? (SEV_COLOR_MAP[sev] || 'var(--accent)') : 'var(--text-muted)',
-              fontSize: 11, fontWeight: 600, cursor: 'pointer', textTransform: 'capitalize',
-            }}
-          >
-            {sev === 'all' ? 'All' : <>{SEV_ICON_MAP[sev]} {sev}</>}
-          </button>
-        ))}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {['all', 'critical', 'high', 'medium', 'low'].map((sev) => {
+          const col = SEV_COLOR_MAP[sev] || 'var(--accent)';
+          const active = sevFilter === sev;
+          return (
+            <button
+              key={sev}
+              type="button"
+              onClick={() => setSevFilter(sev)}
+              style={{
+                padding: '5px 14px', borderRadius: 100,
+                border: `1px solid ${active ? col : `${col}55`}`,
+                background: active ? `${col}22` : `${col}0d`,
+                color: active ? col : `${col}99`,
+                fontSize: 11, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize',
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                transition: 'all 0.15s',
+              }}
+            >
+              {sev === 'all' ? 'All' : <>{SEV_ICON_MAP[sev]} {sev}</>}
+            </button>
+          );
+        })}
       </div>
 
       {/* Incident cards */}
