@@ -183,7 +183,7 @@ async def get_platform_config():
 async def _fetch_pat_expiry(pat: str) -> str | None:
     """
     Ask GitHub API for token expiry via the github-authentication-token-expiration
-    response header. Returns an ISO-8601 date string or None if not set / no expiry.
+    response header. Returns an ISO-8601 date string (YYYY-MM-DD) or None.
     """
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
@@ -195,14 +195,17 @@ async def _fetch_pat_expiry(pat: str) -> str | None:
                     "X-GitHub-Api-Version": "2022-11-28",
                 },
             )
-        raw = resp.headers.get("github-authentication-token-expiration")  # "2025-01-01 00:00:00 UTC"
+        # Header value example: "2026-07-29 00:00:00 UTC"
+        raw = resp.headers.get("github-authentication-token-expiration")
+        logger.info("PAT expiry header: %r (status %s)", raw, resp.status_code)
         if not raw:
             return None
-        # Normalise to ISO-8601 date string (YYYY-MM-DD)
-        from datetime import datetime
-        dt = datetime.strptime(raw.strip(), "%Y-%m-%d %H:%M:%S %Z")
-        return dt.date().isoformat()
-    except Exception:
+        # Extract just the date part — always the first space-separated token.
+        # Avoids strptime %Z which is unreliable across platforms.
+        date_part = raw.strip().split(" ")[0]   # "2026-07-29"
+        return date_part
+    except Exception as exc:
+        logger.warning("PAT expiry detection failed: %s", exc)
         return None
 
 
