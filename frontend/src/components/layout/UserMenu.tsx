@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Settings, CreditCard, HelpCircle, LogOut, Moon, Globe } from 'lucide-react';
+import { User, Settings, CreditCard, HelpCircle, LogOut, Moon, Sun, Globe } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useProfileStore } from '../../store/profileStore';
+import { useThemeStore } from '../../store/themeStore';
 
 const V = {
   surface: '#161b22', border: '#30363d', text: '#e6edf3',
@@ -16,6 +17,7 @@ export function UserMenu() {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const { name, plan, avatar } = useProfileStore();
+  const { theme, toggle } = useThemeStore();
   const [open, setOpen] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -144,16 +146,25 @@ export function UserMenu() {
             </button>
           ))}
 
-          {/* Theme (dark only) */}
+          {/* Theme toggle */}
           <div style={{ margin: '4px 0', borderTop: `1px solid ${V.border}`, paddingTop: 4 }}>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '7px 10px', borderRadius: 6, color: V.muted, fontSize: 13,
-            }}>
-              <Moon size={14} />
+            <button
+              type="button"
+              onClick={toggle}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                padding: '7px 10px', borderRadius: 6, color: V.muted, fontSize: 13,
+                background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.06)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'none'; }}
+            >
+              {theme === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
               <span>Theme</span>
-              <span style={{ marginLeft: 'auto', fontSize: 11, background: 'rgba(255,255,255,0.08)', borderRadius: 4, padding: '2px 6px' }}>Dark</span>
-            </div>
+              <span style={{ marginLeft: 'auto', fontSize: 11, background: 'rgba(255,255,255,0.08)', borderRadius: 4, padding: '2px 6px' }}>
+                {theme === 'dark' ? 'Dark' : 'Light'}
+              </span>
+            </button>
           </div>
 
           {/* Logout */}

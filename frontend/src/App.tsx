@@ -22,6 +22,7 @@ import { AuthCallback } from './components/auth/AuthCallback';
 import { useClusterStore } from './store/clusterStore';
 import { useAuthStore } from './store/authStore';
 import { UserTypeScreen } from './components/shared/UserTypeScreen';
+import { useThemeStore } from './store/themeStore';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -71,7 +72,9 @@ function ConfigLoader({ children }: { children: React.ReactNode }) {
 
 function AuthProvider({ children }: { children: React.ReactNode }) {
   const checkSession = useAuthStore((s) => s.checkSession);
+  const theme = useThemeStore((s) => s.theme);
   useEffect(() => { checkSession(); }, [checkSession]);
+  useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
   return <>{children}</>;
 }
 

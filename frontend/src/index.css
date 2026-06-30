@@ -1,37 +1,57 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
-:root {
-  --bg-base: #0a0a0f;
-  --bg-surface: #141419;
-  --bg-hover: #1c1c24;
-  --border: #2a2a35;
-  --border-focus: #4f46e5;
-  --text-primary: #f0f0f5;
-  --text-secondary: #8b8b9e;
-  --text-muted: #5a5a6e;
-  --accent: #6366f1;
-  --accent-glow: rgba(99, 102, 241, 0.2);
-  --success: #22c55e;
-  --warning: #f59e0b;
-  --error: #ef4444;
-  --info: #3b82f6;
+/* ── Dark theme (default) — softer, eye-soothing ── */
+:root,
+[data-theme="dark"] {
+  --bg-base:       #111117;
+  --bg-surface:    #18181f;
+  --bg-hover:      #20202a;
+  --border:        #2c2c3c;
+  --border-focus:  #818cf8;
+  --text-primary:  #e4e4ef;
+  --text-secondary:#9090aa;
+  --text-muted:    #5c5c78;
+  --accent:        #818cf8;
+  --accent-glow:   rgba(129, 140, 248, 0.15);
+  --success:       #34d399;
+  --warning:       #fbbf24;
+  --error:         #f87171;
+  --info:          #60a5fa;
+}
+
+/* ── Light theme ── */
+[data-theme="light"] {
+  --bg-base:       #f4f4f9;
+  --bg-surface:    #ffffff;
+  --bg-hover:      #ebebf4;
+  --border:        #dcdce8;
+  --border-focus:  #6366f1;
+  --text-primary:  #18182a;
+  --text-secondary:#505070;
+  --text-muted:    #9090b0;
+  --accent:        #6366f1;
+  --accent-glow:   rgba(99, 102, 241, 0.1);
+  --success:       #16a34a;
+  --warning:       #d97706;
+  --error:         #dc2626;
+  --info:          #2563eb;
 }
 
 @theme {
-  --color-bg-base: #0a0a0f;
-  --color-bg-surface: #141419;
-  --color-bg-hover: #1c1c24;
-  --color-border: #2a2a35;
-  --color-border-focus: #4f46e5;
-  --color-text-primary: #f0f0f5;
-  --color-text-secondary: #8b8b9e;
-  --color-text-muted: #5a5a6e;
-  --color-accent: #6366f1;
-  --color-success: #22c55e;
-  --color-warning: #f59e0b;
-  --color-error: #ef4444;
-  --color-info: #3b82f6;
+  --color-bg-base: #111117;
+  --color-bg-surface: #18181f;
+  --color-bg-hover: #20202a;
+  --color-border: #2c2c3c;
+  --color-border-focus: #818cf8;
+  --color-text-primary: #e4e4ef;
+  --color-text-secondary: #9090aa;
+  --color-text-muted: #5c5c78;
+  --color-accent: #818cf8;
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-error: #f87171;
+  --color-info: #60a5fa;
   --font-ui: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 }
@@ -49,6 +69,7 @@ html, body, #root {
   color: var(--text-primary);
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 a {
