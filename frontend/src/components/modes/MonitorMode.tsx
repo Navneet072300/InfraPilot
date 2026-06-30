@@ -4,7 +4,7 @@ import {
   TrendingUp, TrendingDown, AlertTriangle, RefreshCw, DollarSign,
   BarChart2, Loader2, CheckCircle2, Edit2, X, Eye, EyeOff,
   ShieldAlert, Activity, Trash2, Server, Layers, BellOff, Wrench,
-  AlertOctagon, AlertCircle, Info, BarChart3, Zap, ThumbsUp,
+  AlertOctagon, AlertCircle, Info, BarChart3, ThumbsUp,
 } from 'lucide-react';
 import { useClusterStore } from '../../store/clusterStore';
 import { useClusterOverview, useNamespaces, useResources, useNodeMetrics } from '../../hooks/useKubernetes';
