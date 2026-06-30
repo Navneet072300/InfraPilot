@@ -134,6 +134,20 @@ class TeamInvite(Base):
     is_cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class GenerateSession(Base):
+    __tablename__ = "generate_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), default="")
+    prompt: Mapped[str] = mapped_column(Text, default="")
+    tools: Mapped[str] = mapped_column(Text, default="[]")       # JSON array
+    context: Mapped[str] = mapped_column(Text, default="[]")     # JSON array
+    files_json: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of {path, content, language}
+    meta_json: Mapped[str] = mapped_column(Text, default="{}")   # elapsed, lines, costEstimate
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+
+
 class UserSettings(Base):
     __tablename__ = "user_settings"
 

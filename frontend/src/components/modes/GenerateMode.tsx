@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Sparkles, AlertCircle, Rocket, ChevronRight, ChevronDown,
   Folder, FolderOpen, Zap, CheckCircle, Terminal, FileText,
+  Plus, Trash2, Clock, MessageSquare,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/appStore';
@@ -61,6 +62,17 @@ interface TermLine {
   message?: string;
 }
 
+interface HistorySession {
+  id: number;
+  title: string;
+  prompt: string;
+  tools: string[];
+  context: string[];
+  files: GeneratedFile[];
+  meta: { elapsed?: number; lines?: number; costEstimate?: string };
+  created_at: string;
+}
+
 /* ── helpers ────────────────────────────────────────────────────────────── */
 function parseLlmFiles(raw: string): GeneratedFile[] {
   const map = new Map<string, GeneratedFile>();
@@ -106,10 +118,43 @@ function buildTree(files: GeneratedFile[]): TreeNode[] {
 
 function detectCloud(files: GeneratedFile[]): string {
   const blob = files.map(f => f.path + ' ' + (f.content ?? '')).join(' ').toLowerCase();
-  if (blob.includes('azurerm') || blob.includes('azurerm') || blob.includes('aks')) return 'azure';
+  if (blob.includes('azurerm') || blob.includes('aks')) return 'azure';
   if (blob.includes('google_') || blob.includes('gke')) return 'gcp';
   if (blob.includes('aws_') || blob.includes('eks')) return 'aws';
   return 'k8s';
+}
+
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days} days ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function groupSessions(sessions: HistorySession[]): { label: string; items: HistorySession[] }[] {
+  const now = Date.now();
+  const today: HistorySession[] = [], yesterday: HistorySession[] = [],
+    week: HistorySession[] = [], older: HistorySession[] = [];
+  for (const s of sessions) {
+    const diff = now - new Date(s.created_at).getTime();
+    const days = diff / 86400000;
+    if (days < 1) today.push(s);
+    else if (days < 2) yesterday.push(s);
+    else if (days < 7) week.push(s);
+    else older.push(s);
+  }
+  return [
+    { label: 'Today', items: today },
+    { label: 'Yesterday', items: yesterday },
+    { label: 'Last 7 days', items: week },
+    { label: 'Older', items: older },
+  ].filter(g => g.items.length > 0);
 }
 
 /* ── Markdown renderer ──────────────────────────────────────────────────── */
@@ -163,104 +208,48 @@ function FileTreeNode({ node, depth, activeTab, onSelect, open, toggleOpen }: {
   const isOpen = open.has(node.path);
   const isActive = node.isFile && node.path === activeTab;
   const ext = node.name.split('.').pop()?.toLowerCase() ?? '';
-  const dotColor = EXT_COLOR[ext] ?? 'var(--text-secondary)';
-  const pad = 10 + depth * 14;
-
-  if (!node.isFile) {
+  const col = EXT_COLOR[ext] ?? 'var(--text-secondary)';
+  if (node.isFile) {
     return (
-      <div>
-        <button type="button" onClick={() => toggleOpen(node.path)}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', padding: `4px 8px 4px ${pad}px`, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-primary)', fontSize: 12, textAlign: 'left', fontFamily: 'inherit' }}
-          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
-          onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
-          {isOpen ? <ChevronDown size={11} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} /> : <ChevronRight size={11} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />}
-          {isOpen ? <FolderOpen size={13} style={{ color: 'var(--warning)', flexShrink: 0 }} /> : <Folder size={13} style={{ color: 'var(--warning)', flexShrink: 0 }} />}
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.name}</span>
-        </button>
-        {isOpen && node.children.map(c => <FileTreeNode key={c.path} node={c} depth={depth + 1} activeTab={activeTab} onSelect={onSelect} open={open} toggleOpen={toggleOpen} />)}
-      </div>
+      <button type="button" onClick={() => onSelect(node.path)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 5, padding: `3px 8px 3px ${8 + depth * 12}px`, border: 'none', background: isActive ? 'var(--bg-hover)' : 'transparent', color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', fontSize: 11.5, cursor: 'pointer', textAlign: 'left', borderLeft: isActive ? `2px solid ${col}` : '2px solid transparent', fontFamily: 'JetBrains Mono, monospace' }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: col, flexShrink: 0 }} />
+        {node.name}
+      </button>
     );
   }
-
   return (
-    <button type="button" onClick={() => onSelect(node.path)}
-      style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: `4px 8px 4px ${pad + 16}px`, background: isActive ? 'var(--accent-glow)' : 'none', border: 'none', borderLeft: `2px solid ${isActive ? dotColor : 'transparent'}`, cursor: 'pointer', color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', fontSize: 12, textAlign: 'left', fontFamily: 'inherit', transition: 'all 0.1s' }}
-      onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-      onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'none'; }}>
-      <span style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{node.name}</span>
-    </button>
-  );
-}
-
-/* ── FileExplorer ───────────────────────────────────────────────────────── */
-function FileExplorer({ files, activeTab, onSelect }: { files: GeneratedFile[]; activeTab: string; onSelect: (p: string) => void }) {
-  const tree = useMemo(() => buildTree(files), [files]);
-  const [open, setOpen] = useState<Set<string>>(() => {
-    const s = new Set<string>();
-    const collect = (ns: TreeNode[]) => ns.forEach(n => { if (!n.isFile) { s.add(n.path); collect(n.children); } });
-    collect(buildTree(files));
-    return s;
-  });
-
-  // Auto-open new folders as files arrive
-  useEffect(() => {
-    const s = new Set(open);
-    const collect = (ns: TreeNode[]) => ns.forEach(n => { if (!n.isFile) { s.add(n.path); collect(n.children); } });
-    collect(buildTree(files));
-    setOpen(s);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [files.length]);
-
-  const toggleOpen = (p: string) => setOpen(prev => { const n = new Set(prev); n.has(p) ? n.delete(p) : n.add(p); return n; });
-
-  return (
-    <div style={{ width: 180, flexShrink: 0, borderRight: '1px solid var(--border)', overflowY: 'auto', overflowX: 'hidden', background: 'var(--bg-surface)', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '8px 10px 4px', fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.08em', textTransform: 'uppercase', flexShrink: 0 }}>
-        Explorer
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-        {tree.map(n => <FileTreeNode key={n.path} node={n} depth={0} activeTab={activeTab} onSelect={onSelect} open={open} toggleOpen={toggleOpen} />)}
-      </div>
+    <div>
+      <button type="button" onClick={() => toggleOpen(node.path)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 4, padding: `3px 8px 3px ${8 + depth * 12}px`, border: 'none', background: 'transparent', color: 'var(--text-secondary)', fontSize: 11.5, cursor: 'pointer', textAlign: 'left' }}>
+        {isOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        {isOpen ? <FolderOpen size={12} style={{ color: 'var(--warning)', opacity: 0.8 }} /> : <Folder size={12} style={{ color: 'var(--warning)', opacity: 0.6 }} />}
+        {node.name}
+      </button>
+      {isOpen && node.children.map(c => <FileTreeNode key={c.path} node={c} depth={depth + 1} activeTab={activeTab} onSelect={onSelect} open={open} toggleOpen={toggleOpen} />)}
     </div>
   );
 }
 
-/* ── CredentialModal ────────────────────────────────────────────────────── */
-function CredentialModal({ cloud, onSubmit, onClose }: { cloud: string; onSubmit: (c: Record<string, string>) => void; onClose: () => void }) {
-  const fields = CLOUD_FIELDS[cloud] ?? CLOUD_FIELDS.aws;
-  const [vals, setVals] = useState<Record<string, string>>({});
-  const set = (k: string, v: string) => setVals(p => ({ ...p, [k]: v }));
+function FileExplorer({ files, activeTab, onSelect }: { files: GeneratedFile[]; activeTab: string; onSelect: (p: string) => void }) {
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const tree = useMemo(() => buildTree(files), [files]);
+  const toggleOpen = (p: string) => setOpen(prev => {
+    const next = new Set(prev);
+    next.has(p) ? next.delete(p) : next.add(p);
+    return next;
+  });
+  useEffect(() => {
+    const dirs = new Set<string>();
+    files.forEach(f => {
+      const parts = f.path.split('/');
+      for (let i = 1; i < parts.length; i++) dirs.add(parts.slice(0, i).join('/'));
+    });
+    setOpen(dirs);
+  }, [files]);
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500 }}>
-      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 24, width: 420, boxShadow: '0 24px 64px rgba(0,0,0,0.7)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <Zap size={15} style={{ color: 'var(--accent)' }} />
-          <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Auto-Implement · {cloud.toUpperCase()}</span>
-        </div>
-        <p style={{ fontSize: 11, color: 'var(--text-secondary)', margin: '0 0 16px' }}>Credentials are used once and never stored or logged.</p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {fields.map(f => (
-            <div key={f.key}>
-              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{f.label}</label>
-              {f.textarea ? (
-                <textarea rows={4} placeholder={f.placeholder} value={vals[f.key] ?? ''} onChange={e => set(f.key, e.target.value)}
-                  style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 11, padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', resize: 'vertical', outline: 'none', boxSizing: 'border-box' }} />
-              ) : (
-                <input type={f.secret ? 'password' : 'text'} placeholder={f.placeholder} value={vals[f.key] ?? ''} onChange={e => set(f.key, e.target.value)}
-                  style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, padding: '8px 10px', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
-              )}
-            </div>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-          <button type="button" onClick={onClose} style={{ flex: 1, padding: 8, background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-          <button type="button" onClick={() => onSubmit(vals)} style={{ flex: 2, padding: 8, background: 'var(--accent)', border: 'none', borderRadius: 6, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-            <Zap size={13} /> Run Implementation
-          </button>
-        </div>
-      </div>
+    <div style={{ width: 180, flexShrink: 0, background: 'var(--bg-surface)', borderRight: '1px solid var(--border)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '8px 8px 4px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>EXPLORER</div>
+      {tree.map(n => <FileTreeNode key={n.path} node={n} depth={0} activeTab={activeTab} onSelect={onSelect} open={open} toggleOpen={toggleOpen} />)}
     </div>
   );
 }
@@ -268,32 +257,168 @@ function CredentialModal({ cloud, onSubmit, onClose }: { cloud: string; onSubmit
 /* ── TerminalPanel ──────────────────────────────────────────────────────── */
 function TerminalPanel({ lines, done, onClose }: { lines: TermLine[]; done: boolean; onClose: () => void }) {
   const bottomRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [lines.length]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [lines]);
 
   return (
-    <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-base)', display: 'flex', flexDirection: 'column', height: 260, flexShrink: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', borderBottom: '1px solid #21262d', background: 'var(--bg-surface)', flexShrink: 0 }}>
-        <Terminal size={12} style={{ color: 'var(--text-secondary)' }} />
-        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Terminal</span>
-        {!done && <span style={{ fontSize: 11, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ animation: 'pulse 1.2s ease-in-out infinite' }}>●</span> Running</span>}
-        {done && <span style={{ fontSize: 11, color: 'var(--success)' }}>✓ Done</span>}
-        <button type="button" onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 0 }}>×</button>
+    <div style={{ borderTop: '1px solid var(--border)', background: '#0d0d14', height: 240, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '5px 12px', borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
+        <Terminal size={12} style={{ color: 'var(--success)', marginRight: 6 }} />
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.06em' }}>TERMINAL</span>
+        {!done && <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--accent)', animation: 'pulse 1.2s ease-in-out infinite' }}>● running</span>}
+        {done && <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--success)' }}>✓ done</span>}
+        <button type="button" onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, lineHeight: 1.8 }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11.5, lineHeight: 1.8 }}>
         {lines.map((l, i) => {
-          if (l.type === 'start') return <div key={i} style={{ color: 'var(--text-secondary)', marginBottom: 4 }}>{l.message}</div>;
+          if (l.type === 'start') return <div key={i} style={{ color: 'var(--accent)', marginBottom: 6 }}>▶ {l.label}</div>;
           if (l.type === 'cmd') return (
-            <div key={i} style={{ marginTop: 10, marginBottom: 2 }}>
+            <div key={i} style={{ marginBottom: 2 }}>
               <span style={{ color: 'var(--success)' }}>$ </span>
-              <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{l.cmd}</span>
-              {l.label && <span style={{ color: 'var(--text-secondary)', marginLeft: 10, fontSize: 10 }}>  — {l.label}</span>}
+              <span style={{ color: '#e2e8f0' }}>{l.cmd}</span>
             </div>
           );
+          if (l.type === 'output') return <div key={i} style={{ color: '#94a3b8', marginLeft: 12 }}>{l.text}</div>;
           if (l.type === 'error') return <div key={i} style={{ color: 'var(--error)', marginTop: 4 }}>✗ {l.text}</div>;
           if (l.type === 'done') return <div key={i} style={{ color: 'var(--success)', marginTop: 10, fontWeight: 700, fontSize: 13 }}>✓ {l.message}</div>;
           return <div key={i} style={{ color: 'var(--text-secondary)' }}>{l.text}</div>;
         })}
         <div ref={bottomRef} />
+      </div>
+    </div>
+  );
+}
+
+/* ── CredentialModal ────────────────────────────────────────────────────── */
+function CredentialModal({ cloud, onSubmit, onClose }: { cloud: string; onSubmit: (c: Record<string, string>) => void; onClose: () => void }) {
+  const fields = CLOUD_FIELDS[cloud] ?? CLOUD_FIELDS.k8s;
+  const [vals, setVals] = useState<Record<string, string>>({});
+  const set = (k: string, v: string) => setVals(p => ({ ...p, [k]: v }));
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '24px', width: 440, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <h3 style={{ margin: 0, fontSize: 15, color: 'var(--text-primary)', fontWeight: 700 }}>Cloud Credentials</h3>
+        <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)' }}>Credentials are used only for this session and never stored.</p>
+        {fields.map(f => (
+          <div key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>{f.label}</label>
+            {f.textarea ? (
+              <textarea value={vals[f.key] ?? ''} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder} rows={4}
+                style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, padding: '8px 10px', resize: 'none', outline: 'none', fontFamily: 'JetBrains Mono, monospace' }} />
+            ) : (
+              <input type={f.secret ? 'password' : 'text'} value={vals[f.key] ?? ''} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder}
+                style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, padding: '7px 10px', outline: 'none' }} />
+            )}
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" onClick={onClose} style={{ padding: '7px 16px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+          <button type="button" onClick={() => onSubmit(vals)} style={{ padding: '7px 16px', background: 'var(--accent)', border: 'none', borderRadius: 6, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Deploy</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── History Sidebar ────────────────────────────────────────────────────── */
+function HistorySidebar({
+  sessions, activeId, loadingSessions, onSelect, onNew, onDelete,
+}: {
+  sessions: HistorySession[];
+  activeId: number | null;
+  loadingSessions: boolean;
+  onSelect: (s: HistorySession) => void;
+  onNew: () => void;
+  onDelete: (id: number) => void;
+}) {
+  const [hoverId, setHoverId] = useState<number | null>(null);
+  const groups = useMemo(() => groupSessions(sessions), [sessions]);
+
+  return (
+    <div style={{
+      width: 220, flexShrink: 0, background: 'var(--bg-surface)',
+      borderRight: '1px solid var(--border)',
+      display: 'flex', flexDirection: 'column', overflow: 'hidden',
+    }}>
+      {/* New Chat button */}
+      <div style={{ padding: '10px 10px 8px' }}>
+        <button
+          type="button"
+          onClick={onNew}
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center', gap: 7,
+            padding: '7px 10px', background: 'var(--accent)',
+            border: 'none', borderRadius: 7, color: '#fff',
+            fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+            boxShadow: '0 0 10px var(--accent-glow)',
+          }}
+        >
+          <Plus size={13} /> New Chat
+        </button>
+      </div>
+
+      {/* Header */}
+      <div style={{ padding: '4px 12px 6px', display: 'flex', alignItems: 'center', gap: 5 }}>
+        <Clock size={11} style={{ color: 'var(--text-muted)' }} />
+        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>History</span>
+      </div>
+
+      {/* Session list */}
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {loadingSessions && (
+          <div style={{ padding: '20px 12px', fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>Loading…</div>
+        )}
+        {!loadingSessions && sessions.length === 0 && (
+          <div style={{ padding: '24px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+            <MessageSquare size={24} style={{ color: 'var(--text-muted)', opacity: 0.3 }} />
+            <p style={{ margin: 0, fontSize: 11, color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.5 }}>
+              Your generations will appear here
+            </p>
+          </div>
+        )}
+        {groups.map(group => (
+          <div key={group.label}>
+            <div style={{ padding: '8px 12px 3px', fontSize: 9.5, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              {group.label}
+            </div>
+            {group.items.map(s => {
+              const isActive = s.id === activeId;
+              const isHover = hoverId === s.id;
+              return (
+                <div
+                  key={s.id}
+                  onMouseEnter={() => setHoverId(s.id)}
+                  onMouseLeave={() => setHoverId(null)}
+                  style={{
+                    position: 'relative', display: 'flex', alignItems: 'flex-start',
+                    margin: '1px 6px', borderRadius: 6,
+                    background: isActive ? 'var(--bg-hover)' : isHover ? 'var(--bg-hover)' : 'transparent',
+                    cursor: 'pointer', transition: 'background 0.1s',
+                    borderLeft: isActive ? '2px solid var(--accent)' : '2px solid transparent',
+                  }}
+                  onClick={() => onSelect(s)}
+                >
+                  <div style={{ flex: 1, padding: '6px 8px', minWidth: 0 }}>
+                    <p style={{ margin: 0, fontSize: 12, fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>
+                      {s.title}
+                    </p>
+                    <p style={{ margin: '2px 0 0', fontSize: 10, color: 'var(--text-muted)' }}>
+                      {relativeTime(s.created_at)}
+                    </p>
+                  </div>
+                  {isHover && (
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); onDelete(s.id); }}
+                      style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', borderRadius: 4 }}
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -319,9 +444,23 @@ export function GenerateMode() {
   const [termVisible, setTermVisible] = useState(false);
   const [termDone, setTermDone] = useState(false);
 
+  // History state
+  const [sessions, setSessions] = useState<HistorySession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
+  const [loadingSessions, setLoadingSessions] = useState(true);
+
   const rawRef = useRef('');
 
   const cloud = useMemo(() => detectCloud(generatedFiles), [generatedFiles]);
+
+  // Load history on mount
+  useEffect(() => {
+    fetch('/api/generate/sessions', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : { sessions: [] })
+      .then(d => setSessions(d.sessions ?? []))
+      .catch(() => {})
+      .finally(() => setLoadingSessions(false));
+  }, []);
 
   const onChunk = useCallback((chunk: string) => {
     rawRef.current += chunk;
@@ -329,16 +468,52 @@ export function GenerateMode() {
     setGeneratedFiles(parsed.length > 0 ? parsed : [{ path: 'main.tf', content: rawRef.current, language: 'hcl' }]);
   }, [setGeneratedFiles]);
 
-  const onDone = useCallback((meta: Record<string, unknown>) => {
+  const onDone = useCallback(async (meta: Record<string, unknown>) => {
     setIsGenerating(false);
-    setGenerateMeta({
+    const finalMeta = {
       elapsed: typeof meta.elapsed === 'number' ? meta.elapsed : undefined,
       lines: typeof meta.lines === 'number' ? meta.lines : undefined,
       costEstimate: typeof meta.cost_estimate === 'string' ? meta.cost_estimate : undefined,
-    });
+    };
+    setGenerateMeta(finalMeta);
     const final = parseLlmFiles(rawRef.current);
     if (final.length > 0) setGeneratedFiles(final);
-  }, [setIsGenerating, setGenerateMeta, setGeneratedFiles]);
+
+    // Auto-save to history
+    const prompt = rawRef.current ? generateInput : '';
+    if (prompt) {
+      try {
+        const resp = await fetch('/api/generate/sessions', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: prompt.slice(0, 80),
+            prompt,
+            tools: selectedTools,
+            context: selectedContext,
+            files: final,
+            meta: finalMeta,
+          }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          const newSession: HistorySession = {
+            id: data.id,
+            title: data.title,
+            prompt,
+            tools: selectedTools,
+            context: selectedContext,
+            files: final,
+            meta: finalMeta,
+            created_at: data.created_at,
+          };
+          setSessions(prev => [newSession, ...prev]);
+          setActiveSessionId(data.id);
+        }
+      } catch { /* non-critical */ }
+    }
+  }, [setIsGenerating, setGenerateMeta, setGeneratedFiles, generateInput, selectedTools, selectedContext]);
 
   const onError = useCallback((err: string) => {
     setIsGenerating(false);
@@ -357,6 +532,7 @@ export function GenerateMode() {
     setTermLines([]);
     setTermVisible(false);
     setTermDone(false);
+    setActiveSessionId(null);
     const ctx = activeCluster ? `\n\nActive cluster: ${activeCluster}, namespace: ${activeNamespace || 'default'}.` : '';
     await start({ prompt: generateInput + ctx, tools: selectedTools, context: selectedContext });
   }, [generateInput, isGenerating, selectedTools, selectedContext, activeCluster, activeNamespace, start, setIsGenerating, setGeneratedFiles, setGenerateMeta]);
@@ -364,6 +540,36 @@ export function GenerateMode() {
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') handleGenerate();
   }, [handleGenerate]);
+
+  const handleNewChat = useCallback(() => {
+    setGenerateInput('');
+    setGeneratedFiles([]);
+    setGenerateMeta(null);
+    setActiveSessionId(null);
+    setError(null);
+    setTermVisible(false);
+    setTermLines([]);
+    rawRef.current = '';
+  }, [setGenerateInput, setGeneratedFiles, setGenerateMeta]);
+
+  const handleLoadSession = useCallback((s: HistorySession) => {
+    setGenerateInput(s.prompt);
+    setGeneratedFiles(s.files);
+    setGenerateMeta(s.meta);
+    setActiveSessionId(s.id);
+    setError(null);
+    setTermVisible(false);
+    if (s.files.length > 0) setActiveFileTab(s.files[0].path);
+    rawRef.current = '';
+  }, [setGenerateInput, setGeneratedFiles, setGenerateMeta, setActiveFileTab]);
+
+  const handleDeleteSession = useCallback(async (id: number) => {
+    try {
+      await fetch(`/api/generate/sessions/${id}`, { method: 'DELETE', credentials: 'include' });
+      setSessions(prev => prev.filter(s => s.id !== id));
+      if (activeSessionId === id) handleNewChat();
+    } catch { /* non-critical */ }
+  }, [activeSessionId, handleNewChat]);
 
   const toggleTool = (t: string) => setSelectedTools(p => p.includes(t) ? p.filter(x => x !== t) : [...p, t]);
   const toggleCtx = (c: string) => setSelectedContext(p => p.includes(c) ? p.filter(x => x !== c) : [...p, c]);
@@ -421,6 +627,16 @@ export function GenerateMode() {
       {/* ── Main workspace ───────────────────────────────────────────── */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
 
+        {/* History Sidebar — always visible */}
+        <HistorySidebar
+          sessions={sessions}
+          activeId={activeSessionId}
+          loadingSessions={loadingSessions}
+          onSelect={handleLoadSession}
+          onNew={handleNewChat}
+          onDelete={handleDeleteSession}
+        />
+
         {/* Empty state */}
         {!hasFiles && !isGenerating && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', gap: 10 }}>
@@ -439,33 +655,37 @@ export function GenerateMode() {
           </div>
         )}
 
-        {/* VS Code layout */}
+        {/* VS Code layout — File Explorer + Editor (no tab bar) */}
         {hasFiles && (
           <>
-            {/* File Explorer */}
             <FileExplorer files={generatedFiles} activeTab={activeFileTab} onSelect={setActiveFileTab} />
 
             {/* Editor column */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
 
-              {/* Tab bar */}
-              <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)', overflowX: 'auto', flexShrink: 0 }}>
-                {generatedFiles.map(f => {
-                  const active = f.path === activeFileTab;
-                  const ext = f.path.split('.').pop()?.toLowerCase() ?? '';
+              {/* Breadcrumb bar (replaces tab bar) */}
+              <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)', padding: '0 12px', height: 32, flexShrink: 0, gap: 6 }}>
+                {activeFile && (() => {
+                  const ext = activeFile.path.split('.').pop()?.toLowerCase() ?? '';
                   const col = EXT_COLOR[ext] ?? 'var(--text-secondary)';
-                  const tabName = f.path.split('/').pop() ?? f.path;
+                  const parts = activeFile.path.split('/');
                   return (
-                    <button key={f.path} type="button" onClick={() => setActiveFileTab(f.path)}
-                      style={{ padding: '6px 14px', background: active ? 'var(--bg-base)' : 'transparent', border: 'none', borderBottom: `2px solid ${active ? col : 'transparent'}`, color: active ? 'var(--text-primary)' : 'var(--text-secondary)', fontSize: 12, fontWeight: active ? 500 : 400, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace', display: 'flex', alignItems: 'center', gap: 5, transition: 'color 0.1s' }}>
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: col, flexShrink: 0, opacity: active ? 1 : 0.5 }} />
-                      {tabName}
-                    </button>
+                    <>
+                      {parts.map((p, i) => (
+                        <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {i > 0 && <ChevronRight size={11} style={{ color: 'var(--text-muted)' }} />}
+                          <span style={{ fontSize: 12, color: i === parts.length - 1 ? 'var(--text-primary)' : 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            {i === parts.length - 1 && <span style={{ width: 7, height: 7, borderRadius: '50%', background: col, display: 'inline-block' }} />}
+                            {p}
+                          </span>
+                        </span>
+                      ))}
+                    </>
                   );
-                })}
+                })()}
                 <button type="button" onClick={() => navigate('/app/pipeline')}
-                  style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', background: 'rgba(99,102,241,0.1)', border: '1px solid var(--accent)', borderRadius: 5, color: 'var(--accent)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', margin: '4px 8px', flexShrink: 0 }}>
-                  <Rocket size={11} /> Add to Pipeline
+                  style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px', background: 'rgba(99,102,241,0.1)', border: '1px solid var(--accent)', borderRadius: 4, color: 'var(--accent)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  <Rocket size={10} /> Add to Pipeline
                 </button>
               </div>
 
