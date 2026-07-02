@@ -23,7 +23,7 @@ from db.database import get_session, is_db_available
 from db.models import User, DeployConfig
 from services.ai_service import AIService
 from services.github_service import GitHubService
-from services.pipeline_generator import get_dockerfile, build_pipeline_prompt
+from services.pipeline_generator import get_dockerfile, get_compose_file, build_cd_prompt
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -232,41 +232,56 @@ async def generate_dockerfile(body: DockerfileRequest):
     return {"content": content}
 
 
-# ── Pipeline generation (streaming) ───────────────────────────────────────────
+# ── docker-compose template ────────────────────────────────────────────────────
+
+class ComposeRequest(BaseModel):
+    language: str
+    framework: str = ""
+    port: int = 8080
+    app_name: str = "app"
+
+
+@router.post("/deploy/compose")
+async def generate_compose(body: ComposeRequest):
+    content = get_compose_file(body.language, body.framework, body.port, body.app_name)
+    return {"content": content}
+
+
+# ── CD pipeline generation (streaming) ────────────────────────────────────────
 
 class PipelineRequest(BaseModel):
     repo_full_name: str
     branch: str = "main"
     language: str
     framework: str = ""
-    ci_tool: str       # github-actions | jenkins | gitlab-ci
-    registry: str      # ghcr | ecr | docker-hub | none
-    secrets_manager: str  # native | vault | infisical | aws-sm | none
-    deploy_target: str    # kubernetes | docker-ssh | ecs | build-only
-    has_dockerfile: bool = True
+    cd_tool: str        # argocd | fluxcd | jenkins
+    config_tool: str    # helm | kustomize
+    vault: str = "none" # none | hashicorp | infisical | aws-sm
+    vault_deployed: bool = False
+    registry: str = "ghcr"
     port: int = 8080
     app_name: str = "app"
 
 
 @router.post("/deploy/pipeline")
 async def generate_pipeline(body: PipelineRequest):
-    prompt, _ = build_pipeline_prompt(
+    prompt = build_cd_prompt(
         repo_full_name=body.repo_full_name,
         branch=body.branch,
         language=body.language,
         framework=body.framework,
-        ci_tool=body.ci_tool,
+        cd_tool=body.cd_tool,
+        config_tool=body.config_tool,
+        vault=body.vault,
+        vault_deployed=body.vault_deployed,
         registry=body.registry,
-        secrets_manager=body.secrets_manager,
-        deploy_target=body.deploy_target,
-        has_dockerfile=body.has_dockerfile,
         port=body.port,
         app_name=body.app_name,
     )
 
     async def stream():
         try:
-            async for chunk in ai.stream_devops(prompt, tools=[body.ci_tool], context=""):
+            async for chunk in ai.stream_devops(prompt, tools=[body.cd_tool, body.config_tool], context=""):
                 yield f"data: {json.dumps({'chunk': chunk, 'done': False})}\n\n"
             yield f"data: {json.dumps({'done': True})}\n\n"
         except Exception as e:

@@ -205,6 +205,205 @@ def get_dockerfile(language: str, framework: str, port: int) -> str:
     return _DOCKERFILES[key].replace("{port}", str(port))
 
 
+# ── docker-compose template ────────────────────────────────────────────────────
+
+def get_compose_file(language: str, framework: str, port: int, app_name: str) -> str:
+    """Return a docker-compose.yml for the given stack."""
+    lang = language.lower()
+    fw = (framework or "").lower()
+    safe_name = app_name.lower().replace("/", "-").replace("_", "-")
+
+    # Decide if we should add a database service hint
+    db_hint = ""
+    if "django" in fw or "rails" in fw or "spring" in fw or "laravel" in fw:
+        db_hint = """
+  # db:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_DB: {name}
+  #     POSTGRES_USER: app
+  #     POSTGRES_PASSWORD: ${{DB_PASSWORD}}
+  #   volumes:
+  #     - db_data:/var/lib/postgresql/data
+  #   networks:
+  #     - {name}-net
+""".format(name=safe_name)
+
+    env_key = "NODE_ENV" if lang in ("node.js", "node", "javascript", "typescript") else "APP_ENV"
+
+    return f"""\
+version: '3.8'
+
+services:
+  {safe_name}:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: {safe_name}:latest
+    container_name: {safe_name}
+    ports:
+      - "{port}:{port}"
+    environment:
+      - {env_key}=production
+      # Add your environment variables here — never commit real secrets
+      # - DATABASE_URL=${{DATABASE_URL}}
+      # - SECRET_KEY=${{SECRET_KEY}}
+    restart: unless-stopped
+    networks:
+      - {safe_name}-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:{port}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+{db_hint}
+  # redis:
+  #   image: redis:7-alpine
+  #   restart: unless-stopped
+  #   networks:
+  #     - {safe_name}-net
+
+networks:
+  {safe_name}-net:
+    driver: bridge
+
+volumes:
+  db_data:
+"""
+
+
+# ── CD pipeline prompt builder (ArgoCD / FluxCD / Jenkins) ────────────────────
+
+_CD_REGISTRY_IMAGE = {
+    "ghcr":       "ghcr.io/{{REPO_FULL_NAME}}/{{APP_NAME}}",
+    "docker-hub": "{{DOCKERHUB_USERNAME}}/{{APP_NAME}}",
+    "ecr":        "{{AWS_ACCOUNT_ID}}.dkr.ecr.{{AWS_REGION}}.amazonaws.com/{{APP_NAME}}",
+    "none":       "{{APP_NAME}}",
+}
+
+_CD_REGISTRY_AUTH = {
+    "ghcr":       "GitHub Actions: use GITHUB_TOKEN (no extra secret). Other CI: use PAT with packages:write scope.",
+    "docker-hub": "Secrets needed: DOCKERHUB_USERNAME, DOCKERHUB_TOKEN.",
+    "ecr":        "Secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION. Use aws-actions/amazon-ecr-login.",
+    "none":       "No registry push — build only.",
+}
+
+_VAULT_NOTES = {
+    "none":      "Use native Kubernetes Secrets (created manually or via CI env vars). Never commit secret values to git.",
+    "hashicorp": (
+        "HashiCorp Vault integration. Use vault-agent sidecar injection: add "
+        "vault.hashicorp.com/agent-inject: 'true' annotation to Deployment pods. "
+        "Secrets: VAULT_ADDR, VAULT_TOKEN for CI."
+    ),
+    "infisical": (
+        "Infisical integration. Install infisical-k8s-operator and add an InfisicalSecret CRD "
+        "that maps Infisical project secrets to a Kubernetes Secret. Secret: INFISICAL_TOKEN for CI."
+    ),
+    "aws-sm":    (
+        "AWS Secrets Manager via External Secrets Operator (ESO). Deploy a SecretStore pointing to "
+        "AWS SM, then ExternalSecret CRDs that sync secrets as K8s Secrets. Use IRSA or static creds."
+    ),
+}
+
+_VAULT_SETUP = {
+    "hashicorp": "Install Vault: helm repo add hashicorp https://helm.releases.hashicorp.com && helm install vault hashicorp/vault -n vault --create-namespace",
+    "infisical": "Install Infisical operator: helm repo add infisical-helm-charts 'https://dl.cloudsmith.io/public/infisical/helm-charts/helm/charts/' && helm install infisical-standalone infisical-helm-charts/infisical-standalone -n infisical --create-namespace",
+    "aws-sm":    "Install External Secrets Operator: helm repo add external-secrets https://charts.external-secrets.io && helm install external-secrets external-secrets/external-secrets -n external-secrets --create-namespace",
+    "none":      "",
+}
+
+
+def build_cd_prompt(
+    *,
+    repo_full_name: str,
+    branch: str,
+    language: str,
+    framework: str,
+    cd_tool: str,
+    config_tool: str,
+    vault: str,
+    vault_deployed: bool,
+    registry: str,
+    port: int,
+    app_name: str,
+) -> str:
+    """Build prompt for generating a full CD pipeline with Helm/Kustomize + optional vault."""
+    safe_name = app_name.lower().replace("/", "-").replace("_", "-")
+    image_base = _CD_REGISTRY_IMAGE.get(registry, "{{REGISTRY}}/{{APP_NAME}}")
+    image_base = image_base.replace("{{REPO_FULL_NAME}}", repo_full_name).replace("{{APP_NAME}}", safe_name)
+
+    vault_note = _VAULT_NOTES.get(vault, "")
+    vault_setup = "" if vault_deployed or vault == "none" else f"\nVault not yet deployed — include setup steps: {_VAULT_SETUP.get(vault, '')}"
+
+    # Decide CI wrapper (ArgoCD/FluxCD need a separate CI step to build+push)
+    needs_ci_workflow = cd_tool in ("argocd", "fluxcd")
+
+    if cd_tool == "jenkins":
+        files_list = f"""FILES TO GENERATE (use --- FILE: path --- separator for each):
+1. Jenkinsfile — full declarative pipeline: checkout → build Docker image → push to registry → deploy via {config_tool} to Kubernetes
+2. {config_tool}/  — complete {config_tool} chart/manifests (see details below)
+3. setup-guide.md — checklist of secrets, one-time setup steps, how to trigger first run"""
+    elif cd_tool == "argocd":
+        files_list = f"""FILES TO GENERATE (use --- FILE: path --- separator for each):
+1. .github/workflows/build-push.yml — CI: checkout → build → push image to registry (tag with git SHA)
+2. argocd/application.yaml — ArgoCD Application manifest pointing to this repo's {config_tool}/ directory, branch {branch}
+3. {config_tool}/  — complete {config_tool} chart/manifests (see details below)
+4. setup-guide.md — checklist of secrets, ArgoCD install steps, app registration steps"""
+    else:  # fluxcd
+        files_list = f"""FILES TO GENERATE (use --- FILE: path --- separator for each):
+1. .github/workflows/build-push.yml — CI: checkout → build → push image to registry (tag with git SHA)
+2. flux/kustomization.yaml or flux/helmrelease.yaml — FluxCD resource pointing to {config_tool}/ in this repo
+3. {config_tool}/  — complete {config_tool} chart/manifests (see details below)
+4. setup-guide.md — checklist of secrets, Flux bootstrap steps, how to trigger reconciliation"""
+
+    if config_tool == "helm":
+        config_detail = f"""HELM CHART (helm/):
+- Chart.yaml: name={safe_name}, version=0.1.0, appVersion=1.0.0
+- values.yaml: image.repository={image_base}, image.tag=latest, replicaCount=2, service.port={port}, resources.requests.cpu=100m, resources.requests.memory=128Mi
+- templates/deployment.yaml: standard Deployment with readinessProbe on /{port}, liveness probe, resource limits, env from ConfigMap + Secret
+- templates/service.yaml: ClusterIP Service on port {port}
+- templates/ingress.yaml: Ingress (commented out by default, show example)
+- templates/configmap.yaml: non-secret config
+- templates/secret.yaml: placeholder Secret (with vault annotations if vault!='none')"""
+    else:  # kustomize
+        config_detail = f"""KUSTOMIZE (kustomize/):
+- base/deployment.yaml: Deployment with 2 replicas, image {image_base}:latest, port {port}, resource limits, probes
+- base/service.yaml: ClusterIP Service port {port}
+- base/kustomization.yaml: lists base resources
+- overlays/production/kustomization.yaml: sets image tag to latest, increases replicas to 3, adds production labels
+- overlays/staging/kustomization.yaml: sets replicas to 1, staging labels"""
+
+    return f"""You are a senior DevOps engineer. Generate a production-ready CD pipeline setup.
+
+PROJECT
+- Repo: github.com/{repo_full_name}  Branch: {branch}
+- Language: {language}  Framework: {framework or 'not detected'}
+- App port: {port}  App name: {safe_name}
+- Docker image: {image_base}:$GIT_SHA
+
+CD TOOL: {cd_tool.upper()}
+CONFIG TOOL: {config_tool}
+REGISTRY: {registry.upper()} — {_CD_REGISTRY_AUTH.get(registry, '')}
+VAULT / SECRETS: {vault.upper()} — {vault_note}{vault_setup}
+
+{files_list}
+
+{config_detail}
+
+VAULT INTEGRATION:
+{vault_note}
+{f"Vault is already deployed and reachable." if vault_deployed and vault != "none" else ""}
+{"Add appropriate annotations/CRDs to deployment manifests for secret injection." if vault != "none" else "Use standard K8s Secrets with placeholder values."}
+
+OUTPUT FORMAT — use EXACTLY this separator for every file, no exceptions:
+--- FILE: relative/path/to/file ---
+[complete file content, no truncation]
+
+Generate ALL files completely. Do not truncate or skip any file. No markdown fences inside file content.
+"""
+
+
 # ── CI/CD pipeline prompt builder ─────────────────────────────────────────────
 
 _REGISTRY_NOTES = {

@@ -19,18 +19,17 @@ interface NavItem {
 }
 
 const PRIMARY: NavItem[] = [
-  { icon: <Rocket size={16} />, label: 'Pipeline', path: '/app/pipeline' },
-  { icon: <Wand2 size={16} />, label: 'Generate', path: '/app/generate' },
+  { icon: <Zap size={16} />,        label: 'Deploy',   path: '/app/deploy' },
+  { icon: <Rocket size={16} />,     label: 'Pipeline', path: '/app/pipeline' },
+  { icon: <Wand2 size={16} />,      label: 'Generate', path: '/app/generate' },
   { icon: <Stethoscope size={16} />, label: 'Diagnose', path: '/app/diagnose' },
-  { icon: <Compass size={16} />, label: 'Design', path: '/app/design', planFeature: 'design_mode' },
-  { icon: <Activity size={16} />, label: 'Monitor', path: '/app/monitor', planFeature: 'monitor_mode' },
+  { icon: <Compass size={16} />,    label: 'Design',   path: '/app/design', planFeature: 'design_mode' },
+  { icon: <Activity size={16} />,   label: 'Monitor',  path: '/app/monitor', planFeature: 'monitor_mode' },
 ];
 
 const RESOURCES: NavItem[] = [
-  { icon: <Zap size={15} />, label: 'Deploy', path: '/app/deploy' },
-  { icon: <GitBranch size={15} />, label: 'Repositories', path: '/app/repos' },
   { icon: <Database size={15} />, label: 'Resources', path: '/app/resources' },
-  { icon: <Clock size={15} />, label: 'History', path: '/app/history' },
+  { icon: <Clock size={15} />,    label: 'History',   path: '/app/history' },
 ];
 
 const PLAN_LABEL: Record<Plan, string> = { free: 'Free', pro: 'Pro', team: 'Team', enterprise: 'Enterprise' };
