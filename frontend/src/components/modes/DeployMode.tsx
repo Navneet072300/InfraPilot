@@ -20,7 +20,7 @@ interface Repo {
 interface DetectedService {
   name: string; path: string; language: string; framework: string; port: number;
   role?: string;          // backend | frontend | admin | worker | other
-  endpoint_path?: string; // HTTP path prefix for Ingress, e.g. /api, /, /admin — empty = no public route
+  endpoint_url?: string;  // full public URL: https://myapp.com, https://api.myapp.com, etc. — empty = no public URL (workers)
   _manual?: boolean;      // user-added, not auto-detected
 }
 
@@ -348,27 +348,23 @@ export function DeployMode() {
         : n.includes('admin') ? 'admin'
         : (n.includes('worker') || n.includes('queue') || n.includes('job') || n.includes('cron') || n.includes('scheduler')) ? 'worker'
         : 'backend';
-      const endpoint_path = role === 'frontend' ? '/' : role === 'admin' ? '/admin' : role === 'worker' ? '' : '/api';
-      return { ...s, role, endpoint_path };
+      return { ...s, role, endpoint_url: '' };  // user fills in their real domain
     }));
   }, [scanResult]);
-
-  function _endpointDefault(role: string) {
-    return role === 'frontend' ? '/' : role === 'admin' ? '/admin' : role === 'worker' ? '' : '/api';
-  }
 
   const updateUserService = (idx: number, field: string, value: string | number) => {
     setUserServices(prev => {
       const next = [...prev];
       next[idx] = { ...next[idx], [field]: value };
-      if (field === 'role') next[idx].endpoint_path = _endpointDefault(value as string);
+      // Clearing the URL when switching to worker
+      if (field === 'role' && value === 'worker') next[idx].endpoint_url = '';
       return next;
     });
   };
 
   const addUserService = () => {
     const n = userServices.length + 1;
-    setUserServices(prev => [...prev, { name: `service-${n}`, path: `service-${n}`, language: '', framework: '', port: 8080, role: 'backend', endpoint_path: '/api', _manual: true }]);
+    setUserServices(prev => [...prev, { name: `service-${n}`, path: `service-${n}`, language: '', framework: '', port: 8080, role: 'backend', endpoint_url: '', _manual: true }]);
   };
 
   const removeUserService = (idx: number) => {
@@ -627,8 +623,8 @@ export function DeployMode() {
                     </div>
 
                     {/* Column headers */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 88px 64px 100px 26px', gap: 6, padding: '0 2px 6px', borderBottom: '1px solid var(--border)', marginBottom: 8 }}>
-                      {['Service / Path', 'Role', 'Port', 'HTTP Path', ''].map(h => (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 88px 64px 140px 26px', gap: 6, padding: '0 2px 6px', borderBottom: '1px solid var(--border)', marginBottom: 8 }}>
+                      {['Service / Path', 'Role', 'Port', 'Public URL', ''].map(h => (
                         <span key={h} style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{h}</span>
                       ))}
                     </div>
@@ -637,7 +633,7 @@ export function DeployMode() {
                       const roleColor: Record<string, string> = { backend: 'var(--accent)', frontend: '#3b82f6', admin: '#f59e0b', worker: '#6b7280', other: '#6b7280' };
                       const c = roleColor[svc.role ?? 'backend'] ?? 'var(--accent)';
                       return (
-                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 88px 64px 100px 26px', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 88px 64px 140px 26px', gap: 6, marginBottom: 6, alignItems: 'center' }}>
                           {/* Name + path */}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 1, overflow: 'hidden' }}>
                             {svc._manual ? (
@@ -684,14 +680,19 @@ export function DeployMode() {
                             style={{ fontSize: 10, padding: '4px 6px', borderRadius: 5, background: 'var(--bg-base)', border: '1px solid var(--border)', color: 'var(--text-primary)', width: '100%', boxSizing: 'border-box', fontFamily: 'monospace' }}
                           />
 
-                          {/* HTTP Path */}
+                          {/* Public URL */}
                           <input
                             type="text"
-                            value={svc.endpoint_path ?? ''}
-                            onChange={e => updateUserService(idx, 'endpoint_path', e.target.value)}
-                            placeholder={svc.role === 'worker' ? '—' : '/api'}
+                            value={svc.endpoint_url ?? ''}
+                            onChange={e => updateUserService(idx, 'endpoint_url', e.target.value)}
+                            placeholder={
+                              svc.role === 'worker' ? 'no public URL'
+                              : svc.role === 'frontend' ? 'https://myapp.com'
+                              : svc.role === 'admin' ? 'https://admin.myapp.com'
+                              : 'https://api.myapp.com'
+                            }
                             disabled={svc.role === 'worker'}
-                            title={svc.role === 'worker' ? 'Workers have no public HTTP route' : 'Ingress path prefix for this service'}
+                            title={svc.role === 'worker' ? 'Workers have no public URL' : 'Full public URL for this service (used in Ingress host and CI health checks)'}
                             style={{ fontSize: 10, padding: '4px 6px', borderRadius: 5, background: svc.role === 'worker' ? 'var(--bg-hover)' : 'var(--bg-base)', border: '1px solid var(--border)', color: svc.role === 'worker' ? 'var(--text-muted)' : 'var(--text-primary)', width: '100%', boxSizing: 'border-box', fontFamily: 'monospace' }}
                           />
 
@@ -710,7 +711,10 @@ export function DeployMode() {
                     })}
 
                     <p style={{ margin: '10px 0 0', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                      <strong style={{ color: 'var(--text-secondary)' }}>HTTP Path</strong> is used for Ingress routing (e.g. <code style={{ background: 'var(--bg-base)', padding: '0 4px', borderRadius: 3, fontSize: 10 }}>/api</code> → backend, <code style={{ background: 'var(--bg-base)', padding: '0 4px', borderRadius: 3, fontSize: 10 }}>/</code> → frontend). Workers have no public route.
+                      <strong style={{ color: 'var(--text-secondary)' }}>Public URL</strong> is the full domain where each service will be reachable — e.g.{' '}
+                      <code style={{ background: 'var(--bg-base)', padding: '0 4px', borderRadius: 3, fontSize: 10 }}>https://myapp.com</code> for frontend,{' '}
+                      <code style={{ background: 'var(--bg-base)', padding: '0 4px', borderRadius: 3, fontSize: 10 }}>https://api.myapp.com</code> for backend.
+                      Used for Ingress host rules, health-check URLs in CI, and TLS cert configuration. Workers have no public URL.
                     </p>
                   </div>
 

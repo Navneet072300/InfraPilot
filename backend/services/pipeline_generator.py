@@ -419,7 +419,7 @@ def build_deploy_prompt(
             "port": svc.get("port", 8080),
             "path": svc.get("path", "."),
             "role": svc.get("role", "backend"),
-            "endpoint_path": svc.get("endpoint_path", "/"),
+            "endpoint_url": svc.get("endpoint_url", "") or svc.get("endpoint_path", ""),
         })
 
     # ── Env / branch mapping ──────────────────────────────────────────────────
@@ -431,9 +431,28 @@ def build_deploy_prompt(
     config_dir = "helm" if config_tool == "helm" else "k8s"
 
     # ── Summaries ─────────────────────────────────────────────────────────────
+    from urllib.parse import urlparse as _urlparse
+
+    def _parse_url(raw: str) -> tuple[str, str]:
+        """Return (host, path) from a URL like https://api.myapp.com/v1"""
+        raw = raw.strip()
+        if not raw:
+            return ("", "")
+        if not raw.startswith("http"):
+            raw = "https://" + raw
+        p = _urlparse(raw)
+        host = p.netloc or p.path.split("/")[0]
+        path = p.path if p.path else "/"
+        if not path:
+            path = "/"
+        return (host, path)
+
     def _ep(s: dict) -> str:
-        ep = s.get("endpoint_path", "")
-        return f", http-path {ep}" if ep else " (no public route — worker/internal)"
+        url = s.get("endpoint_url", "") or s.get("endpoint_path", "")
+        if not url:
+            return " (no public URL — worker/internal)"
+        host, path = _parse_url(url)
+        return f", public-url {url} (host: {host}, path: {path})"
 
     svc_summary = "\n".join(
         f"  - {s['name']} [{s.get('role','backend')}]: {s.get('language','?')} / {s.get('framework','?')}"
@@ -441,12 +460,19 @@ def build_deploy_prompt(
         for s in services
     )
 
-    # Ingress routing table (only services with a public endpoint_path)
-    public_svcs = [s for s in services if s.get("endpoint_path")]
-    ingress_routes = "\n".join(
-        f"  path: {s.get('endpoint_path','/')} → {s['name']}:{s.get('port',8080)}"
-        for s in public_svcs
-    ) if public_svcs else "  (no public services — all internal)"
+    # Ingress routing table — host-based rules for Kubernetes Ingress + TLS
+    public_svcs = [s for s in services if s.get("endpoint_url") or s.get("endpoint_path")]
+    if public_svcs:
+        ingress_rows = []
+        for s in public_svcs:
+            url = s.get("endpoint_url", "") or s.get("endpoint_path", "")
+            host, path = _parse_url(url)
+            ingress_rows.append(
+                f"  host: {host or '(set your domain)'}, path: {path} → {s['name']}:{s.get('port',8080)}"
+            )
+        ingress_routes = "\n".join(ingress_rows)
+    else:
+        ingress_routes = "  (no public URLs provided — use placeholder hosts, user will configure DNS later)"
     img_summary = "\n".join(f"  - {s['name']}: {s['image']}:$GIT_SHA" for s in svc_images)
     env_summary = "\n".join(
         f"  - {env} → branch '{branch}' → namespace {safe_app if env == 'prod' else f'{safe_app}-{env}'}"
@@ -609,8 +635,9 @@ REPOSITORY: github.com/{repo_full_name}
 SERVICES ({len(services)}):
 {svc_summary}
 
-INGRESS ROUTING (use these exact path prefixes in Ingress and Helm/Kustomize manifests):
+INGRESS ROUTING (use these exact hosts and paths in every Ingress resource — one rule per service):
 {ingress_routes}
+Generate host-based Ingress rules (spec.rules[].host). Add TLS block with secretName per host (commented out — user enables after DNS is set). Workers with no public URL must NOT appear in Ingress.
 
 DOCKER IMAGES (registry: {registry.upper()}):
 {img_summary}
