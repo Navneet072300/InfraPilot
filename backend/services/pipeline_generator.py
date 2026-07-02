@@ -353,7 +353,14 @@ _REGISTRY_AUTH = {
 
 _VAULT_NOTES = {
     "none":      "Native Kubernetes Secrets — never commit real values, set via kubectl or CI env vars.",
-    "hashicorp": "HashiCorp Vault: vault-agent sidecar injection. Annotation: vault.hashicorp.com/agent-inject='true'. CI secrets: VAULT_ADDR, VAULT_TOKEN.",
+    "hashicorp": (
+        "HashiCorp Vault + CSI Secrets Store driver (secrets-store.csi.x-k8s.io). "
+        "SecretProviderClass CRD per overlay — only field that differs per env is vaultKubernetesMountPath: "
+        "'kubernetes' for prod, 'kubernetes-dev' for dev/staging. "
+        "Deployment mounts BOTH CSI volumes (vault-secrets + vault-ghcr-secrets); K8s Secrets are NOT created until pod mounts them. "
+        "Separate KV paths per env: secret/data/<app>/prod and secret/data/<app>/dev. "
+        "CRITICAL: alias_name_source=serviceaccount_name in Vault role (NOT UID — UID changes on SA recreate)."
+    ),
     "infisical": "Infisical K8s operator: InfisicalSecret CRD syncs to K8s Secret. CI secret: INFISICAL_TOKEN.",
     "aws-sm":    "AWS Secrets Manager via External Secrets Operator: SecretStore + ExternalSecret CRDs. Use IRSA for auth.",
 }
@@ -390,15 +397,10 @@ def build_deploy_prompt(
     environments: list[str],
     app_name: str,
 ) -> str:
-    """
-    Build the AI prompt for generating a full multi-service, multi-environment
-    CI/CD pipeline (CI build + CD deploy + K8s manifests).
-    """
     safe_app = app_name.lower().replace("/", "-").replace("_", "-")
-    owner = repo_full_name.split("/")[0] if "/" in repo_full_name else "owner"
     repo_name = repo_full_name.split("/")[-1] if "/" in repo_full_name else repo_full_name
 
-    # Build service image references
+    # ── Image references ──────────────────────────────────────────────────────
     svc_images = []
     for svc in services:
         name = svc["name"].lower().replace("_", "-")
@@ -412,67 +414,172 @@ def build_deploy_prompt(
             img = name
         svc_images.append({"name": name, "image": img, "port": svc.get("port", 8080), "path": svc.get("path", ".")})
 
-    # Environment / branch mapping
+    # ── Env / branch mapping ──────────────────────────────────────────────────
     env_branches = {env: _ENV_BRANCH.get(env, env) for env in environments}
+    branch_list = list(env_branches.values())
+    branches_str = ", ".join(branch_list)
 
-    # Service summary
+    # ── Config folder name ────────────────────────────────────────────────────
+    config_dir = "helm" if config_tool == "helm" else "k8s"
+
+    # ── Summaries ─────────────────────────────────────────────────────────────
     svc_summary = "\n".join(
         f"  - {s['name']}: {s.get('language','?')} / {s.get('framework','?')}, port {s.get('port',8080)}, path {s.get('path','.')}"
         for s in services
     )
     img_summary = "\n".join(f"  - {s['name']}: {s['image']}:$GIT_SHA" for s in svc_images)
-    env_summary = "\n".join(f"  - {env} environment → triggered by push to '{branch}' branch" for env, branch in env_branches.items())
+    env_summary = "\n".join(
+        f"  - {env} → branch '{branch}' → namespace {safe_app if env == 'prod' else f'{safe_app}-{env}'}"
+        for env, branch in env_branches.items()
+    )
 
-    # Vault notes
+    # ── Vault notes ───────────────────────────────────────────────────────────
     vault_note = _VAULT_NOTES.get(vault, "")
     vault_setup = ""
     if vault != "none" and not vault_deployed:
-        vault_setup = f"\nVault NOT yet deployed. Include one-time setup: {_VAULT_SETUP.get(vault, '')}"
+        vault_setup = f"\nVault NOT yet deployed — include one-time setup: {_VAULT_SETUP.get(vault, '')}"
 
-    # Config tool detail
-    if config_tool == "helm":
-        config_desc = f"""HELM CHART at helm/:
-- Chart.yaml: name={safe_app}, version=0.1.0
-- values.yaml: base defaults (all services, replicas, images, ports)
-- values-dev.yaml: overrides for dev (lower replicas, debug flags)
-- values-staging.yaml: overrides for staging
-- values-prod.yaml: overrides for prod (higher replicas, resource limits)
-- templates/: one Deployment + Service per detected service, Ingress (commented), ConfigMap, HPA"""
-    else:
-        config_desc = f"""KUSTOMIZE at kustomize/:
-- base/: base Deployment + Service for each service, kustomization.yaml
-- overlays/dev/: patches — replicas=1, dev env vars, kustomization.yaml
-- overlays/staging/: patches — replicas=2, staging env vars
-- overlays/prod/: patches — replicas=3, production resource limits, kustomization.yaml"""
+    # ── Vault CSI detail (hashicorp) ──────────────────────────────────────────
+    vault_csi_detail = ""
+    if vault == "hashicorp":
+        spc_per_env = "\n".join(
+            f"  {env}/secret-provider-class.yaml: vaultKubernetesMountPath: '{'kubernetes' if env == 'prod' else 'kubernetes-dev'}'"
+            for env in environments
+        )
+        vault_csi_detail = f"""
+VAULT CSI SECRETS STORE PATTERN (use this, NOT vault-agent sidecar):
+SecretProviderClass per overlay (only vaultKubernetesMountPath differs):
+{spc_per_env}
 
-    # CD tool manifest requests
-    if cd_tool == "argocd":
-        cd_files = "- argocd/: one Application manifest per environment (application-dev.yaml, application-prod.yaml etc.), pointing to this repo's config dir + respective overlay/values file"
-    elif cd_tool == "fluxcd":
-        cd_files = "- flux/: one Kustomization or HelmRelease per environment, pointing to the config dir + overlay"
-    else:
-        cd_files = "- (CD is inline in CI — kubectl apply commands in the deploy job)"
+SecretProviderClass spec:
+  apiVersion: secrets-store.csi.x-k8s.io/v1
+  kind: SecretProviderClass
+  spec:
+    provider: vault
+    secretObjects:
+    - secretName: <service>-secret
+      type: Opaque
+      data: [{{key: DATABASE_URL, objectName: DATABASE_URL}}, ...]
+    parameters:
+      vaultAddress: 'https://vault.iamsaif.ai'
+      roleName: '<service>'
+      vaultKubernetesMountPath: 'kubernetes'   # 'kubernetes-dev' for dev/staging overlays
+      objects: |
+        - objectName: 'DATABASE_URL'
+          secretPath: 'secret/data/<service>/<env>'   # SEPARATE PATH PER ENV
+          secretKey: 'DATABASE_URL'
 
-    # CI file
+GHCR pull secret (also per overlay, ghcr-secret-provider-class.yaml):
+  secretObjects[0].secretName: ghcr-credentials
+  secretObjects[0].type: kubernetes.io/dockerconfigjson
+  secretObjects[0].data[0].key: .dockerconfigjson
+  parameters.objects: objectName: dockerconfigjson, secretPath: secret/data/ghcr, secretKey: dockerconfigjson
+
+Deployment MUST include BOTH CSI volumes (K8s Secret only created when pod mounts volume):
+  volumeMounts:
+  - {{name: vault-secrets,      mountPath: /mnt/vault-secrets,      readOnly: true}}
+  - {{name: vault-ghcr-secrets, mountPath: /mnt/vault-ghcr-secrets, readOnly: true}}
+  volumes:
+  - name: vault-secrets
+    csi: {{driver: secrets-store.csi.k8s.io, readOnly: true, volumeAttributes: {{secretProviderClass: 'vault-<service>'}}}}
+  - name: vault-ghcr-secrets
+    csi: {{driver: secrets-store.csi.k8s.io, readOnly: true, volumeAttributes: {{secretProviderClass: 'vault-ghcr'}}}}
+  envFrom: [{{secretRef: {{name: <service>-secret}}}}]
+  imagePullSecrets: [{{name: ghcr-credentials}}]
+
+CRITICAL VAULT RULES:
+- Field is 'vaultKubernetesMountPath' NOT 'kubernetesMountPath' (wrong key silently ignored)
+- alias_name_source=serviceaccount_name in Vault role (NOT UID)
+- KV paths SEPARATE per env: secret/data/<service>/prod vs secret/data/<service>/dev
+"""
+
+    # ── CI trigger desc ───────────────────────────────────────────────────────
     ci_file = _CI_FILE.get(ci_tool, "ci.yml")
-
-    # Branch conditions per CI tool
-    branch_list = list(env_branches.values())
-    branches_str = ", ".join(branch_list)
-
     if ci_tool == "github-actions":
-        trigger_desc = f"on.push.branches: [{branches_str}]. Each environment has a separate job with: if: github.ref == 'refs/heads/BRANCH'"
+        trigger_desc = f"on.push.branches: [{branches_str}]. Separate deploy job per env, each gated by: if: github.ref == 'refs/heads/BRANCH'"
     elif ci_tool == "gitlab-ci":
-        trigger_desc = f"Triggered on pushes to [{branches_str}]. Use only: [BRANCH] rules per job. Each env is a separate deploy stage."
-    else:  # jenkins
-        trigger_desc = f"Declarative Jenkinsfile with when {{ branch 'BRANCH' }} conditions for each deploy stage. Branches: [{branches_str}]."
+        trigger_desc = f"Push triggers on [{branches_str}]. Use only: [BRANCH] rules per job/stage."
+    else:
+        trigger_desc = f"Declarative Jenkinsfile. when {{ branch 'BRANCH' }} per stage. Branches: [{branches_str}]."
 
-    # Build multi-env context
-    envs_desc = []
-    for env, branch in env_branches.items():
-        ns = f"{safe_app}-{env}" if env != "prod" else safe_app
-        envs_desc.append(f"  - env='{env}': namespace={ns}, triggered by branch '{branch}', uses {config_tool} overlay/values for {env}")
-    envs_detail = "\n".join(envs_desc)
+    # ── Config section (folder-naming is critical) ────────────────────────────
+    if config_tool == "helm":
+        base_deployments = "\n".join(
+            f"helm/templates/{s['name']}-deployment.yaml — Deployment with CSI volume mounts, secretRef, imagePullSecrets" if vault == "hashicorp"
+            else f"helm/templates/{s['name']}-deployment.yaml — Deployment"
+            for s in services
+        )
+        base_services = "\n".join(f"helm/templates/{s['name']}-service.yaml — ClusterIP Service" for s in services)
+        staging_values = "helm/values-staging.yaml — staging overrides: replicas=2\n" if "staging" in environments else ""
+        spc_template = "\nhelm/templates/secret-provider-class.yaml — SecretProviderClass (vaultKubernetesMountPath from values per env)\nhelm/templates/ghcr-secret-provider-class.yaml — GHCR pull secret via CSI" if vault == "hashicorp" else ""
+        config_section = f"""\
+helm/Chart.yaml — name={safe_app}, version=0.1.0
+helm/values.yaml — base defaults: image tags, replicas, ports, service config
+helm/values-dev.yaml — dev overrides: replicas=1, debug=true, lower resource limits
+{staging_values}helm/values-prod.yaml — prod overrides: replicas=3, higher resource limits, production flags
+helm/templates/_helpers.tpl — name/label helpers
+helm/templates/namespace.yaml
+helm/templates/serviceaccount.yaml — SA that matches Vault role bound_service_account_names
+helm/templates/configmap.yaml — non-secret config
+{base_deployments}
+{base_services}
+helm/templates/ingress.yaml — Ingress with tls (commented by default){spc_template}"""
+    else:
+        # kustomize → k8s/
+        base_deployments = "\n".join(
+            f"k8s/base/{s['name']}-deployment.yaml — Deployment with CSI volume mounts, secretRef: <service>-secret, imagePullSecrets: ghcr-credentials"
+            for s in services
+        )
+        base_services = "\n".join(f"k8s/base/{s['name']}-service.yaml — ClusterIP Service" for s in services)
+        overlay_blocks = []
+        for env in environments:
+            auth_path = "kubernetes" if env == "prod" else "kubernetes-dev"
+            env_spc = f"k8s/overlays/{env}/secret-provider-class.yaml — vaultKubernetesMountPath: '{auth_path}'"
+            env_ghcr = f"k8s/overlays/{env}/ghcr-secret-provider-class.yaml — same pattern, GHCR dockerconfigjson"
+            env_kust = f"k8s/overlays/{env}/kustomization.yaml — resources: [../../base, secret-provider-class.yaml, ghcr-secret-provider-class.yaml]"
+            if vault != "hashicorp":
+                overlay_blocks.append(
+                    f"k8s/overlays/{env}/kustomization.yaml — resources: [../../base], patches for replicas/env-vars"
+                )
+            else:
+                overlay_blocks.append(f"{env_spc}\n{env_ghcr}\n{env_kust}")
+        overlays_section = "\n\n".join(overlay_blocks)
+        config_section = f"""\
+k8s/base/namespace.yaml — Namespace
+k8s/base/serviceaccount.yaml — ServiceAccount (name must match Vault role bound_service_account_names)
+k8s/base/configmap.yaml — non-secret config (DB host, ports, feature flags)
+{base_deployments}
+{base_services}
+k8s/base/kustomization.yaml — lists all base resources
+
+{overlays_section}"""
+
+    # ── CD section ────────────────────────────────────────────────────────────
+    if cd_tool == "argocd":
+        argocd_files = []
+        for env in environments:
+            suffix = "" if env == "prod" else f"-{env}"
+            if config_tool == "kustomize":
+                path_ref = f"path: k8s/overlays/{env}"
+            else:
+                path_ref = f"path: helm, targetRevision + values: values-{env}.yaml"
+            argocd_files.append(f"argocd/application{suffix}.yaml — ArgoCD Application → {path_ref}, branch {env_branches[env]}")
+        cd_section = "\n".join(argocd_files)
+    elif cd_tool == "fluxcd":
+        flux_files = []
+        for env in environments:
+            kind = "HelmRelease" if config_tool == "helm" else "Kustomization"
+            flux_files.append(f"flux/{kind.lower()}-{env}.yaml — FluxCD {kind} for {env} from {config_dir}/{'overlays/' + env if config_tool == 'kustomize' else ''}")
+        cd_section = "\n".join(flux_files)
+    else:
+        cd_section = "(Inline deploy — kubectl apply -k k8s/overlays/ENV in CI deploy jobs)"
+
+    # ── Env namespace detail ──────────────────────────────────────────────────
+    envs_detail = "\n".join(
+        f"  {env}: namespace={safe_app if env == 'prod' else f'{safe_app}-{env}'}, branch={env_branches[env]}, "
+        f"vault_auth_path={'kubernetes' if env == 'prod' else 'kubernetes-dev'}"
+        for env in environments
+    )
 
     return f"""You are a senior DevOps engineer. Generate a complete, production-ready CI/CD pipeline for a multi-service application.
 
@@ -487,59 +594,46 @@ Registry auth: {_REGISTRY_AUTH.get(registry, '')}
 
 ENVIRONMENTS & BRANCH STRATEGY:
 {env_summary}
-Note: {', '.join(env_branches.get('prod', 'main') and ['main branch is protected'] or [])}
+main branch is protected — production changes only via merge.
 
 CI TOOL: {ci_tool.upper().replace('-', ' ')}
 CD TOOL: {cd_tool.upper()}
-CONFIG TOOL: {config_tool.upper()}
+CONFIG TOOL: {config_tool.upper()} (folder: {config_dir}/)
 VAULT/SECRETS: {vault.upper()} — {vault_note}{vault_setup}
 
-FILES TO GENERATE (use EXACTLY --- FILE: path --- separator for every file):
+FILES TO GENERATE (use EXACTLY --- FILE: path --- separator, no exceptions):
 
-1. {ci_file} — CI/CD pipeline:
+1. {ci_file} — CI/CD pipeline
    Triggers: {trigger_desc}
-   Jobs structure:
-   a) build-SERVICENAME job for EACH service: checkout → build Docker image from service path → push to registry (tag: $GIT_SHA and :ENV-latest)
-   b) One deploy job per environment, gated by branch condition:
-      - deploy-{list(environments)[0] if environments else 'dev'}: triggers on branch '{env_branches.get(list(environments)[0], 'dev')}' → deploys to {list(environments)[0]} namespace
-      {f"- deploy-{list(environments)[1]}: triggers on branch '{env_branches.get(list(environments)[1], 'main')}' → deploys to {list(environments)[1]} namespace" if len(environments) > 1 else ""}
-      {f"- deploy-{list(environments)[2]}: triggers on branch '{env_branches.get(list(environments)[2], 'main')}' → deploys to {list(environments)[2]} namespace" if len(environments) > 2 else ""}
-   c) All required secrets listed as comments at the top
+   Build jobs (run in parallel, one per service):
+{chr(10).join(f"   - build-{s['name']}: checkout → build Docker from {s['path']} → push {s['image']}:$GIT_SHA" for s in svc_images)}
+   Deploy jobs (one per environment, gated by branch):
+{chr(10).join(f"   - deploy-{env}: if branch == {branch} → apply to namespace {safe_app if env == 'prod' else f'{safe_app}-{env}'}" for env, branch in env_branches.items())}
+   All required secrets listed as comments at top of file.
 
-2. Kubernetes manifests — one folder per environment:
+2. Config manifests ({config_tool} — FOLDER MUST BE NAMED '{config_dir}/'):
+{config_section}
+
+3. CD resources ({cd_tool}):
+{cd_section}
+
+4. setup-guide.md — checklist including:
+   - Vault policy + role creation (both auth/kubernetes and auth/kubernetes-dev mounts)
+   - vault kv put using SEPARATE paths: secret/data/<app>/prod and secret/data/<app>/dev
+   - Branch strategy table: dev→dev ns, staging→staging ns, main→prod ns
+   - How to verify: kubectl describe pod + check events for CSI mount errors
+
+ENVIRONMENT DETAILS:
 {envs_detail}
-   Files per environment:
-   - manifests/ENV/namespace.yaml: Namespace with label env=ENV
-   - manifests/ENV/SERVICENAME-deployment.yaml: Deployment for each service (image from registry, env-specific replicas, resource requests/limits, readiness + liveness probes)
-   - manifests/ENV/SERVICENAME-service.yaml: ClusterIP Service for each service
-   - manifests/ENV/ingress.yaml: Ingress (host: ENV.{repo_name}.example.com or similar) — include even if commented
-
-3. Config management ({config_tool}):
-{config_desc}
-
-4. CD resources ({cd_tool}):
-{cd_files}
-
-5. setup-guide.md:
-   - Required secrets/tokens checklist (what to add, where)
-   - One-time cluster setup steps
-   - Branch strategy explanation (which branch deploys where)
-   - How to trigger first run
-
-ENVIRONMENT NAMESPACES:
-{envs_detail}
-
-VAULT INTEGRATION:
-{vault_note}
-{"Vault is already deployed." if vault_deployed and vault != "none" else ""}
-{"Add vault annotations/CRDs to ALL Deployment manifests." if vault != "none" else "Use standard K8s Secrets with placeholder values (never commit real secrets)."}
-
+{vault_csi_detail}
 CRITICAL RULES:
-- Generate EVERY file completely — no truncation, no "... rest of file ..."
-- Each service gets its own Deployment and Service manifest in each env folder
-- The CI pipeline must have separate build jobs per service (they can be parallel)
-- Branch conditions must be EXACT: dev branch → dev env, {env_branches.get('staging', 'staging') if 'staging' in environments else 'staging branch → staging env'}, main branch → prod
-- Image tags: use git commit SHA for immutability (e.g., ${{{{ github.sha }}}} for GitHub Actions)
+- Config folder: USE '{config_dir}/' — NEVER 'manifests/' or 'kustomize/'
+- kustomize structure: k8s/base/ + k8s/overlays/{{env}}/ (NOT flat manifests/ENV/)
+- Generate EVERY file completely — no truncation, no '...'
+- Each service has its own Deployment + Service in base (or helm/templates/)
+- SecretProviderClass ONLY in overlays (vaultKubernetesMountPath differs per env)
+- Branch conditions exact: {', '.join(f'{b}→{e}' for e, b in env_branches.items())}
+- Image tags: git SHA (e.g. ${{{{ github.sha }}}} for GitHub Actions)
 - No markdown fences inside file content
-- Use the --- FILE: path --- separator without exception
+- Use --- FILE: path --- separator for every file without exception
 """
