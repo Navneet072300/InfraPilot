@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  GitBranch, Search, CheckCircle2, XCircle, AlertCircle,
+  GitBranch, Search, CheckCircle2, AlertCircle,
   ChevronRight, ChevronDown, Loader2, FileCode2, Copy, Check,
   Server, Container, Shield, Database, Globe, Lock,
   Zap, Cloud, Package, Settings2, ExternalLink, RefreshCw,
@@ -553,14 +553,15 @@ export function DeployMode() {
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                       {[
-                        { ok: scanResult.has_dockerfile, label: 'Dockerfile', gen: true },
-                        { ok: scanResult.has_compose, label: 'docker-compose.yml', gen: true },
-                        { ok: scanResult.has_github_actions, label: '.github/workflows/' },
-                        { ok: scanResult.has_jenkinsfile, label: 'Jenkinsfile' },
-                        { ok: scanResult.has_gitlab_ci, label: '.gitlab-ci.yml' },
+                        { ok: scanResult.has_dockerfile,     label: 'Dockerfile',          gen: true },
+                        { ok: scanResult.has_compose,        label: 'docker-compose.yml',  gen: true },
+                        // CI files — only show if already present in the repo
+                        ...(scanResult.has_github_actions ? [{ ok: true,  label: '.github/workflows/', gen: false }] : []),
+                        ...(scanResult.has_jenkinsfile    ? [{ ok: true,  label: 'Jenkinsfile',        gen: false }] : []),
+                        ...(scanResult.has_gitlab_ci      ? [{ ok: true,  label: '.gitlab-ci.yml',     gen: false }] : []),
                       ].map(({ ok, label, gen }) => (
-                        <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 9px', background: 'var(--bg-hover)', borderRadius: 6, border: `1px solid ${ok ? 'rgba(52,211,153,0.2)' : gen ? 'rgba(99,102,241,0.2)' : 'rgba(248,113,113,0.12)'}` }}>
-                          {ok ? <CheckCircle2 size={11} style={{ color: 'var(--success)', flexShrink: 0 }} /> : gen ? <Zap size={11} style={{ color: 'var(--accent)', flexShrink: 0 }} /> : <XCircle size={11} style={{ color: 'var(--error)', flexShrink: 0 }} />}
+                        <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 9px', background: 'var(--bg-hover)', borderRadius: 6, border: `1px solid ${ok ? 'rgba(52,211,153,0.2)' : 'rgba(99,102,241,0.2)'}` }}>
+                          {ok ? <CheckCircle2 size={11} style={{ color: 'var(--success)', flexShrink: 0 }} /> : <Zap size={11} style={{ color: 'var(--accent)', flexShrink: 0 }} />}
                           <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-primary)' }}>{label}</span>
                           {!ok && gen && <span style={{ fontSize: 10, color: 'var(--accent)', marginLeft: 'auto' }}>will generate</span>}
                         </div>
