@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   GitBranch, Search, CheckCircle2, AlertCircle,
   ChevronRight, ChevronDown, Loader2, FileCode2, Copy, Check,
@@ -95,6 +96,17 @@ const REGISTRY_OPTIONS = [
   { id: 'ghcr',       label: 'GHCR',       sub: 'GitHub Container Registry — free, built-in. No extra secret for GitHub Actions.', badge: 'Free', icon: <Globe size={20} /> },
   { id: 'docker-hub', label: 'Docker Hub', sub: 'Default public registry. Widely supported. Free tier available.',                       icon: <Container size={20} /> },
   { id: 'ecr',        label: 'AWS ECR',    sub: 'Amazon Elastic Container Registry. Best for AWS + EKS deployments.',                    icon: <Cloud size={20} /> },
+];
+
+const DEPLOY_TARGETS = [
+  { id: 'aws-eks',     label: 'AWS EKS',           sub: 'Amazon Elastic Kubernetes Service',          icon: <Cloud size={18} /> },
+  { id: 'gcp-gke',    label: 'GCP GKE',            sub: 'Google Kubernetes Engine',                   icon: <Cloud size={18} /> },
+  { id: 'azure-aks',  label: 'Azure AKS',          sub: 'Azure Kubernetes Service',                   icon: <Cloud size={18} /> },
+  { id: 'do-k8s',     label: 'DigitalOcean K8s',   sub: 'DOKS — simple managed Kubernetes',          icon: <Server size={18} /> },
+  { id: 'self-hosted',label: 'Self-hosted K8s',     sub: 'Bare metal or on-prem cluster',              icon: <Server size={18} /> },
+  { id: 'fly',        label: 'fly.io',             sub: 'Deploy containers globally via flyctl',      icon: <Globe size={18} /> },
+  { id: 'railway',    label: 'Railway',             sub: 'Deploy from GitHub — zero infra setup',     icon: <Zap size={18} /> },
+  { id: 'render',     label: 'Render',              sub: 'Cloud platform with auto-deploys from Git', icon: <Zap size={18} /> },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -253,6 +265,7 @@ function TreeView({ nodes, onSelect, selectedPath }: {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export function DeployMode() {
+  const navigate = useNavigate();
   const [step, setStep] = useState<Step>('repo');
 
   const [repos, setRepos] = useState<Repo[]>([]);
@@ -280,6 +293,10 @@ export function DeployMode() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [committing, setCommitting] = useState(false);
+  const [committed, setCommitted] = useState(false);
+  const [showTargetModal, setShowTargetModal] = useState(false);
+  const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
+  const [savingDeployment, setSavingDeployment] = useState(false);
   const [copiedFile, setCopiedFile] = useState<string | null>(null);
 
   const rawRef = useRef('');
@@ -385,8 +402,37 @@ export function DeployMode() {
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail ?? 'Commit failed');
       toast.success('Pipeline committed!', `Pushed ${files.length} file(s) to ${selectedRepo.full_name}`);
+      setCommitted(true);
+      setShowTargetModal(true);
     } catch (e) { toast.error('Commit failed', String(e)); } finally { setCommitting(false); }
   }, [selectedRepo, scanResult, choices, generatedFiles]);
+
+  const handleSaveDeployment = useCallback(async () => {
+    if (!selectedRepo || !scanResult) return;
+    setSavingDeployment(true);
+    try {
+      const r = await fetch('/api/deployments', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repo_full_name: selectedRepo.full_name,
+          branch: scanResult.default_branch,
+          ci_tool: choices.ciTool ?? '',
+          cd_tool: choices.cdTool ?? '',
+          config_tool: choices.configTool ?? '',
+          environments: choices.environments,
+          registry: choices.registry ?? 'ghcr',
+          vault: choices.vault ?? 'none',
+          deploy_target: selectedTarget ?? '',
+          app_name: scanResult.app_name,
+        }),
+      });
+      if (!r.ok) throw new Error((await r.json()).detail ?? 'Failed');
+      toast.success('Deployment tracked!', 'You can now monitor CI logs and get AI fixes.');
+      navigate('/app/deployments');
+    } catch (e) { toast.error('Failed to save deployment', String(e)); }
+    finally { setSavingDeployment(false); }
+  }, [selectedRepo, scanResult, choices, selectedTarget, navigate]);
 
   const handleCopy = (path: string, content: string) => { navigator.clipboard.writeText(content); setCopiedFile(path); setTimeout(() => setCopiedFile(null), 1800); };
 
@@ -756,10 +802,16 @@ export function DeployMode() {
 
                 {generatedFiles.length > 0 && !isGenerating && (
                   <div style={{ padding: '8px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
-                    <button type="button" onClick={handleCommitPipeline} disabled={committing} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '7px', background: 'var(--accent)', border: 'none', borderRadius: 7, color: '#fff', fontSize: 11, fontWeight: 600, cursor: committing ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
-                      {committing ? <Loader2 size={11} style={{ animation: 'spin 0.8s linear infinite' }} /> : <GitBranch size={11} />}
-                      {committing ? 'Committing…' : 'Commit to Repo'}
-                    </button>
+                    {!committed ? (
+                      <button type="button" onClick={handleCommitPipeline} disabled={committing} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '7px', background: 'var(--accent)', border: 'none', borderRadius: 7, color: '#fff', fontSize: 11, fontWeight: 600, cursor: committing ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                        {committing ? <Loader2 size={11} style={{ animation: 'spin 0.8s linear infinite' }} /> : <GitBranch size={11} />}
+                        {committing ? 'Committing…' : 'Commit to Repo'}
+                      </button>
+                    ) : (
+                      <button type="button" onClick={() => setShowTargetModal(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '7px', background: 'rgba(52,211,153,0.12)', border: '1px solid rgba(52,211,153,0.3)', borderRadius: 7, color: 'var(--success)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        <CheckCircle2 size={11} /> Pushed — Set Up Monitoring →
+                      </button>
+                    )}
                     <a href={`https://github.com/${selectedRepo?.full_name}`} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--text-muted)', fontSize: 11, textDecoration: 'none' }}>
                       <ExternalLink size={10} /> Open on GitHub
                     </a>
@@ -802,6 +854,53 @@ export function DeployMode() {
 
         </div>
       </div>
+
+      {/* ── Deploy target modal ─────────────────────────────────────────────── */}
+      {showTargetModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 560, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700 }}>Where are you deploying?</h3>
+            <p style={{ margin: '0 0 18px', fontSize: 13, color: 'var(--text-muted)' }}>
+              InfraPilot will monitor your CI runs, stream logs, and suggest fixes automatically.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 18 }}>
+              {DEPLOY_TARGETS.map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setSelectedTarget(t.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
+                    background: selectedTarget === t.id ? 'rgba(99,102,241,0.12)' : 'var(--bg-hover)',
+                    border: `1px solid ${selectedTarget === t.id ? 'var(--accent)' : 'var(--border)'}`,
+                    borderRadius: 8, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                  }}
+                >
+                  <span style={{ color: selectedTarget === t.id ? 'var(--accent)' : 'var(--text-muted)', flexShrink: 0 }}>{t.icon}</span>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: selectedTarget === t.id ? 'var(--accent)' : 'var(--text-primary)' }}>{t.label}</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>{t.sub}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setShowTargetModal(false)} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Skip for now
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveDeployment}
+                disabled={savingDeployment}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 20px', background: 'var(--accent)', border: 'none', borderRadius: 7, color: '#fff', fontSize: 13, fontWeight: 600, cursor: savingDeployment ? 'not-allowed' : 'pointer', fontFamily: 'inherit', boxShadow: '0 0 12px var(--accent-glow)' }}
+              >
+                {savingDeployment ? <Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite' }} /> : <Zap size={13} />}
+                {savingDeployment ? 'Setting up…' : 'Start Monitoring →'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer navigation */}
       {step !== 'generate' && (

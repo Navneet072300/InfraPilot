@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import {
   Wand2, Stethoscope, Compass, Activity,
-  Database, Clock, HelpCircle, Zap,
+  Database, Clock, HelpCircle, Zap, Rocket,
   ChevronLeft, Menu, CreditCard, Camera, Lock, Home,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -19,11 +19,12 @@ interface NavItem {
 }
 
 const PRIMARY: NavItem[] = [
-  { icon: <Zap size={16} />,         label: 'Deploy',   path: '/app/deploy' },
-  { icon: <Wand2 size={16} />,       label: 'Generate', path: '/app/generate' },
-  { icon: <Stethoscope size={16} />, label: 'Diagnose', path: '/app/diagnose' },
-  { icon: <Compass size={16} />,     label: 'Design',   path: '/app/design', planFeature: 'design_mode' },
-  { icon: <Activity size={16} />,    label: 'Monitor',  path: '/app/monitor', planFeature: 'monitor_mode' },
+  { icon: <Zap size={16} />,         label: 'Deploy',      path: '/app/deploy' },
+  { icon: <Rocket size={16} />,      label: 'Deployments', path: '/app/deployments' },
+  { icon: <Wand2 size={16} />,       label: 'Generate',    path: '/app/generate' },
+  { icon: <Stethoscope size={16} />, label: 'Diagnose',    path: '/app/diagnose' },
+  { icon: <Compass size={16} />,     label: 'Design',      path: '/app/design', planFeature: 'design_mode' },
+  { icon: <Activity size={16} />,    label: 'Monitor',     path: '/app/monitor', planFeature: 'monitor_mode' },
 ];
 
 const RESOURCES: NavItem[] = [
