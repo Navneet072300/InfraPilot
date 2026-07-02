@@ -287,8 +287,27 @@ function CostPanel({ rows }: { rows: ArchitectureData['cost_breakdown'] }) {
 
 // ─── Parse helper (strips markdown fences) ────────────────────────────────────
 
+function extractJsonCandidate(raw: string): string {
+  let s = raw.trim();
+  // Strip markdown fences
+  if (s.startsWith('```')) {
+    const firstNl = s.indexOf('\n');
+    const lastFence = s.lastIndexOf('```');
+    if (firstNl !== -1 && lastFence > firstNl) s = s.slice(firstNl + 1, lastFence).trim();
+  }
+  // Skip any preamble before the opening brace
+  const openBrace = s.indexOf('{');
+  if (openBrace > 0) s = s.slice(openBrace);
+  // Trim any trailing content after the last closing brace
+  const closeBrace = s.lastIndexOf('}');
+  if (closeBrace !== -1) s = s.slice(0, closeBrace + 1);
+  return s;
+}
+
 function tryParseJSON(raw: string): ArchitectureData | null {
-  for (const src of [raw, raw.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim()]) {
+  const candidates = [raw.trim(), extractJsonCandidate(raw)];
+  for (const src of candidates) {
+    if (!src) continue;
     try {
       const p = JSON.parse(src) as ArchitectureData;
       if (p.diagram_nodes?.length) return p;

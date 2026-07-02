@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
@@ -75,6 +76,31 @@ COST BREAKDOWN RULES:
 - Last row should be a total or note about total range."""
 
 
+def _extract_json(raw: str) -> str:
+    """Return the best JSON candidate from raw AI output."""
+    text = raw.strip()
+
+    # 1. Strip leading/trailing markdown fences
+    if text.startswith("```"):
+        first_nl = text.find("\n")
+        last_fence = text.rfind("```")
+        if first_nl != -1 and last_fence > first_nl:
+            text = text[first_nl + 1: last_fence].strip()
+
+    # 2. If there's preamble before the JSON object, find the first '{'
+    if not text.startswith("{"):
+        m = re.search(r'\{', text)
+        if m:
+            text = text[m.start():]
+
+    # 3. Trim any trailing content after the closing '}'
+    last_brace = text.rfind("}")
+    if last_brace != -1:
+        text = text[: last_brace + 1]
+
+    return text
+
+
 async def stream_design(request: DesignRequest):
     prompt = f"Design requirements:\n{request.requirements}"
 
@@ -85,13 +111,9 @@ async def stream_design(request: DesignRequest):
             full += text
             yield f"data: {json.dumps({'chunk': text, 'done': False})}\n\n"
 
-        # Send a cleaned version so the client can parse reliably
-        cleaned = full.strip()
-        # Strip ```json ... ``` or ``` ... ``` wrappers if model ignored instructions
-        if cleaned.startswith("```"):
-            end = cleaned.rfind("```")
-            inner = cleaned[cleaned.index("\n") + 1: end] if end > 3 else cleaned[3:]
-            cleaned = inner.strip()
+        # Aggressively extract valid JSON from whatever the model returned
+        cleaned = _extract_json(full)
+        logger.info("Design done: raw_len=%d cleaned_starts=%s", len(full), cleaned[:60])
         yield f"data: {json.dumps({'done': True, 'cleaned': cleaned})}\n\n"
     except Exception as e:
         logger.error("Design stream error: %s", e)
