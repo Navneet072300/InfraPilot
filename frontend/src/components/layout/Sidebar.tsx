@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import {
   Rocket, Wand2, Stethoscope, Compass, Activity,
-  Database, Clock, GitBranch, HelpCircle,
+  Database, Clock, HelpCircle,
   ChevronLeft, Menu, CreditCard, Camera, Lock, Home, Zap,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
