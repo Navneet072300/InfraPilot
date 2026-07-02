@@ -4,6 +4,7 @@ import ReactFlow, {
   Controls,
   type Node,
   type Edge,
+  type ReactFlowInstance,
   BackgroundVariant,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -397,6 +398,7 @@ export function DesignMode() {
   } = useAppStore();
 
   const [error, setError] = useState<string | null>(null);
+  const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
   const rawRef = useRef('');
 
   const onChunk = useCallback(
@@ -416,11 +418,13 @@ export function DesignMode() {
       const parsed = tryParseJSON(cleaned) ?? tryParseJSON(rawRef.current);
       if (parsed) {
         setArchitectureData(parsed);
+        // Give the DOM one frame to mount ReactFlow, then fit all nodes into view
+        setTimeout(() => rfInstance?.fitView({ padding: 0.15 }), 80);
       } else {
         setError('Could not parse the response. Please try a more specific description.');
       }
     },
-    [setIsDesigning, setArchitectureData]
+    [setIsDesigning, setArchitectureData, rfInstance]
   );
 
   const onError = useCallback(
@@ -563,18 +567,30 @@ export function DesignMode() {
           <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
 
             {/* Left: ReactFlow diagram */}
-            <div style={{ flex: '0 0 60%', position: 'relative', borderRight: '1px solid var(--border)', height: '100%' }}>
-              <ReactFlow nodes={rfNodes} edges={rfEdges} fitView fitViewOptions={{ padding: 0.15 }}>
-                <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--border)" />
-                <Controls
-                  style={{
-                    background: 'var(--bg-surface)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 8,
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+            <div style={{ flex: '0 0 60%', position: 'relative', borderRight: '1px solid var(--border)' }}>
+              {/* absolute fill so ReactFlow always has a real pixel size */}
+              <div style={{ position: 'absolute', inset: 0 }}>
+                <ReactFlow
+                  nodes={rfNodes}
+                  edges={rfEdges}
+                  fitView
+                  fitViewOptions={{ padding: 0.15 }}
+                  onInit={(instance) => {
+                    setRfInstance(instance);
+                    instance.fitView({ padding: 0.15 });
                   }}
-                />
-              </ReactFlow>
+                >
+                  <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--border)" />
+                  <Controls
+                    style={{
+                      background: 'var(--bg-surface)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 8,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+                    }}
+                  />
+                </ReactFlow>
+              </div>
               <DiagramLegend nodes={architectureData.diagram_nodes} />
             </div>
 
