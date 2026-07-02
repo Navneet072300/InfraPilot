@@ -9,13 +9,12 @@ services:
     container_name: infrapilot-backend
     ports:
       - "8000:8000"
+    env_file:
+      - ./backend/.env
     environment:
+      # Override localhost refs from .env with Docker service names
       - DATABASE_URL=postgresql+asyncpg://infrapilot:infrapilot@postgres:5432/infrapilot
-      - REDIS_URL=redis://redis:6379
-      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      # - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
-      # - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
-      # - JWT_SECRET=${JWT_SECRET}
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       postgres:
         condition: service_healthy
@@ -38,7 +37,7 @@ services:
     image: infrapilot-frontend:latest
     container_name: infrapilot-frontend
     ports:
-      - "80:80"
+      - "3000:80"
     depends_on:
       - backend
     restart: unless-stopped
