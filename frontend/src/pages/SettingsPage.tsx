@@ -13,7 +13,7 @@ import { useClusterStore } from '../store/clusterStore';
 import { useAuthStore } from '../store/authStore';
 import type { ClusterConfig } from '../types';
 import type {
-  GeneralSettings, NotificationPrefs, AISettings, ActiveSession, APIKeyEntry,
+  GeneralSettings, NotificationPrefs, AISettings, ActiveSession,
   TeamMember, TeamInvite, AuditEntry,
 } from '../types/settings';
 import { DEFAULT_NOTIF_PREFS } from '../types/settings';
@@ -536,18 +536,11 @@ function SecurityTab() {
   const [sessions, setSessions] = useState<ActiveSession[]>([]);
   const [sessLoading, setSessLoading] = useState(false);
 
-  // API Keys
-  const [apiKeys, setApiKeys] = useState<APIKeyEntry[]>([]);
-  const [newKeyName, setNewKeyName] = useState('');
-  const [newKeyRaw, setNewKeyRaw] = useState<string | null>(null);
-  const [keyLoading, setKeyLoading] = useState(false);
-
   useEffect(() => {
     fetch('/api/settings').then((r) => r.json()).then((d) => {
       setTwoFA({ enabled: d.security?.totp_enabled ?? false });
     }).catch(() => {});
     loadSessions();
-    loadKeys();
   }, []);
 
   async function loadSessions() {
@@ -556,13 +549,6 @@ function SecurityTab() {
       const d = await apiFetch('/api/auth/sessions');
       setSessions(d.sessions || []);
     } catch { /* ignore */ } finally { setSessLoading(false); }
-  }
-
-  async function loadKeys() {
-    try {
-      const d = await apiFetch('/api/auth/api-keys');
-      setApiKeys(d.keys || []);
-    } catch { /* ignore */ }
   }
 
   async function changePassword() {
@@ -626,27 +612,6 @@ function SecurityTab() {
     try {
       await apiFetch('/api/auth/sessions', { method: 'DELETE' });
       await loadSessions();
-    } catch { /* ignore */ }
-  }
-
-  async function createApiKey() {
-    if (!newKeyName.trim()) return;
-    setKeyLoading(true);
-    try {
-      const d = await apiFetch('/api/auth/api-keys', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newKeyName }),
-      });
-      setNewKeyRaw(d.raw_key);
-      setNewKeyName('');
-      await loadKeys();
-    } catch { /* ignore */ } finally { setKeyLoading(false); }
-  }
-
-  async function revokeApiKey(id: number) {
-    try {
-      await apiFetch(`/api/auth/api-keys/${id}`, { method: 'DELETE' });
-      setApiKeys((k) => k.filter((x) => x.id !== id));
     } catch { /* ignore */ }
   }
 
