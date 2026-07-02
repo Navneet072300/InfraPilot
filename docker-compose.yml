@@ -1,38 +1,89 @@
 version: '3.8'
 
 services:
-  infrapilot:
+  backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
-    image: infrapilot:latest
-    container_name: infrapilot
+    image: infrapilot-backend:latest
+    container_name: infrapilot-backend
     ports:
-      - "8080:8080"
+      - "8000:8000"
     environment:
-      - APP_ENV=production
-      # Add your environment variables here — never commit real secrets
-      # - DATABASE_URL=${DATABASE_URL}
-      # - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=postgresql+asyncpg://infrapilot:infrapilot@postgres:5432/infrapilot
+      - REDIS_URL=redis://redis:6379
+      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      # - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      # - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - infrapilot-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: infrapilot-frontend:latest
+    container_name: infrapilot-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - infrapilot-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 20s
 
-  # redis:
-  #   image: redis:7-alpine
-  #   restart: unless-stopped
-  #   networks:
-  #     - infrapilot-net
+  postgres:
+    image: postgres:16-alpine
+    container_name: infrapilot-postgres
+    environment:
+      POSTGRES_DB: infrapilot
+      POSTGRES_USER: infrapilot
+      POSTGRES_PASSWORD: infrapilot
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - infrapilot-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U infrapilot -d infrapilot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: infrapilot-redis
+    restart: unless-stopped
+    networks:
+      - infrapilot-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 networks:
   infrapilot-net:
     driver: bridge
 
 volumes:
-  db_data:
+  postgres_data:
