@@ -181,9 +181,11 @@ CMD ["bundle", "exec", "puma", "-C", "config/puma.rb"]
     "generic": """\
 FROM ubuntu:22.04
 WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 COPY . .
 EXPOSE {port}
-CMD ["bash", "start.sh"]
+# TODO: replace this with your actual start command
+CMD ["echo", "No start command configured — edit this Dockerfile"]
 """,
 }
 
