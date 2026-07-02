@@ -414,7 +414,13 @@ def build_deploy_prompt(
             img = f"{{AWS_ACCOUNT_ID}}.dkr.ecr.{{AWS_REGION}}.amazonaws.com/{name}"
         else:
             img = name
-        svc_images.append({"name": name, "image": img, "port": svc.get("port", 8080), "path": svc.get("path", ".")})
+        svc_images.append({
+            "name": name, "image": img,
+            "port": svc.get("port", 8080),
+            "path": svc.get("path", "."),
+            "role": svc.get("role", "backend"),
+            "endpoint_path": svc.get("endpoint_path", "/"),
+        })
 
     # ── Env / branch mapping ──────────────────────────────────────────────────
     env_branches = {env: _ENV_BRANCH.get(env, env) for env in environments}
@@ -425,10 +431,22 @@ def build_deploy_prompt(
     config_dir = "helm" if config_tool == "helm" else "k8s"
 
     # ── Summaries ─────────────────────────────────────────────────────────────
+    def _ep(s: dict) -> str:
+        ep = s.get("endpoint_path", "")
+        return f", http-path {ep}" if ep else " (no public route — worker/internal)"
+
     svc_summary = "\n".join(
-        f"  - {s['name']}: {s.get('language','?')} / {s.get('framework','?')}, port {s.get('port',8080)}, path {s.get('path','.')}"
+        f"  - {s['name']} [{s.get('role','backend')}]: {s.get('language','?')} / {s.get('framework','?')}"
+        f", container-port {s.get('port',8080)}, src {s.get('path','.')}{_ep(s)}"
         for s in services
     )
+
+    # Ingress routing table (only services with a public endpoint_path)
+    public_svcs = [s for s in services if s.get("endpoint_path")]
+    ingress_routes = "\n".join(
+        f"  path: {s.get('endpoint_path','/')} → {s['name']}:{s.get('port',8080)}"
+        for s in public_svcs
+    ) if public_svcs else "  (no public services — all internal)"
     img_summary = "\n".join(f"  - {s['name']}: {s['image']}:$GIT_SHA" for s in svc_images)
     env_summary = "\n".join(
         f"  - {env} → branch '{branch}' → namespace {safe_app if env == 'prod' else f'{safe_app}-{env}'}"
@@ -525,7 +543,7 @@ helm/templates/serviceaccount.yaml — SA that matches Vault role bound_service_
 helm/templates/configmap.yaml — non-secret config
 {base_deployments}
 {base_services}
-helm/templates/ingress.yaml — Ingress with tls (commented by default){spc_template}"""
+helm/templates/ingress.yaml — Ingress with path-based routing per INGRESS ROUTING table above, TLS commented by default{spc_template}"""
     else:
         # kustomize → k8s/
         base_deployments = "\n".join(
@@ -552,6 +570,7 @@ k8s/base/serviceaccount.yaml — ServiceAccount (name must match Vault role boun
 k8s/base/configmap.yaml — non-secret config (DB host, ports, feature flags)
 {base_deployments}
 {base_services}
+k8s/base/ingress.yaml — Ingress with path-based routing per INGRESS ROUTING table above, TLS commented by default
 k8s/base/kustomization.yaml — lists all base resources
 
 {overlays_section}"""
@@ -587,8 +606,11 @@ k8s/base/kustomization.yaml — lists all base resources
 
 REPOSITORY: github.com/{repo_full_name}
 
-SERVICES ({len(services)} detected):
+SERVICES ({len(services)}):
 {svc_summary}
+
+INGRESS ROUTING (use these exact path prefixes in Ingress and Helm/Kustomize manifests):
+{ingress_routes}
 
 DOCKER IMAGES (registry: {registry.upper()}):
 {img_summary}

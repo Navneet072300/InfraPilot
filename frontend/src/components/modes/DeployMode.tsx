@@ -5,7 +5,7 @@ import {
   ChevronRight, ChevronDown, Loader2, FileCode2, Copy, Check,
   Server, Container, Shield, Database, Globe, Lock,
   Zap, Cloud, Package, Settings2, ExternalLink, RefreshCw,
-  Layers, FolderOpen, Folder, File,
+  Layers, FolderOpen, Folder, File, Plus, Trash2,
 } from 'lucide-react';
 import { useStream } from '../../hooks/useStream';
 import { toast } from '../../store/toastStore';
@@ -19,6 +19,9 @@ interface Repo {
 
 interface DetectedService {
   name: string; path: string; language: string; framework: string; port: number;
+  role?: string;          // backend | frontend | admin | worker | other
+  endpoint_path?: string; // HTTP path prefix for Ingress, e.g. /api, /, /admin — empty = no public route
+  _manual?: boolean;      // user-added, not auto-detected
 }
 
 interface ScanResult {
@@ -297,6 +300,9 @@ export function DeployMode() {
   const [savingDeployment, setSavingDeployment] = useState(false);
   const [copiedFile, setCopiedFile] = useState<string | null>(null);
 
+  // ── User-editable services (seeded from scan, fully overridable) ─────────
+  const [userServices, setUserServices] = useState<DetectedService[]>([]);
+
   const rawRef = useRef('');
 
   useEffect(() => {
@@ -332,11 +338,48 @@ export function DeployMode() {
     } catch (e) { setScanError(String(e)); } finally { setScanning(false); }
   }, [selectedRepo]);
 
+  // Seed userServices with smart defaults whenever scan result arrives
+  useEffect(() => {
+    if (!scanResult) return;
+    setUserServices(scanResult.services.map(s => {
+      const n = s.name.toLowerCase();
+      const role =
+        (n.includes('frontend') || n.includes('web') || n.includes('ui') || n.includes('client') || n.includes('next') || n.includes('nuxt') || n.includes('react') || n.includes('vue')) ? 'frontend'
+        : n.includes('admin') ? 'admin'
+        : (n.includes('worker') || n.includes('queue') || n.includes('job') || n.includes('cron') || n.includes('scheduler')) ? 'worker'
+        : 'backend';
+      const endpoint_path = role === 'frontend' ? '/' : role === 'admin' ? '/admin' : role === 'worker' ? '' : '/api';
+      return { ...s, role, endpoint_path };
+    }));
+  }, [scanResult]);
+
+  function _endpointDefault(role: string) {
+    return role === 'frontend' ? '/' : role === 'admin' ? '/admin' : role === 'worker' ? '' : '/api';
+  }
+
+  const updateUserService = (idx: number, field: string, value: string | number) => {
+    setUserServices(prev => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], [field]: value };
+      if (field === 'role') next[idx].endpoint_path = _endpointDefault(value as string);
+      return next;
+    });
+  };
+
+  const addUserService = () => {
+    const n = userServices.length + 1;
+    setUserServices(prev => [...prev, { name: `service-${n}`, path: `service-${n}`, language: '', framework: '', port: 8080, role: 'backend', endpoint_path: '/api', _manual: true }]);
+  };
+
+  const removeUserService = (idx: number) => {
+    setUserServices(prev => prev.filter((_, i) => i !== idx));
+  };
+
   const fetchContainerFiles = useCallback(async () => {
     if (!scanResult) return;
     setContainersFetching(true);
     try {
-      const svcs = scanResult.services;
+      const svcs = userServices.length > 0 ? userServices : scanResult.services;
       const dfResults = await Promise.all(svcs.map(svc =>
         fetch('/api/deploy/dockerfile', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ language: svc.language, framework: svc.framework, port: svc.port }) }).then(r => r.json())
       ));
@@ -350,14 +393,14 @@ export function DeployMode() {
       setActiveContainerTab(svcs[0]?.name ?? 'compose');
     } catch (e) { toast.error('Failed to generate container files', String(e)); }
     finally { setContainersFetching(false); }
-  }, [scanResult]);
+  }, [scanResult, userServices]);
 
   const handleCommitContainers = useCallback(async () => {
     if (!selectedRepo || !scanResult) return;
     setContainersCommitting(true);
     try {
       const files: { path: string; content: string }[] = [];
-      const svcs = scanResult.services;
+      const svcs = userServices.length > 0 ? userServices : scanResult.services;
       if (svcs.length === 1 && svcs[0].path === '.') {
         if (svcDockerfiles[svcs[0].name]) files.push({ path: 'Dockerfile', content: svcDockerfiles[svcs[0].name] });
       } else {
@@ -379,7 +422,7 @@ export function DeployMode() {
     setGeneratedFiles([]); setFileTree([]); setActiveFile(null); rawRef.current = '';
     await start({
       repo_full_name: selectedRepo.full_name,
-      services: scanResult.services,
+      services: userServices.length > 0 ? userServices : scanResult.services,
       ci_tool: choices.ciTool,
       cd_tool: choices.cdTool,
       config_tool: choices.configTool ?? 'helm',
@@ -468,7 +511,7 @@ export function DeployMode() {
   );
 
   const containerTabs = [
-    ...(scanResult?.services ?? []).map(s => ({ id: s.name, label: s.path === '.' ? 'Dockerfile' : `${s.path.replace(/\/$/, '')}/Dockerfile`, svc: s as DetectedService | null })),
+    ...(userServices.length > 0 ? userServices : (scanResult?.services ?? [])).map(s => ({ id: s.name, label: s.path === '.' ? 'Dockerfile' : `${s.path.replace(/\/$/, '')}/Dockerfile`, svc: s as DetectedService | null })),
     { id: 'compose', label: 'docker-compose.yml', svc: null as DetectedService | null },
   ];
 
@@ -490,7 +533,7 @@ export function DeployMode() {
           {selectedRepo && (
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-muted)', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{selectedRepo.name}</span>
-              {scanResult?.services && scanResult.services.length > 1 && <><span>·</span><span>{scanResult.services.length} services</span></>}
+              {userServices.length > 1 && <><span>·</span><span>{userServices.length} services</span></>}
               {choices.ciTool && <><span>·</span><span>{choices.ciTool}</span></>}
               {choices.environments.length > 0 && <><span>·</span><span>{choices.environments.join('+')}</span></>}
             </div>
@@ -567,26 +610,108 @@ export function DeployMode() {
 
               {scanResult && !scanning && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {/* Detected services */}
+                  {/* ── Services & Endpoints — fully editable ── */}
                   <div style={{ padding: '13px 15px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 12 }}>
                       <Layers size={13} style={{ color: 'var(--accent)' }} />
-                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Detected Services ({scanResult.services.length})</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                        Services & Endpoints ({userServices.length})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={addUserService}
+                        style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, padding: '3px 8px', borderRadius: 4, background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)', color: 'var(--accent)', cursor: 'pointer' }}
+                      >
+                        <Plus size={9} /> Add Service
+                      </button>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                      {scanResult.services.map(svc => (
-                        <div key={svc.name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 11px', background: 'var(--bg-hover)', borderRadius: 7, border: '1px solid var(--border)' }}>
-                          <Container size={13} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{svc.name}</span>
-                          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>{svc.path}</span>
-                          <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(99,102,241,0.12)', color: 'var(--accent)', border: '1px solid rgba(99,102,241,0.25)' }}>{svc.language}</span>
-                            {svc.framework && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(251,191,36,0.1)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.25)' }}>{svc.framework}</span>}
-                            <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'var(--bg-surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>:{svc.port}</span>
-                          </div>
-                        </div>
+
+                    {/* Column headers */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 88px 64px 100px 26px', gap: 6, padding: '0 2px 6px', borderBottom: '1px solid var(--border)', marginBottom: 8 }}>
+                      {['Service / Path', 'Role', 'Port', 'HTTP Path', ''].map(h => (
+                        <span key={h} style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{h}</span>
                       ))}
                     </div>
+
+                    {userServices.map((svc, idx) => {
+                      const roleColor: Record<string, string> = { backend: 'var(--accent)', frontend: '#3b82f6', admin: '#f59e0b', worker: '#6b7280', other: '#6b7280' };
+                      const c = roleColor[svc.role ?? 'backend'] ?? 'var(--accent)';
+                      return (
+                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 88px 64px 100px 26px', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                          {/* Name + path */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 1, overflow: 'hidden' }}>
+                            {svc._manual ? (
+                              <input
+                                value={svc.name}
+                                onChange={e => updateUserService(idx, 'name', e.target.value)}
+                                placeholder="service-name"
+                                style={{ fontSize: 11, fontWeight: 600, padding: '3px 6px', borderRadius: 4, background: 'var(--bg-base)', border: '1px solid var(--border)', color: 'var(--text-primary)', width: '100%', boxSizing: 'border-box' }}
+                              />
+                            ) : (
+                              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{svc.name}</span>
+                            )}
+                            <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {svc._manual ? (
+                                <input
+                                  value={svc.path}
+                                  onChange={e => updateUserService(idx, 'path', e.target.value)}
+                                  placeholder="./path"
+                                  style={{ fontSize: 9, padding: '2px 4px', borderRadius: 3, background: 'var(--bg-base)', border: '1px solid var(--border)', color: 'var(--text-muted)', width: '100%', fontFamily: 'monospace', boxSizing: 'border-box' }}
+                                />
+                              ) : (
+                                <>{svc.language}{svc.framework ? ` / ${svc.framework}` : ''} · {svc.path}</>
+                              )}
+                            </span>
+                          </div>
+
+                          {/* Role */}
+                          <select
+                            value={svc.role ?? 'backend'}
+                            onChange={e => updateUserService(idx, 'role', e.target.value)}
+                            style={{ fontSize: 10, padding: '4px 4px', borderRadius: 5, background: 'var(--bg-base)', border: `1px solid ${c}44`, color: c, colorScheme: 'dark', fontWeight: 600 }}
+                          >
+                            {['backend', 'frontend', 'admin', 'worker', 'other'].map(r => (
+                              <option key={r} value={r}>{r}</option>
+                            ))}
+                          </select>
+
+                          {/* Port */}
+                          <input
+                            type="number"
+                            value={svc.port}
+                            min={1} max={65535}
+                            onChange={e => updateUserService(idx, 'port', parseInt(e.target.value) || svc.port)}
+                            style={{ fontSize: 10, padding: '4px 6px', borderRadius: 5, background: 'var(--bg-base)', border: '1px solid var(--border)', color: 'var(--text-primary)', width: '100%', boxSizing: 'border-box', fontFamily: 'monospace' }}
+                          />
+
+                          {/* HTTP Path */}
+                          <input
+                            type="text"
+                            value={svc.endpoint_path ?? ''}
+                            onChange={e => updateUserService(idx, 'endpoint_path', e.target.value)}
+                            placeholder={svc.role === 'worker' ? '—' : '/api'}
+                            disabled={svc.role === 'worker'}
+                            title={svc.role === 'worker' ? 'Workers have no public HTTP route' : 'Ingress path prefix for this service'}
+                            style={{ fontSize: 10, padding: '4px 6px', borderRadius: 5, background: svc.role === 'worker' ? 'var(--bg-hover)' : 'var(--bg-base)', border: '1px solid var(--border)', color: svc.role === 'worker' ? 'var(--text-muted)' : 'var(--text-primary)', width: '100%', boxSizing: 'border-box', fontFamily: 'monospace' }}
+                          />
+
+                          {/* Delete */}
+                          <button
+                            type="button"
+                            onClick={() => removeUserService(idx)}
+                            disabled={userServices.length === 1}
+                            style={{ background: 'none', border: 'none', cursor: userServices.length === 1 ? 'default' : 'pointer', color: 'var(--error)', padding: 2, opacity: userServices.length === 1 ? 0.2 : 0.5, display: 'flex', alignItems: 'center' }}
+                            title="Remove service"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
+                      );
+                    })}
+
+                    <p style={{ margin: '10px 0 0', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                      <strong style={{ color: 'var(--text-secondary)' }}>HTTP Path</strong> is used for Ingress routing (e.g. <code style={{ background: 'var(--bg-base)', padding: '0 4px', borderRadius: 3, fontSize: 10 }}>/api</code> → backend, <code style={{ background: 'var(--bg-base)', padding: '0 4px', borderRadius: 3, fontSize: 10 }}>/</code> → frontend). Workers have no public route.
+                    </p>
                   </div>
 
                   {/* Existing files */}
@@ -627,8 +752,8 @@ export function DeployMode() {
             <div style={{ maxWidth: 860 }}>
               <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700 }}>Docker Files</h3>
               <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--text-muted)' }}>
-                {scanResult && scanResult.services.length > 1
-                  ? `Generated a Dockerfile for each of the ${scanResult.services.length} detected services, plus a docker-compose.yml.`
+                {userServices.length > 1
+                  ? `Generated a Dockerfile for each of the ${userServices.length} services, plus a docker-compose.yml.`
                   : 'Generated a Dockerfile and docker-compose.yml. Review and edit if needed.'}
               </p>
 
