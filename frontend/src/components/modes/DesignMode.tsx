@@ -493,7 +493,7 @@ export function DesignMode() {
       </div>
 
       {/* ── Main content ── */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
 
         {/* Empty state */}
         {showEmpty && (
@@ -560,10 +560,10 @@ export function DesignMode() {
 
         {/* Full layout when we have data */}
         {hasData && (
-          <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+          <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
 
             {/* Left: ReactFlow diagram */}
-            <div style={{ flex: '0 0 60%', position: 'relative', borderRight: '1px solid var(--border)' }}>
+            <div style={{ flex: '0 0 60%', position: 'relative', borderRight: '1px solid var(--border)', height: '100%' }}>
               <ReactFlow nodes={rfNodes} edges={rfEdges} fitView fitViewOptions={{ padding: 0.15 }}>
                 <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--border)" />
                 <Controls
@@ -579,7 +579,7 @@ export function DesignMode() {
             </div>
 
             {/* Right: Analysis panel */}
-            <div style={{ flex: '0 0 40%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ flex: '0 0 40%', display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, height: '100%' }}>
 
               {/* Explanation — top 60% */}
               <div style={{ flex: '0 0 60%', overflowY: 'auto', borderBottom: '1px solid var(--border)' }}>
