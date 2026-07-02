@@ -49,6 +49,7 @@ async def _apply_schema_migrations(conn) -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()",
         # user_settings — columns added incrementally
         "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS experience_level VARCHAR(20) DEFAULT 'devops'",
+        "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS secrets_json TEXT DEFAULT '[]'",
     ]
     for sql in migrations:
         try:

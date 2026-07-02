@@ -191,4 +191,5 @@ class UserSettings(Base):
     require_2fa_team: Mapped[bool] = mapped_column(Boolean, default=False)
     default_member_role: Mapped[str] = mapped_column(String(20), default="member")
     experience_level: Mapped[str | None] = mapped_column(String(20), nullable=True, default=None)
+    secrets_json: Mapped[str] = mapped_column(Text, default="[]")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)

@@ -360,7 +360,16 @@ function GeneralTab() {
           </div>
           <div>
             <Label>Email</Label>
-            <input value={form.email} onChange={(e) => set('email', e.target.value)} type="email" style={inp()} />
+            {user?.provider === 'github' || user?.provider === 'gitlab' ? (
+              <div style={{ position: 'relative' }}>
+                <input value={form.email} readOnly style={{ ...inp(), color: 'var(--text-muted)', cursor: 'default', paddingRight: 90 }} />
+                <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: 'var(--text-muted)', background: 'var(--bg-hover)', padding: '1px 6px', borderRadius: 4, border: '1px solid var(--border)', whiteSpace: 'nowrap' }}>
+                  from {user.provider === 'github' ? 'GitHub' : 'GitLab'}
+                </span>
+              </div>
+            ) : (
+              <input value={form.email} onChange={(e) => set('email', e.target.value)} type="email" style={inp()} />
+            )}
           </div>
         </div>
       </SectionCard>
@@ -406,10 +415,6 @@ function GeneralTab() {
           <div>
             <Label>Default Namespace</Label>
             <input value={form.default_namespace} onChange={(e) => set('default_namespace', e.target.value)} style={inp()} />
-          </div>
-          <div>
-            <Label>Code Font Size ({form.code_font_size}px)</Label>
-            <input type="range" min={11} max={20} value={form.code_font_size} onChange={(e) => set('code_font_size', Number(e.target.value))} style={{ width: '100%', accentColor: V.accent }} />
           </div>
         </div>
       </SectionCard>
@@ -820,48 +825,6 @@ function SecurityTab() {
         )}
       </SectionCard>
 
-      {/* API Keys */}
-      <SectionCard>
-        <SectionTitle>API Keys</SectionTitle>
-        {newKeyRaw && (
-          <div style={{ background: 'rgba(63,185,80,0.08)', border: `1px solid ${V.green}`, borderRadius: 8, padding: '0.875rem', marginBottom: '1rem' }}>
-            <div style={{ color: V.green, fontSize: '0.82rem', fontWeight: 600, marginBottom: 4 }}>Key created — save it now, it won't be shown again.</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <code style={{ flex: 1, color: V.text, fontFamily: 'monospace', fontSize: '0.82rem', wordBreak: 'break-all' }}>{newKeyRaw}</code>
-              <button type="button" onClick={() => { navigator.clipboard.writeText(newKeyRaw); }}
-                style={{ padding: '0.3rem 0.6rem', borderRadius: 6, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, cursor: 'pointer' }}>
-                <Copy size={13} />
-              </button>
-            </div>
-            <button type="button" onClick={() => setNewKeyRaw(null)} style={{ marginTop: 8, fontSize: '0.75rem', color: V.muted, background: 'none', border: 'none', cursor: 'pointer' }}>Dismiss</button>
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: 8, marginBottom: '1rem' }}>
-          <input value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)} placeholder="Key name (e.g. CI/CD pipeline)" style={inp()} />
-          <button type="button" onClick={createApiKey} disabled={keyLoading || !newKeyName.trim()}
-            style={{ padding: '0.5rem 1rem', borderRadius: 8, border: 'none', background: V.accent, color: '#fff', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600, whiteSpace: 'nowrap', opacity: !newKeyName.trim() ? 0.5 : 1, display: 'flex', alignItems: 'center', gap: 6 }}>
-            {keyLoading ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Plus size={14} />}
-            Create
-          </button>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {apiKeys.map((k) => (
-            <div key={k.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.625rem 0.75rem', background: V.surface, borderRadius: 8, border: `1px solid ${V.border}` }}>
-              <div>
-                <div style={{ color: V.text, fontSize: '0.85rem', fontWeight: 500 }}>{k.name}</div>
-                <div style={{ color: V.muted, fontSize: '0.75rem', fontFamily: 'monospace' }}>
-                  {k.key_prefix}****  ·  {k.last_used_at ? `Last used ${new Date(k.last_used_at).toLocaleDateString()}` : 'Never used'}
-                </div>
-              </div>
-              <button type="button" onClick={() => revokeApiKey(k.id)}
-                style={{ padding: '0.3rem 0.6rem', borderRadius: 6, border: `1px solid ${V.border}`, background: 'transparent', color: V.red, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                <Trash2 size={13} />
-              </button>
-            </div>
-          ))}
-          {apiKeys.length === 0 && <div style={{ color: V.muted, fontSize: '0.85rem' }}>No API keys created yet.</div>}
-        </div>
-      </SectionCard>
     </div>
   );
 }
@@ -1245,7 +1208,164 @@ function ConnectedPlatformsTab() {
       {modal === 'add' && <ClusterForm onSave={(data) => createMut.mutate(data)} onClose={() => setModal(null)} loading={createMut.isPending} error={mutErr} />}
       {modal && typeof modal === 'object' && 'edit' in modal && <ClusterForm initial={modal.edit} onSave={(data) => editMut.mutate({ name: modal.edit.name, data })} onClose={() => setModal(null)} loading={editMut.isPending} error={mutErr} />}
       {modal && typeof modal === 'object' && 'del' in modal && <DeleteConfirm name={modal.del} onConfirm={() => deleteMut.mutate(modal.del)} onClose={() => setModal(null)} />}
+
+      <SecretsVaultSection />
     </div>
+  );
+}
+
+// ─── Secrets Vault ────────────────────────────────────────────────────────────
+
+const SECRET_TYPES = [
+  { id: 'api_key',      label: 'API Key',             color: '#6366f1' },
+  { id: 'token',        label: 'Access Token',        color: '#8b5cf6' },
+  { id: 'password',     label: 'Password',            color: '#ec4899' },
+  { id: 'aws_creds',    label: 'AWS Credentials',     color: '#f97316' },
+  { id: 'gcp_sa',       label: 'GCP Service Account', color: '#3b82f6' },
+  { id: 'azure_creds',  label: 'Azure Credentials',   color: '#0ea5e9' },
+  { id: 'database_url', label: 'Database URL',        color: '#10b981' },
+  { id: 'ssh_key',      label: 'SSH Key',             color: '#f59e0b' },
+  { id: 'webhook_url',  label: 'Webhook URL',         color: '#64748b' },
+  { id: 'other',        label: 'Other',               color: '#6b7280' },
+];
+
+interface SecretEntry {
+  id: string; name: string; type: string; description: string; value: string; created_at: string;
+}
+
+function typeColor(type: string) {
+  return SECRET_TYPES.find(t => t.id === type)?.color ?? '#6b7280';
+}
+function typeLabel(type: string) {
+  return SECRET_TYPES.find(t => t.id === type)?.label ?? type;
+}
+
+function SecretsVaultSection() {
+  const [secrets, setSecrets] = useState<SecretEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ name: '', type: 'api_key', value: '', description: '' });
+  const [saving, setSaving] = useState(false);
+  const [showValue, setShowValue] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/settings/secrets', { credentials: 'include' })
+      .then(r => r.json()).then(d => setSecrets(d.secrets ?? [])).catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function addSecret() {
+    if (!form.name.trim() || !form.value.trim()) return;
+    setSaving(true);
+    try {
+      const r = await fetch('/api/settings/secrets', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      if (!r.ok) throw new Error((await r.json()).detail);
+      const entry = await r.json();
+      setSecrets(prev => [...prev, entry]);
+      setForm({ name: '', type: 'api_key', value: '', description: '' });
+      setShowAdd(false);
+      setShowValue(false);
+    } catch { /* toast handled by global */ }
+    finally { setSaving(false); }
+  }
+
+  async function removeSecret(id: string) {
+    await fetch(`/api/settings/secrets/${id}`, { method: 'DELETE', credentials: 'include' });
+    setSecrets(prev => prev.filter(s => s.id !== id));
+  }
+
+  return (
+    <SectionCard>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
+        <SectionTitle>Secrets & Credentials</SectionTitle>
+        <button
+          type="button"
+          onClick={() => setShowAdd(true)}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0.4rem 0.85rem', background: V.accent, border: 'none', borderRadius: 7, color: '#fff', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
+        >
+          <Plus size={13} /> Add Secret
+        </button>
+      </div>
+      <p style={{ fontSize: '0.8rem', color: V.muted, margin: '0 0 0.875rem', lineHeight: 1.5 }}>
+        Store API keys, passwords, tokens and cloud credentials securely. Values are masked in the UI.
+      </p>
+
+      {loading && <div style={{ color: V.muted, fontSize: '0.82rem' }}>Loading…</div>}
+
+      {!loading && secrets.length === 0 && !showAdd && (
+        <div style={{ padding: '1.25rem', textAlign: 'center', border: `1px dashed ${V.border}`, borderRadius: 8, color: V.muted, fontSize: '0.82rem' }}>
+          No secrets stored yet. Click <strong style={{ color: V.text }}>Add Secret</strong> to store an API key, password, or credential.
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: showAdd ? '0.75rem' : 0 }}>
+        {secrets.map(s => (
+          <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0.625rem 0.75rem', background: V.surface, borderRadius: 8, border: `1px solid ${V.border}` }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: `${typeColor(s.type)}18`, color: typeColor(s.type), border: `1px solid ${typeColor(s.type)}30`, whiteSpace: 'nowrap' }}>
+              {typeLabel(s.type)}
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: V.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</div>
+              {s.description && <div style={{ fontSize: '0.75rem', color: V.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.description}</div>}
+            </div>
+            <code style={{ fontSize: '0.75rem', color: V.muted, fontFamily: 'monospace', flexShrink: 0 }}>{s.value}</code>
+            <button type="button" onClick={() => removeSecret(s.id)} style={{ padding: '0.3rem 0.5rem', borderRadius: 6, border: `1px solid ${V.border}`, background: 'transparent', color: V.red, cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+              <Trash2 size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {showAdd && (
+        <div style={{ border: `1px solid ${V.accent}40`, borderRadius: 10, padding: '0.875rem', background: `${V.accent}06` }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: V.text, marginBottom: '0.75rem' }}>New Secret</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.625rem', marginBottom: '0.625rem' }}>
+            <div>
+              <Label>Name *</Label>
+              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. OpenAI API Key" style={inp()} />
+            </div>
+            <div>
+              <Label>Type</Label>
+              <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} style={sel()}>
+                {SECRET_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ marginBottom: '0.625rem' }}>
+            <Label>Value *</Label>
+            <div style={{ position: 'relative' }}>
+              <input
+                type={showValue ? 'text' : 'password'}
+                value={form.value}
+                onChange={e => setForm(f => ({ ...f, value: e.target.value }))}
+                placeholder="Paste the secret value here"
+                style={{ ...inp(), paddingRight: 64 }}
+              />
+              <button type="button" onClick={() => setShowValue(v => !v)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: V.muted, fontSize: '0.72rem' }}>
+                {showValue ? 'Hide' : 'Show'}
+              </button>
+            </div>
+          </div>
+          <div style={{ marginBottom: '0.75rem' }}>
+            <Label>Description (optional)</Label>
+            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="What is this secret used for?" style={inp()} />
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" onClick={addSecret} disabled={saving || !form.name.trim() || !form.value.trim()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0.5rem 1rem', background: V.accent, border: 'none', borderRadius: 7, color: '#fff', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer', opacity: (!form.name.trim() || !form.value.trim()) ? 0.5 : 1 }}>
+              {saving ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Plus size={13} />}
+              Save Secret
+            </button>
+            <button type="button" onClick={() => { setShowAdd(false); setForm({ name: '', type: 'api_key', value: '', description: '' }); setShowValue(false); }} style={{ padding: '0.5rem 0.875rem', background: 'transparent', border: `1px solid ${V.border}`, borderRadius: 7, color: V.muted, fontSize: '0.82rem', cursor: 'pointer' }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </SectionCard>
   );
 }
 

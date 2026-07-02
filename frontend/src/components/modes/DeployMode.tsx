@@ -105,8 +105,6 @@ const DEPLOY_TARGETS = [
   { id: 'do-k8s',     label: 'DigitalOcean K8s',   sub: 'DOKS — simple managed Kubernetes',          icon: <Server size={18} /> },
   { id: 'self-hosted',label: 'Self-hosted K8s',     sub: 'Bare metal or on-prem cluster',              icon: <Server size={18} /> },
   { id: 'fly',        label: 'fly.io',             sub: 'Deploy containers globally via flyctl',      icon: <Globe size={18} /> },
-  { id: 'railway',    label: 'Railway',             sub: 'Deploy from GitHub — zero infra setup',     icon: <Zap size={18} /> },
-  { id: 'render',     label: 'Render',              sub: 'Cloud platform with auto-deploys from Git', icon: <Zap size={18} /> },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

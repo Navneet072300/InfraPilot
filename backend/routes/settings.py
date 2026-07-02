@@ -1,5 +1,7 @@
 import json
 import logging
+import uuid
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Cookie, Header, HTTPException
@@ -450,3 +452,89 @@ async def update_team_settings(
             s.default_member_role = body.default_member_role
         await session.commit()
     return {"ok": True}
+
+
+# ── Secrets Vault ─────────────────────────────────────────────────────────────
+
+def _mask_secret(value: str) -> str:
+    if len(value) <= 8:
+        return "*" * len(value)
+    return value[:4] + "****" + value[-4:]
+
+
+class SecretInput(BaseModel):
+    name: str
+    type: str      # api_key | token | password | aws_creds | gcp_sa | azure_creds | database_url | ssh_key | webhook_url | other
+    value: str
+    description: str = ""
+
+
+@router.get("/secrets")
+async def list_secrets(
+    ip_session: str = Cookie(default=""),
+    authorization: str = Header(default=""),
+):
+    user = await _get_user(ip_session, authorization)
+    if not is_db_available():
+        return {"secrets": []}
+    async with get_session() as session:
+        result = await session.execute(select(UserSettings).where(UserSettings.user_id == user.id))
+        s = result.scalar_one_or_none()
+    raw: list[dict] = json.loads(s.secrets_json if s and s.secrets_json else "[]")
+    return {
+        "secrets": [
+            {**item, "value": _mask_secret(item.get("value", ""))}
+            for item in raw
+        ]
+    }
+
+
+@router.post("/secrets", status_code=201)
+async def create_secret(
+    body: SecretInput,
+    ip_session: str = Cookie(default=""),
+    authorization: str = Header(default=""),
+):
+    if not body.name.strip() or not body.value.strip():
+        raise HTTPException(400, "name and value are required")
+    user = await _get_user(ip_session, authorization)
+    if not is_db_available():
+        raise HTTPException(503, "Database unavailable")
+    async with get_session() as session:
+        result = await session.execute(select(UserSettings).where(UserSettings.user_id == user.id))
+        s = result.scalar_one_or_none()
+        if not s:
+            s = UserSettings(user_id=user.id)
+            session.add(s)
+        raw: list[dict] = json.loads(s.secrets_json or "[]")
+        entry = {
+            "id": str(uuid.uuid4()),
+            "name": body.name.strip(),
+            "type": body.type,
+            "description": body.description.strip(),
+            "value": body.value,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        raw.append(entry)
+        s.secrets_json = json.dumps(raw)
+        await session.commit()
+    return {**entry, "value": _mask_secret(entry["value"])}
+
+
+@router.delete("/secrets/{secret_id}", status_code=204)
+async def delete_secret(
+    secret_id: str,
+    ip_session: str = Cookie(default=""),
+    authorization: str = Header(default=""),
+):
+    user = await _get_user(ip_session, authorization)
+    if not is_db_available():
+        return
+    async with get_session() as session:
+        result = await session.execute(select(UserSettings).where(UserSettings.user_id == user.id))
+        s = result.scalar_one_or_none()
+        if not s:
+            return
+        raw: list[dict] = json.loads(s.secrets_json or "[]")
+        s.secrets_json = json.dumps([x for x in raw if x.get("id") != secret_id])
+        await session.commit()
