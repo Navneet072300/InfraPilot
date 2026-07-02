@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom';
-import { GitBranch } from 'lucide-react';
+import { GitBranch, GitMerge } from 'lucide-react';
 
 const V = {
   bg: 'var(--bg-base)', surface: 'var(--bg-surface)', border: 'var(--border)',
@@ -10,6 +10,8 @@ const V = {
 const ERROR_MESSAGES: Record<string, string> = {
   github_failed: 'GitHub sign-in failed. Please try again.',
   github_no_email: 'Your GitHub account has no public email. Enable a primary email in GitHub settings and retry.',
+  gitlab_failed: 'GitLab sign-in failed. Please try again.',
+  gitlab_no_email: 'Your GitLab account has no public email. Add a primary email in GitLab settings and retry.',
   session_failed: 'Session expired. Please sign in again.',
   db_unavailable: 'Service temporarily unavailable. Please try again shortly.',
 };
@@ -29,7 +31,7 @@ export function LoginPage() {
           </div>
           <h1 style={{ margin: '0 0 8px', color: V.text, fontWeight: 800, fontSize: 24 }}>Welcome to InfraPilot</h1>
           <p style={{ margin: 0, color: V.muted, fontSize: 14, lineHeight: 1.6 }}>
-            Sign in with GitHub to access your repositories<br />and start deploying infrastructure.
+            Sign in with your Git provider to connect your<br />repositories and start deploying infrastructure.
           </p>
         </div>
 
@@ -40,6 +42,7 @@ export function LoginPage() {
             </div>
           )}
 
+          {/* GitHub */}
           <a
             href="/api/auth/github"
             style={{
@@ -55,9 +58,31 @@ export function LoginPage() {
             <GitBranch size={20} /> Continue with GitHub
           </a>
 
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '16px 0' }}>
+            <div style={{ flex: 1, height: 1, background: V.border }} />
+            <span style={{ color: V.muted, fontSize: 12 }}>or</span>
+            <div style={{ flex: 1, height: 1, background: V.border }} />
+          </div>
+
+          {/* GitLab */}
+          <a
+            href="/api/auth/gitlab"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+              padding: '13px 20px', borderRadius: 10,
+              background: '#fc6d26', border: '1px solid #e24329',
+              color: '#fff', fontSize: 15, fontWeight: 700, textDecoration: 'none',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = '#e24329')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = '#fc6d26')}
+          >
+            <GitMerge size={20} /> Continue with GitLab
+          </a>
+
           <p style={{ textAlign: 'center', color: V.muted, fontSize: 12, margin: '20px 0 0', lineHeight: 1.6 }}>
-            InfraPilot uses GitHub OAuth. We request <code style={{ background: 'var(--bg-base)', padding: '1px 5px', borderRadius: 4 }}>user:email</code> and{' '}
-            <code style={{ background: 'var(--bg-base)', padding: '1px 5px', borderRadius: 4 }}>repo</code> scopes so you can connect your repositories directly — no separate token setup needed.
+            We request <code style={{ background: 'var(--bg-base)', padding: '1px 5px', borderRadius: 4 }}>read_user</code> / <code style={{ background: 'var(--bg-base)', padding: '1px 5px', borderRadius: 4 }}>repo</code> scopes
+            so you can connect your repositories directly — no separate token setup needed.
           </p>
         </div>
       </div>

@@ -34,6 +34,10 @@ GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", f"{FRONTEND_URL}/api/auth
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
 GITHUB_REDIRECT_URI = os.getenv("GITHUB_REDIRECT_URI", f"{FRONTEND_URL}/api/auth/github/callback")
+GITLAB_CLIENT_ID = os.getenv("GITLAB_CLIENT_ID", "")
+GITLAB_CLIENT_SECRET = os.getenv("GITLAB_CLIENT_SECRET", "")
+GITLAB_REDIRECT_URI = os.getenv("GITLAB_REDIRECT_URI", f"{FRONTEND_URL}/api/auth/gitlab/callback")
+GITLAB_URL = os.getenv("GITLAB_URL", "https://gitlab.com")  # supports self-hosted
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 
 
@@ -483,6 +487,96 @@ async def github_callback(code: str, state: str = "", request: Request = None):
     except Exception as exc:
         logger.exception("GitHub OAuth callback error: %s", exc)
         return RedirectResponse(f"{FRONTEND_URL}/login?error=github_failed")
+
+
+# ── GitLab OAuth ─────────────────────────────────────────────────────────────
+
+@router.get("/auth/gitlab")
+async def gitlab_auth():
+    if not GITLAB_CLIENT_ID:
+        raise HTTPException(501, "GitLab OAuth not configured")
+    state = secrets.token_urlsafe(16)
+    url = (
+        f"{GITLAB_URL}/oauth/authorize"
+        f"?client_id={GITLAB_CLIENT_ID}&redirect_uri={GITLAB_REDIRECT_URI}"
+        f"&response_type=code&scope=read_user&state={state}"
+    )
+    return RedirectResponse(url)
+
+
+@router.get("/auth/gitlab/callback")
+async def gitlab_callback(code: str, state: str = "", request: Request = None):
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            token_resp = await client.post(
+                f"{GITLAB_URL}/oauth/token",
+                data={
+                    "client_id": GITLAB_CLIENT_ID,
+                    "client_secret": GITLAB_CLIENT_SECRET,
+                    "code": code,
+                    "grant_type": "authorization_code",
+                    "redirect_uri": GITLAB_REDIRECT_URI,
+                },
+                headers={"Accept": "application/json"},
+            )
+            if token_resp.status_code != 200:
+                logger.warning("GitLab token exchange failed: %s", token_resp.status_code)
+                return RedirectResponse(f"{FRONTEND_URL}/login?error=gitlab_failed")
+            token_data = token_resp.json()
+            access_token = token_data.get("access_token")
+            if not access_token:
+                logger.warning("GitLab token response missing access_token: %s", token_data.get("error", token_data))
+                return RedirectResponse(f"{FRONTEND_URL}/login?error=gitlab_failed")
+
+            user_resp = await client.get(
+                f"{GITLAB_URL}/api/v4/user",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+
+        if user_resp.status_code != 200:
+            logger.warning("GitLab /api/v4/user request failed: %s", user_resp.status_code)
+            return RedirectResponse(f"{FRONTEND_URL}/login?error=gitlab_failed")
+
+        gl_user = user_resp.json()
+        email = gl_user.get("email", "")
+        if not email:
+            logger.warning("GitLab OAuth: no email for user %s", gl_user.get("username"))
+            return RedirectResponse(f"{FRONTEND_URL}/login?error=gitlab_no_email")
+
+        name = gl_user.get("username") or gl_user.get("name", "")
+        avatar = gl_user.get("avatar_url", "")
+        provider_id = str(gl_user.get("id", ""))
+
+        if not is_db_available():
+            return RedirectResponse(f"{FRONTEND_URL}/login?error=db_unavailable")
+
+        async with get_session() as session:
+            result = await session.execute(select(User).where(User.email == email))
+            user = result.scalar_one_or_none()
+            if not user:
+                user = User(name=name, email=email, avatar_url=avatar, provider="gitlab",
+                            provider_id=provider_id, email_verified=True)
+                session.add(user)
+                await session.commit()
+                await session.refresh(user)
+            else:
+                user.name = name
+                user.avatar_url = avatar or user.avatar_url
+                user.provider = "gitlab"
+                await session.commit()
+                await session.refresh(user)
+
+        token = create_access_token({"sub": str(user.id)})
+        await _record_session(user.id, token, request)
+        await audit_service.log(user.id, email, "login", "gitlab")
+        logger.info("GitLab OAuth login: email=%s user=%s", email, gl_user.get("username"))
+        redirect = RedirectResponse(f"{FRONTEND_URL}/auth/callback", status_code=302)
+        _set_session_cookie(redirect, token)
+        return redirect
+
+    except Exception as exc:
+        logger.exception("GitLab OAuth callback error: %s", exc)
+        return RedirectResponse(f"{FRONTEND_URL}/login?error=gitlab_failed")
 
 
 # ── Me / Logout ───────────────────────────────────────────────────────────────
