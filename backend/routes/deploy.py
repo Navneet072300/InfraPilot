@@ -23,7 +23,9 @@ from db.database import get_session, is_db_available
 from db.models import User, DeployConfig
 from services.ai_service import AIService
 from services.github_service import GitHubService
-from services.pipeline_generator import get_dockerfile, get_compose_file, build_cd_prompt
+from services.pipeline_generator import (
+    get_dockerfile, get_compose_file, get_multi_compose, build_deploy_prompt,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -73,148 +75,201 @@ async def scan_repo(full_name: str):
         raise HTTPException(500, str(e))
 
 
+_LANG_INDICATORS = [
+    ("package.json",     "Node.js"),
+    ("requirements.txt", "Python"),
+    ("pyproject.toml",   "Python"),
+    ("go.mod",           "Go"),
+    ("pom.xml",          "Java"),
+    ("build.gradle",     "Java"),
+    ("build.gradle.kts", "Java"),
+    ("cargo.toml",       "Rust"),
+    ("composer.json",    "PHP"),
+    ("gemfile",          "Ruby"),
+]
+
+_SERVICE_DIRS = {
+    "backend", "frontend", "admin", "api", "web", "worker",
+    "app", "server", "client", "gateway", "service", "services",
+}
+
+_DEFAULT_PORTS = {
+    "Node.js": 3000, "Python": 8000, "Go": 8080,
+    "Java": 8080,   "Rust": 8080,   "Ruby": 3000, "PHP": 9000,
+}
+
+
+def _detect_lang(paths: set[str]) -> tuple[str, str, int, str]:
+    """Detect language, framework, port, build_tool from a flat path set."""
+    language, framework, build_tool = "Unknown", "", ""
+    port = 8080
+
+    for indicator, lang in _LANG_INDICATORS:
+        if indicator in paths:
+            language = lang
+            port = _DEFAULT_PORTS.get(lang, 8080)
+            break
+
+    if language == "Node.js":
+        if "next" in " ".join(paths):         framework = "Next.js"
+        elif "express" in " ".join(paths):    framework = "Express"
+        elif "vue" in " ".join(paths):        framework = "Vue.js"
+        elif "react" in " ".join(paths):      framework = "React"
+        else:                                 framework = "Node.js"
+    elif language == "Python":
+        joined = " ".join(paths)
+        if "django" in joined:   framework = "Django"
+        elif "fastapi" in joined: framework = "FastAPI"
+        elif "flask" in joined:  framework = "Flask"
+        else:                    framework = "Python"
+    elif language == "Go":       framework = "Go"
+    elif language == "Java":
+        if "build.gradle" in paths or "build.gradle.kts" in paths:
+            build_tool, framework = "Gradle", "Spring Boot (Gradle)"
+        elif "pom.xml" in paths:
+            build_tool, framework = "Maven", "Spring Boot (Maven)"
+    elif language == "Rust":     framework = "Rust"
+    elif language == "Ruby":     framework = "Rails" if "config/routes.rb" in paths else "Ruby"
+    elif language == "PHP":      framework = "Laravel" if "artisan" in paths else "PHP"
+
+    return language, framework, port, build_tool
+
+
 def _deep_scan(gh: GitHubService, full_name: str) -> dict:
     """Synchronous GitHub scan — runs in a thread via asyncio.to_thread."""
+    import re
+
     client = gh._client()
     repo = client.get_repo(full_name)
     tree = repo.get_git_tree(repo.default_branch, recursive=True).tree
-    paths = {item.path.lower() for item in tree}
-    paths_original = {item.path for item in tree}
+    paths_lower = {item.path.lower() for item in tree}
+    paths_orig  = {item.path for item in tree}
 
-    # ── File presence ────────────────────────────────────────────────────────
-    has_dockerfile = any("dockerfile" in p for p in paths)
-    has_compose = any(p in ("docker-compose.yml", "docker-compose.yaml") for p in paths)
-    has_jenkinsfile = "jenkinsfile" in paths
-    has_github_actions = any(p.startswith(".github/workflows/") and p.endswith((".yml", ".yaml")) for p in paths)
-    has_gitlab_ci = ".gitlab-ci.yml" in paths
+    has_dockerfile    = any("dockerfile" in p and "/" not in p.split("dockerfile")[0].rstrip("/") for p in paths_lower) or any(p == "dockerfile" for p in paths_lower)
+    has_compose       = any(p in ("docker-compose.yml", "docker-compose.yaml") for p in paths_lower)
+    has_jenkinsfile   = "jenkinsfile" in paths_lower
+    has_github_actions = any(p.startswith(".github/workflows/") and p.endswith((".yml", ".yaml")) for p in paths_lower)
+    has_gitlab_ci     = ".gitlab-ci.yml" in paths_lower
 
-    # ── Language detection ───────────────────────────────────────────────────
-    language = "Unknown"
-    framework = ""
-    port = 8080
-    build_tool = ""
+    # ── Root-level language detection ────────────────────────────────────────
+    root_paths = {p for p in paths_lower if "/" not in p}
+    language, framework, port, build_tool = _detect_lang(root_paths)
 
-    lang_indicators = [
-        ("package.json",      "Node.js"),
-        ("requirements.txt",  "Python"),
-        ("pyproject.toml",    "Python"),
-        ("go.mod",            "Go"),
-        ("pom.xml",           "Java"),
-        ("build.gradle",      "Java"),
-        ("build.gradle.kts",  "Java"),
-        ("cargo.toml",        "Rust"),
-        ("composer.json",     "PHP"),
-        ("gemfile",           "Ruby"),
-        ("*.csproj",          ".NET"),
-    ]
-    for indicator, lang in lang_indicators:
-        if indicator.startswith("*"):
-            ext = indicator[1:]
-            if any(p.endswith(ext) for p in paths):
-                language = lang
-                break
-        elif indicator in paths:
-            language = lang
-            break
-
-    # ── Framework + port detection ───────────────────────────────────────────
+    # Try to read package.json / requirements for better framework detection
     try:
-        if language == "Node.js" and "package.json" in paths_original:
+        if language == "Node.js" and "package.json" in paths_orig:
             raw = repo.get_contents("package.json").decoded_content.decode(errors="replace")
             pkg = json.loads(raw)
             deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
-            if "next" in deps:
-                framework = "Next.js"
-                port = 3000
-            elif "express" in deps:
-                framework = "Express"
-                port = 3000
-            elif "fastify" in deps:
-                framework = "Fastify"
-                port = 3000
-            elif "nuxt" in deps:
-                framework = "Nuxt.js"
-                port = 3000
-            elif "vue" in deps:
-                framework = "Vue.js"
-                port = 3000
-            elif "react" in deps or "react-dom" in deps:
-                framework = "React"
-                port = 3000
-            else:
-                framework = "Node.js"
-                port = 3000
-
+            if "next" in deps:                   framework = "Next.js"
+            elif "express" in deps:              framework = "Express"
+            elif "fastify" in deps:              framework = "Fastify"
+            elif "nuxt" in deps:                 framework = "Nuxt.js"
+            elif "vue" in deps:                  framework = "Vue.js"
+            elif "react" in deps or "react-dom" in deps: framework = "React"
         elif language == "Python":
-            port = 8000
-            req_file = next((p for p in paths_original if p.lower() in ("requirements.txt", "pyproject.toml")), None)
-            if req_file:
-                raw = repo.get_contents(req_file).decoded_content.decode(errors="replace").lower()
-                if "django" in raw:
-                    framework = "Django"
-                elif "fastapi" in raw:
-                    framework = "FastAPI"
-                elif "flask" in raw:
-                    framework = "Flask"
-                else:
-                    framework = "Python"
-
-        elif language == "Go":
-            port = 8080
-            framework = "Go"
-
-        elif language == "Java":
-            port = 8080
-            if "build.gradle" in paths or "build.gradle.kts" in paths:
-                build_tool = "Gradle"
-                framework = "Spring Boot (Gradle)"
-            elif "pom.xml" in paths:
-                build_tool = "Maven"
-                framework = "Spring Boot (Maven)"
-
-        elif language == "Rust":
-            port = 8080
-            framework = "Rust"
-
-        elif language == "Ruby":
-            port = 3000
-            framework = "Rails" if "config/routes.rb" in paths else "Ruby"
-
-        elif language == "PHP":
-            port = 9000
-            framework = "Laravel" if "artisan" in paths else "PHP"
-
+            req = next((p for p in paths_orig if p.lower() in ("requirements.txt", "pyproject.toml")), None)
+            if req:
+                raw = repo.get_contents(req).decoded_content.decode(errors="replace").lower()
+                if "fastapi" in raw:   framework = "FastAPI"
+                elif "django" in raw:  framework = "Django"
+                elif "flask" in raw:   framework = "Flask"
     except Exception as exc:
         logger.warning("Framework detection failed: %s", exc)
 
-    # Try existing Dockerfile for port
+    # Try existing Dockerfile for EXPOSE port
     if has_dockerfile:
         try:
-            import re
-            df_path = next(p for p in paths_original if p.lower() == "dockerfile")
-            df_content = repo.get_contents(df_path).decoded_content.decode(errors="replace")
-            m = re.search(r"EXPOSE\s+(\d+)", df_content, re.IGNORECASE)
-            if m:
-                port = int(m.group(1))
+            df_path = next((p for p in paths_orig if p.lower() == "dockerfile"), None)
+            if df_path:
+                df_content = repo.get_contents(df_path).decoded_content.decode(errors="replace")
+                m = re.search(r"EXPOSE\s+(\d+)", df_content, re.IGNORECASE)
+                if m:
+                    port = int(m.group(1))
         except Exception:
             pass
 
     app_name = full_name.split("/")[-1].lower().replace("_", "-")
 
+    # ── Multi-service detection ───────────────────────────────────────────────
+    # Group paths by top-level dir
+    dir_paths: dict[str, set[str]] = {}
+    for item in tree:
+        parts = item.path.split("/")
+        if len(parts) > 1:
+            d = parts[0].lower()
+            if d not in dir_paths:
+                dir_paths[d] = set()
+            dir_paths[d].add("/".join(parts[1:]).lower())  # relative paths inside dir
+
+    service_dirs = set(dir_paths.keys()) & _SERVICE_DIRS
+    services = []
+    port_counter = {port}
+
+    for svc_name in sorted(service_dirs):
+        svc_rel_paths = dir_paths[svc_name]
+        svc_lang, svc_fw, svc_port, _ = _detect_lang(svc_rel_paths)
+
+        # Try to read package.json inside the service dir for better detection
+        try:
+            if svc_lang == "Node.js":
+                pkg_path = next((p for p in paths_orig if p.lower() == f"{svc_name}/package.json"), None)
+                if pkg_path:
+                    raw = repo.get_contents(pkg_path).decoded_content.decode(errors="replace")
+                    pkg = json.loads(raw)
+                    deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+                    if "next" in deps:      svc_fw = "Next.js"
+                    elif "react" in deps:   svc_fw = "React"
+                    elif "vue" in deps:     svc_fw = "Vue.js"
+                    elif "express" in deps: svc_fw = "Express"
+            elif svc_lang == "Python":
+                req_path = next((p for p in paths_orig if p.lower() in (f"{svc_name}/requirements.txt", f"{svc_name}/pyproject.toml")), None)
+                if req_path:
+                    raw = repo.get_contents(req_path).decoded_content.decode(errors="replace").lower()
+                    if "fastapi" in raw:   svc_fw = "FastAPI"
+                    elif "django" in raw:  svc_fw = "Django"
+                    elif "flask" in raw:   svc_fw = "Flask"
+        except Exception:
+            pass
+
+        # Avoid duplicate ports
+        while svc_port in port_counter:
+            svc_port += 1
+        port_counter.add(svc_port)
+
+        services.append({
+            "name":      svc_name,
+            "path":      svc_name + "/",
+            "language":  svc_lang if svc_lang != "Unknown" else language,
+            "framework": svc_fw   if svc_fw   else framework,
+            "port":      svc_port,
+        })
+
+    # Fall back: single root service
+    if not services:
+        services = [{
+            "name":      app_name,
+            "path":      ".",
+            "language":  language,
+            "framework": framework,
+            "port":      port,
+        }]
+
     return {
-        "success": True,
-        "language": language,
-        "framework": framework,
-        "build_tool": build_tool,
-        "port": port,
-        "app_name": app_name,
-        "default_branch": repo.default_branch,
-        "private": repo.private,
-        "has_dockerfile": has_dockerfile,
-        "has_compose": has_compose,
-        "has_jenkinsfile": has_jenkinsfile,
+        "success":           True,
+        "language":          language,
+        "framework":         framework,
+        "build_tool":        build_tool,
+        "port":              port,
+        "app_name":          app_name,
+        "default_branch":    repo.default_branch,
+        "private":           repo.private,
+        "has_dockerfile":    has_dockerfile,
+        "has_compose":       has_compose,
+        "has_jenkinsfile":   has_jenkinsfile,
         "has_github_actions": has_github_actions,
-        "has_gitlab_ci": has_gitlab_ci,
+        "has_gitlab_ci":     has_gitlab_ci,
+        "services":          services,
     }
 
 
@@ -235,7 +290,8 @@ async def generate_dockerfile(body: DockerfileRequest):
 # ── docker-compose template ────────────────────────────────────────────────────
 
 class ComposeRequest(BaseModel):
-    language: str
+    services: list[dict] = []   # [{name, language, framework, port, path}]
+    language: str = ""          # fallback for single-service
     framework: str = ""
     port: int = 8080
     app_name: str = "app"
@@ -243,45 +299,46 @@ class ComposeRequest(BaseModel):
 
 @router.post("/deploy/compose")
 async def generate_compose(body: ComposeRequest):
-    content = get_compose_file(body.language, body.framework, body.port, body.app_name)
+    if body.services:
+        content = get_multi_compose(body.services, body.app_name)
+    else:
+        content = get_compose_file(body.language, body.framework, body.port, body.app_name)
     return {"content": content}
 
 
-# ── CD pipeline generation (streaming) ────────────────────────────────────────
+# ── Full deploy pipeline generation (streaming) ───────────────────────────────
 
 class PipelineRequest(BaseModel):
     repo_full_name: str
-    branch: str = "main"
-    language: str
-    framework: str = ""
-    cd_tool: str        # argocd | fluxcd | jenkins
-    config_tool: str    # helm | kustomize
-    vault: str = "none" # none | hashicorp | infisical | aws-sm
+    services: list[dict]           # [{name, language, framework, port, path}]
+    ci_tool: str                   # github-actions | gitlab-ci | jenkins
+    cd_tool: str                   # argocd | fluxcd | inline
+    config_tool: str               # helm | kustomize
+    vault: str = "none"            # none | hashicorp | infisical | aws-sm
     vault_deployed: bool = False
-    registry: str = "ghcr"
-    port: int = 8080
+    registry: str = "ghcr"        # ghcr | docker-hub | ecr
+    environments: list[str] = ["prod"]  # ['dev', 'staging', 'prod']
     app_name: str = "app"
 
 
 @router.post("/deploy/pipeline")
 async def generate_pipeline(body: PipelineRequest):
-    prompt = build_cd_prompt(
+    prompt = build_deploy_prompt(
         repo_full_name=body.repo_full_name,
-        branch=body.branch,
-        language=body.language,
-        framework=body.framework,
+        services=body.services,
+        ci_tool=body.ci_tool,
         cd_tool=body.cd_tool,
         config_tool=body.config_tool,
         vault=body.vault,
         vault_deployed=body.vault_deployed,
         registry=body.registry,
-        port=body.port,
+        environments=body.environments,
         app_name=body.app_name,
     )
 
     async def stream():
         try:
-            async for chunk in ai.stream_devops(prompt, tools=[body.cd_tool, body.config_tool], context=""):
+            async for chunk in ai.stream_devops(prompt, tools=[body.ci_tool, body.cd_tool, body.config_tool], context=""):
                 yield f"data: {json.dumps({'chunk': chunk, 'done': False})}\n\n"
             yield f"data: {json.dumps({'done': True})}\n\n"
         except Exception as e:

@@ -4,7 +4,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LandingPage } from './pages/LandingPage';
 import { Onboarding } from './pages/Onboarding';
 import { AppLayout } from './components/layout/AppLayout';
-import { PipelineMode } from './components/modes/PipelineMode';
 import { DeployMode } from './components/modes/DeployMode';
 import { GenerateMode } from './components/modes/GenerateMode';
 import { DiagnoseMode } from './components/modes/DiagnoseMode';
@@ -117,7 +116,7 @@ function AppShell() {
   return (
     <AppLayout>
       <Routes>
-        <Route path="pipeline"     element={<PipelineMode />} />
+        <Route path="pipeline"     element={<Navigate to="/app/deploy" replace />} />
         <Route path="generate"     element={<GenerateMode />} />
         <Route path="diagnose"     element={<DiagnoseMode />} />
         <Route path="design"       element={<DesignMode />} />
@@ -130,8 +129,8 @@ function AppShell() {
         <Route path="profile"      element={<ProfilePage />} />
         <Route path="subscription" element={<SubscriptionPage />} />
         <Route path="help"         element={<HelpPage />} />
-        <Route index element={<Navigate to="pipeline" replace />} />
-        <Route path="*" element={<Navigate to="pipeline" replace />} />
+        <Route index element={<Navigate to="deploy" replace />} />
+        <Route path="*" element={<Navigate to="deploy" replace />} />
       </Routes>
     </AppLayout>
   );
