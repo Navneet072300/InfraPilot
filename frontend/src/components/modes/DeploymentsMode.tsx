@@ -50,7 +50,9 @@ interface Analysis {
   diagnosis: string;
   fix_summary: string;
   severity: string;
+  root_cause_line: string;
   files: { path: string; content: string; change_description: string }[];
+  manual_steps: string[];
 }
 
 type Tab = 'runs' | 'logs' | 'ai-fix';
@@ -190,6 +192,7 @@ export function DeploymentsMode() {
   const streamLogs = useCallback(async (dep: Deployment, run: Run, job: Job) => {
     setLogsLoading(true); setLogLines([]);
     setSelectedJob(job);
+    setAnalysis(null);  // clear stale analysis whenever a new job is opened
     const es = new EventSource(`/api/deployments/${dep.id}/runs/${run.id}/logs/${job.id}?ip_session=`);
     // Note: EventSource doesn't support cookies natively for SSE — backend uses query param fallback
     // We use fetch-based SSE instead:
@@ -288,8 +291,8 @@ export function DeploymentsMode() {
       if (!r.ok) throw new Error((await r.json()).detail ?? 'Apply failed');
       toast.success('Fix pushed to GitHub', `${analysis.files.length} file(s) committed. CI will re-run automatically.`);
       setApplyConfirm(false);
-      // Refresh runs after a moment
-      setTimeout(() => { if (selected) loadRuns(selected); }, 3000);
+      setTab('runs');
+      setTimeout(() => { if (selected) loadRuns(selected); }, 4000);
     } catch (e) { toast.error('Apply fix failed', String(e)); }
     finally { setApplying(false); }
   };
@@ -560,14 +563,47 @@ export function DeploymentsMode() {
                 )}
 
                 {analyzing && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-muted)', fontSize: 13 }}>
-                    <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite', color: 'var(--accent)' }} />
-                    Analyzing failure logs…
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '20px 0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-muted)', fontSize: 13 }}>
+                      <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite', color: 'var(--accent)' }} />
+                      Reading repository files and analyzing failure logs…
+                    </div>
+                    <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)', paddingLeft: 24 }}>
+                      This fetches your actual Dockerfile, workflows, and config before diagnosing — takes 10–20s.
+                    </p>
                   </div>
                 )}
 
                 {analysis && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {/* Severity + re-analyze row */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4,
+                        background: analysis.severity === 'error' ? 'rgba(248,113,113,0.12)' : analysis.severity === 'config' ? 'rgba(245,158,11,0.12)' : 'rgba(52,211,153,0.1)',
+                        color: analysis.severity === 'error' ? 'var(--error)' : analysis.severity === 'config' ? '#f59e0b' : 'var(--success)',
+                        border: `1px solid ${analysis.severity === 'error' ? 'rgba(248,113,113,0.25)' : analysis.severity === 'config' ? 'rgba(245,158,11,0.3)' : 'rgba(52,211,153,0.2)'}`,
+                        textTransform: 'uppercase',
+                      }}>
+                        {analysis.severity === 'error' ? 'Code Fix' : analysis.severity === 'config' ? 'Config Issue' : 'Transient'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleAnalyze}
+                        disabled={analyzing || !selectedJob}
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 9px', background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit', marginLeft: 'auto' }}
+                      >
+                        <RefreshCw size={10} /> Re-analyze
+                      </button>
+                    </div>
+
+                    {/* Root cause line */}
+                    {analysis.root_cause_line && (
+                      <div style={{ padding: '8px 12px', background: '#0d1117', borderRadius: 6, border: '1px solid rgba(248,113,113,0.3)', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#f87171', wordBreak: 'break-all' }}>
+                        {analysis.root_cause_line}
+                      </div>
+                    )}
+
                     {/* Diagnosis */}
                     <div style={{ padding: '12px 14px', background: 'rgba(248,113,113,0.07)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 8 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
@@ -585,6 +621,21 @@ export function DeploymentsMode() {
                           <span style={{ fontWeight: 700, fontSize: 12, color: 'var(--accent)' }}>Proposed Fix</span>
                         </div>
                         <p style={{ margin: 0, fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.6 }}>{analysis.fix_summary}</p>
+                      </div>
+                    )}
+
+                    {/* Manual steps (for config/transient issues) */}
+                    {analysis.manual_steps && analysis.manual_steps.length > 0 && (
+                      <div style={{ padding: '12px 14px', background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+                          <AlertCircle size={12} style={{ color: '#f59e0b' }} />
+                          <span style={{ fontWeight: 700, fontSize: 12, color: '#f59e0b' }}>Manual Steps Required</span>
+                        </div>
+                        <ol style={{ margin: 0, paddingLeft: 18 }}>
+                          {analysis.manual_steps.map((step, i) => (
+                            <li key={i} style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.7, marginBottom: 4 }}>{step}</li>
+                          ))}
+                        </ol>
                       </div>
                     )}
 
@@ -616,6 +667,13 @@ export function DeploymentsMode() {
                       </div>
                     )}
 
+                    {/* No code fix — config/transient only */}
+                    {analysis.files.length === 0 && !analyzing && (
+                      <div style={{ padding: '10px 14px', background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                        No file changes needed — follow the steps above, then push a commit or re-run the workflow to verify.
+                      </div>
+                    )}
+
                     {/* Apply button */}
                     {analysis.files.length > 0 && (
                       <div>
@@ -623,14 +681,14 @@ export function DeploymentsMode() {
                           <button
                             type="button"
                             onClick={() => setApplyConfirm(true)}
-                            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', background: 'var(--accent)', border: 'none', borderRadius: 7, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 0 12px var(--accent-glow)' }}
+                            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', background: 'var(--accent)', border: 'none', borderRadius: 7, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
                           >
                             <GitBranch size={13} /> Apply Fix & Push to GitHub
                           </button>
                         ) : (
                           <div style={{ padding: '12px 14px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8 }}>
                             <p style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--text-primary)' }}>
-                              This will commit {analysis.files.length} file(s) to <strong>{selectedRun?.head_branch || selected.branch}</strong> in <strong>{selected.repo_full_name}</strong> and trigger a new CI run. Continue?
+                              This will commit {analysis.files.length} file(s) to <strong>{selectedRun?.head_branch || selected.branch}</strong> and trigger a new CI run. Continue?
                             </p>
                             <div style={{ display: 'flex', gap: 8 }}>
                               <button

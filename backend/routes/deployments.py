@@ -5,6 +5,7 @@ Supports GitHub Actions (GitLab CI / Jenkins stubs ready to extend).
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import re
@@ -56,6 +57,69 @@ async def _get_dep(dep_id: int, user_id: int) -> DeployConfig:
     if not dep:
         raise HTTPException(404, "Deployment not found")
     return dep
+
+
+# ── GitHub file helpers ───────────────────────────────────────────────────────
+
+async def _fetch_repo_file(
+    client: httpx.AsyncClient, repo: str, path: str, branch: str, hdrs: dict
+) -> str | None:
+    """Return decoded text of a file from the GitHub Contents API, or None."""
+    try:
+        resp = await client.get(
+            f"{GH_API}/repos/{repo}/contents/{path}?ref={branch}", headers=hdrs
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            if isinstance(data, dict) and data.get("content"):
+                return base64.b64decode(data["content"]).decode("utf-8", errors="replace")
+    except Exception:
+        pass
+    return None
+
+
+async def _list_workflow_files(
+    client: httpx.AsyncClient, repo: str, branch: str, hdrs: dict
+) -> list[str]:
+    """Return paths of all YAML files under .github/workflows/."""
+    try:
+        resp = await client.get(
+            f"{GH_API}/repos/{repo}/contents/.github/workflows?ref={branch}", headers=hdrs
+        )
+        if resp.status_code == 200:
+            return [
+                f["path"] for f in resp.json()
+                if isinstance(f, dict) and f.get("name", "").endswith((".yml", ".yaml"))
+            ]
+    except Exception:
+        pass
+    return []
+
+
+def _parse_ai_json(text: str) -> dict | None:
+    """Try three increasingly lenient strategies to extract a JSON object."""
+    text = text.strip()
+    # 1. Direct parse
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    # 2. Markdown code-fence: ```json { ... } ```
+    m = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text)
+    if m:
+        try:
+            return json.loads(m.group(1))
+        except json.JSONDecodeError:
+            pass
+    # 3. Outermost { ... } in the entire text
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end > start:
+        try:
+            return json.loads(text[start : end + 1])
+        except json.JSONDecodeError:
+            pass
+    return None
 
 
 # ── Models ────────────────────────────────────────────────────────────────────
@@ -333,34 +397,116 @@ async def analyze_failure(
     authorization: str = Header(default=""),
 ):
     uid = await _user_id(ip_session, authorization)
-    await _get_dep(dep_id, uid)   # just auth-check
+    dep = await _get_dep(dep_id, uid)
+    hdrs = await _gh_headers()
 
-    job_ctx = f" (job: {req.job_name})" if req.job_name else ""
-    prompt = f"""You are an expert DevOps/SRE engineer. A CI pipeline job{job_ctx} has failed.
-Analyze the failure logs and respond with ONLY valid JSON — no markdown, no prose outside the JSON.
+    branch = dep.branch or "main"
+    repo = dep.repo_full_name
+    logs = req.logs
+    logs_lower = logs.lower()
 
-Logs (last 6000 chars):
-{req.logs[-6000:]}
+    # ── Determine which repo files are relevant to this failure ──────────────
+    files_to_fetch: list[str] = []
 
-Required JSON format:
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        if dep.ci_tool == "github-actions":
+            wf_paths = await _list_workflow_files(client, repo, branch, hdrs)
+            files_to_fetch.extend(wf_paths[:4])
+        elif dep.ci_tool == "gitlab-ci":
+            files_to_fetch.append(".gitlab-ci.yml")
+        elif dep.ci_tool == "jenkins":
+            files_to_fetch.append("Jenkinsfile")
+
+        if any(k in logs_lower for k in ("docker", "dockerfile", "container", "image")):
+            files_to_fetch += ["Dockerfile", "frontend/Dockerfile", "backend/Dockerfile"]
+
+        if any(k in logs_lower for k in ("npm", "yarn", "node_modules", "package")):
+            files_to_fetch += ["package.json", "frontend/package.json"]
+        if any(k in logs_lower for k in ("pip", "python", "requirements", "setuptools")):
+            files_to_fetch += ["requirements.txt", "backend/requirements.txt", "pyproject.toml"]
+        if any(k in logs_lower for k in ("go ", "golang", "go.mod", "go.sum")):
+            files_to_fetch.append("go.mod")
+        if any(k in logs_lower for k in ("gradle", "maven", "java", "pom.xml")):
+            files_to_fetch += ["pom.xml", "build.gradle"]
+        if any(k in logs_lower for k in ("cargo", "rust")):
+            files_to_fetch.append("Cargo.toml")
+
+        files_to_fetch += ["docker-compose.yml", "docker-compose.yaml"]
+        files_to_fetch = list(dict.fromkeys(files_to_fetch))  # dedupe, preserve order
+
+        fetch_results = await asyncio.gather(
+            *[_fetch_repo_file(client, repo, p, branch, hdrs) for p in files_to_fetch],
+            return_exceptions=True,
+        )
+
+    # Build file context block (only files that actually exist)
+    file_sections = []
+    for path, content in zip(files_to_fetch, fetch_results):
+        if isinstance(content, str) and content.strip():
+            file_sections.append(f"=== {path} ===\n{content}")
+    file_context = "\n\n".join(file_sections) if file_sections else "(No relevant files could be fetched from GitHub)"
+
+    # Extract key error lines for emphasis
+    error_lines = [
+        line for line in logs.splitlines()
+        if re.search(r"error|fail|fatal|exception|cannot|denied|not found|invalid|exit code\s+[^0]", line, re.I)
+    ]
+    key_errors = "\n".join(error_lines[-40:]) if error_lines else "(see full logs)"
+
+    deploy_ctx = "\n".join([
+        f"- Repository:     {repo}",
+        f"- Branch:         {branch}",
+        f"- CI Tool:        {dep.ci_tool or 'unknown'}",
+        f"- Deploy Target:  {dep.deploy_target or 'unknown'}",
+        f"- Language:       {dep.language or 'unknown'}",
+        f"- Framework:      {dep.framework or 'unknown'}",
+        f"- Registry:       {dep.registry or 'unknown'}",
+    ])
+
+    prompt = f"""You are a principal DevOps/SRE engineer with 10+ years of experience in CI/CD, Docker, Kubernetes, and cloud infrastructure. A pipeline job has failed and you must find the exact root cause and produce a working fix.
+
+DEPLOYMENT CONTEXT:
+{deploy_ctx}
+
+FAILED JOB: {req.job_name or "unknown"}
+
+CURRENT REPOSITORY FILE CONTENTS (read from GitHub — these are the real files):
+{file_context}
+
+FULL FAILURE LOGS (last 8 000 chars):
+{logs[-8000:]}
+
+EXTRACTED ERROR LINES:
+{key_errors}
+
+YOUR TASK:
+1. Pinpoint the EXACT root cause by referencing the precise log line or file content that reveals the problem.
+2. Classify the failure:
+   - TRANSIENT (network blip, rate-limit, flaky test) → severity="warning", files=[], explain in manual_steps
+   - MISSING CONFIG (env var, GitHub secret, missing service) → severity="config", files=[], list exact steps in manual_steps
+   - FIXABLE BY CODE CHANGE (wrong Dockerfile, broken workflow step, bad dependency, wrong build command) → severity="error", provide complete fixed file(s)
+3. When producing file fixes:
+   - Start from the CURRENT FILE CONTENT shown above — do not invent new structure
+   - Make ONLY the minimal surgical change needed; preserve everything else
+   - Return the COMPLETE file — no "..." ellipsis, no "# rest unchanged", no truncation
+   - If fixing a workflow file keep ALL existing jobs, steps, and configuration intact
+4. If multiple files need changes, include all of them.
+
+RESPOND WITH ONLY THIS JSON (no markdown fences, no prose before/after):
 {{
-  "diagnosis": "1-2 sentence plain-English explanation of what failed and root cause",
-  "fix_summary": "one sentence describing the fix",
+  "diagnosis": "Precise technical explanation referencing the exact failing log line and why it failed",
+  "fix_summary": "One sentence: what specific change fixes it",
   "severity": "error|warning|config",
+  "root_cause_line": "The single most diagnostic log line",
   "files": [
     {{
-      "path": "relative/file/path",
-      "content": "COMPLETE corrected file content — no truncation",
-      "change_description": "what specifically changed"
+      "path": "exact/repo-relative/path",
+      "content": "COMPLETE corrected file content — never truncate",
+      "change_description": "What changed and why this fixes the error"
     }}
-  ]
-}}
-
-Rules:
-- If it's an infra/environment issue that can't be fixed via code changes, set "files": []
-- If you need to fix a Dockerfile, CI workflow, or config file, include it fully in "files"
-- Only include files you are confident need changing
-- Output ONLY the JSON object, nothing else"""
+  ],
+  "manual_steps": []
+}}"""
 
     try:
         ai = AIService()
@@ -368,13 +514,35 @@ Rules:
         async for chunk in ai.stream_devops(prompt):
             full += chunk
 
-        m = re.search(r'\{[\s\S]*\}', full)
-        if not m:
-            return {"diagnosis": full.strip(), "fix_summary": "", "severity": "error", "files": []}
-        return json.loads(m.group())
+        parsed = _parse_ai_json(full)
+        if parsed:
+            return {
+                "diagnosis": parsed.get("diagnosis", ""),
+                "fix_summary": parsed.get("fix_summary", ""),
+                "severity": parsed.get("severity", "error"),
+                "root_cause_line": parsed.get("root_cause_line", ""),
+                "files": parsed.get("files", []),
+                "manual_steps": parsed.get("manual_steps", []),
+            }
+        # Fallback: treat raw text as diagnosis
+        return {
+            "diagnosis": full.strip() or "No analysis returned.",
+            "fix_summary": "",
+            "severity": "error",
+            "root_cause_line": "",
+            "files": [],
+            "manual_steps": [],
+        }
     except Exception as e:
         logger.error("Analyze failure error: %s", e)
-        return {"diagnosis": f"Analysis failed: {e}", "fix_summary": "", "severity": "error", "files": []}
+        return {
+            "diagnosis": f"Analysis error: {e}",
+            "fix_summary": "",
+            "severity": "error",
+            "root_cause_line": "",
+            "files": [],
+            "manual_steps": [],
+        }
 
 
 # ── Apply AI fix ──────────────────────────────────────────────────────────────
