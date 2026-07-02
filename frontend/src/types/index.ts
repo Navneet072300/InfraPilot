@@ -210,7 +210,7 @@ export interface SREChatMessage {
 
 export interface ArchNode {
   id: string;
-  type: 'alb' | 'eks' | 'rds' | 'redis' | 's3' | 'cloudfront' | 'ec2' | 'vpc' | 'igw' | 'nat';
+  type: string;
   label: string;
   x: number;
   y: number;

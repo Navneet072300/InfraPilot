@@ -18,13 +18,11 @@ class DesignRequest(BaseModel):
     compliance: list[str] = []
 
 
-DESIGN_SYSTEM = """You are a Principal Solutions Architect with 20+ years of experience designing
-large-scale distributed systems across every major cloud, on-premise, and hybrid environment.
-You approach every design from first principles: reliability, scalability, security, and total cost
-of ownership — with no vendor preference. You explain decisions the way a seasoned architect would
-in a design review: clearly, precisely, and with the trade-offs made explicit.
+DESIGN_SYSTEM = """You are a Principal Solutions Architect with 20+ years of experience designing large-scale distributed systems. You think in trade-offs, not features. Every decision you make has a reason and an alternative you consciously rejected.
 
-Return a JSON object (and ONLY valid JSON — no markdown fences, no preamble) with this structure:
+CRITICAL: Respond with ONLY a raw JSON object. No markdown. No code fences. No preamble. No explanation outside the JSON. Start your response with { and end with }.
+
+Required JSON structure:
 {
   "diagram_nodes": [
     {"id": "lb-1", "type": "loadbalancer", "label": "Load Balancer", "x": 400, "y": 50, "costPerMonth": 20}
@@ -32,53 +30,69 @@ Return a JSON object (and ONLY valid JSON — no markdown fences, no preamble) w
   "diagram_edges": [
     {"id": "e1", "source": "lb-1", "target": "app-1", "label": "HTTPS"}
   ],
-  "architecture_explanation": "## Overview\\n\\nFull explanation here...",
+  "architecture_explanation": "Full multi-section explanation here as a single string with \\n for newlines",
   "cost_breakdown": [
-    {"service": "Load Balancer", "monthly": 20, "description": "HA pair, handles SSL termination"}
+    {"service": "Load Balancer", "monthly": 20, "description": "HA active-passive pair, SSL termination, 10M req/month included"}
   ]
 }
 
-Node types (use the most fitting generic type — never a specific vendor product name):
+NODE TYPES — pick the closest match, never use vendor names:
   loadbalancer, compute, database, cache, storage, cdn, network, gateway, queue, monitoring, dns, firewall, kubernetes, container
 
-Layout rules:
-- Canvas is 900 × 600. Place nodes at realistic positions so the diagram reads top-to-bottom (ingress → app → data).
-- 6–12 nodes. Spread them out; avoid overlap.
-- Set costPerMonth=0 for nodes that are included in platform cost or not separately billed.
+DIAGRAM LAYOUT RULES:
+- Canvas: 1100 wide × 700 tall. Nodes read top-to-bottom: internet/ingress at top, data layer at bottom.
+- Place 7–14 nodes. Spread horizontally (x: 80–1020). Use y layers: 50 (ingress), 180 (gateway), 320 (compute), 450 (data), 580 (monitoring/support).
+- No two nodes at the same x,y. Minimum 140px horizontal spacing.
+- costPerMonth=0 means included in platform cost or not separately billed.
 
-architecture_explanation rules:
-- Write 500–900 words as a senior architect explaining this design in a real design review.
-- Structure with ## headings: Overview, Key Design Decisions, Scalability & Reliability, Security Posture, Cost Optimisation, Trade-offs & Alternatives.
-- Be specific: name the patterns used (e.g. CQRS, sidecar proxy, blue-green deployment, circuit breaker).
-- Mention WHY each major component was chosen and what the alternative would have been.
-- If a specific cloud was requested, reference its managed services by name; if none was requested, describe the capability (e.g. "managed relational database") and note which providers offer it.
-- Never use marketing language. Be direct and technical.
+ARCHITECTURE EXPLANATION RULES — write as a senior architect in a real design review:
+Use these exact section headers (with ## prefix):
+## Overview
+2-3 sentences: what this system does, the scale it handles, the core architectural pattern chosen.
 
-cost_breakdown rules:
-- Cover every node in the diagram plus support costs (monitoring, egress, backups).
-- If cloud is "any" or "bare metal", provide indicative ranges or note "varies by provider".
-- monthly=0 means "included" or "variable — see description".
-- Include a licensing/support row if relevant.
+## What You Will Implement
+Numbered list of every component the user must set up, in deployment order. Be specific: "1. Provision a 3-node Kubernetes cluster (m5.xlarge or equivalent)…"
 
-Return ONLY the JSON object — no other text, no markdown fences."""
+## Key Design Decisions
+For each major decision: state the choice, the reason, and the alternative rejected. Use bullet format: "• Chose X over Y because Z."
+
+## Scalability & Reliability
+Concrete numbers: RPS capacity, failover time, replication factor, data durability. Name the patterns: circuit breaker, bulkhead, saga, CQRS, event sourcing, blue-green, canary.
+
+## Security Posture
+Specific controls: mTLS between services, RBAC model, secret rotation policy, network segmentation approach, data-at-rest encryption standard.
+
+## Monthly Cost Estimate
+Total range: $X–$Y/month. Break down by layer (compute, data, networking, observability). State what drives cost up or down.
+
+## Trade-offs & What to Watch
+2–3 honest risks of this design and what early warning signs to monitor.
+
+COST BREAKDOWN RULES:
+- One row per billable component plus: egress, monitoring, backups, support.
+- monthly=0 means "variable" or "included" — explain in description.
+- If cloud-neutral, give a realistic mid-range estimate for AWS us-east-1 as reference.
+- Last row should be a total or note about total range."""
 
 
 async def stream_design(request: DesignRequest):
-    compliance_str = ", ".join(request.compliance) if request.compliance else "none"
-    budget_str = f"${request.budget}/month" if request.budget > 0 else "no hard budget constraint"
-    cloud_str = request.cloud if request.cloud and request.cloud.lower() not in ("any", "") else "cloud-neutral (no vendor preference)"
+    prompt = f"Design requirements:\n{request.requirements}"
 
-    prompt = (
-        f"Design requirements:\n{request.requirements}\n\n"
-        f"Target platform: {cloud_str}\n"
-        f"Budget: {budget_str}\n"
-        f"Compliance requirements: {compliance_str}"
-    )
-
+    # Collect full response, strip any markdown fences the model may add, then stream
+    full = ""
     try:
-        async for text in ai.stream_generate(DESIGN_SYSTEM, prompt, max_tokens=5000):
+        async for text in ai.stream_generate(DESIGN_SYSTEM, prompt, max_tokens=8000):
+            full += text
             yield f"data: {json.dumps({'chunk': text, 'done': False})}\n\n"
-        yield f"data: {json.dumps({'done': True})}\n\n"
+
+        # Send a cleaned version so the client can parse reliably
+        cleaned = full.strip()
+        # Strip ```json ... ``` or ``` ... ``` wrappers if model ignored instructions
+        if cleaned.startswith("```"):
+            end = cleaned.rfind("```")
+            inner = cleaned[cleaned.index("\n") + 1: end] if end > 3 else cleaned[3:]
+            cleaned = inner.strip()
+        yield f"data: {json.dumps({'done': True, 'cleaned': cleaned})}\n\n"
     except Exception as e:
         logger.error("Design stream error: %s", e)
         yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
