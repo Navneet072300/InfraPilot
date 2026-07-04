@@ -174,6 +174,141 @@ class GitHubService:
             secrets = common
         return secrets
 
+    async def get_branches(self, repo_full_name: str) -> list[str]:
+        """Return branch names for the given repo (owner/repo)."""
+        if not self._pat:
+            return []
+        headers = {
+            "Authorization": f"Bearer {self._pat}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(
+                    f"https://api.github.com/repos/{repo_full_name}/branches",
+                    headers=headers,
+                    params={"per_page": 100},
+                )
+            if resp.status_code != 200:
+                return []
+            return [b["name"] for b in resp.json()]
+        except Exception as e:
+            logger.error("get_branches error: %s", e)
+            return []
+
+    async def create_branch(self, repo_full_name: str, branch_name: str, from_branch: str = "main") -> dict:
+        """Create a new branch from the tip of from_branch."""
+        if not self._pat:
+            return {"created": False, "error": "No GitHub token configured"}
+        headers = {
+            "Authorization": f"Bearer {self._pat}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                # Get the SHA of from_branch
+                ref_resp = await client.get(
+                    f"https://api.github.com/repos/{repo_full_name}/git/ref/heads/{from_branch}",
+                    headers=headers,
+                )
+                if ref_resp.status_code != 200:
+                    return {"created": False, "error": f"Source branch '{from_branch}' not found"}
+                sha = ref_resp.json()["object"]["sha"]
+
+                # Create new branch ref
+                create_resp = await client.post(
+                    f"https://api.github.com/repos/{repo_full_name}/git/refs",
+                    headers=headers,
+                    json={"ref": f"refs/heads/{branch_name}", "sha": sha},
+                )
+                if create_resp.status_code == 201:
+                    return {"created": True, "branch": branch_name, "sha": sha}
+                if create_resp.status_code == 422:
+                    return {"created": False, "error": f"Branch '{branch_name}' already exists"}
+                return {"created": False, "error": f"GitHub API error {create_resp.status_code}"}
+        except Exception as e:
+            logger.error("create_branch error: %s", e)
+            return {"created": False, "error": str(e)}
+
+    async def list_repos_async(self, per_page: int = 50, page: int = 1, search: str = "", org: str = "") -> dict:
+        """List repos grouped by owner with org detection."""
+        if not self._pat:
+            return {"repos": [], "orgs": [], "auth_required": True, "error": "No GitHub token configured. Go to Settings → GitHub and add a Personal Access Token."}
+        headers = {
+            "Authorization": f"Bearer {self._pat}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                resp = await client.get(
+                    "https://api.github.com/user/repos",
+                    headers=headers,
+                    params={
+                        "per_page": per_page, "page": page,
+                        "sort": "updated", "direction": "desc",
+                        "type": "all",
+                    },
+                )
+            if resp.status_code == 401:
+                return {"repos": [], "orgs": [], "auth_required": True, "error": "GitHub token is expired or missing repo scope."}
+            if resp.status_code != 200:
+                return {"repos": [], "orgs": [], "error": f"GitHub API error {resp.status_code}"}
+            raw = resp.json()
+
+            orgs_seen: set[str] = set()
+            result = []
+            for r in raw:
+                owner = r["owner"]["login"]
+                owner_type = r["owner"]["type"]  # "User" or "Organization"
+                is_org = owner_type == "Organization"
+                if is_org:
+                    orgs_seen.add(owner)
+                item = {
+                    "id": r["id"],
+                    "name": r["name"],
+                    "full_name": r["full_name"],
+                    "description": r.get("description") or "",
+                    "private": r["private"],
+                    "url": r["html_url"],
+                    "clone_url": r["clone_url"],
+                    "default_branch": r.get("default_branch", "main"),
+                    "language": r.get("language") or "",
+                    "stars": r.get("stargazers_count", 0),
+                    "forks": r.get("forks_count", 0),
+                    "updated_at": r.get("updated_at", ""),
+                    "topics": r.get("topics", []),
+                    "owner": owner,
+                    "is_org": is_org,
+                    "org": owner if is_org else None,
+                }
+                result.append(item)
+
+            # Apply filters
+            if search:
+                q = search.lower()
+                result = [r for r in result if q in r["name"].lower() or q in r["full_name"].lower()]
+            if org:
+                result = [r for r in result if r.get("owner") == org]
+
+            # Sort: org repos first (by owner), then personal, each group by updated_at desc
+            result.sort(key=lambda r: (0 if r["is_org"] else 1, r["updated_at"]), reverse=False)
+
+            return {
+                "repos": result,
+                "orgs": sorted(orgs_seen),
+                "page": page,
+                "has_more": len(raw) == per_page,
+            }
+        except Exception as e:
+            logger.error("list_repos error: %s", e)
+            return {"repos": [], "orgs": [], "error": str(e)}
+
     def push_files(
         self,
         repo_url: str,

@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, DateTime, Integer, String, Text
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
+import uuid
 
 from .database import Base
 
@@ -192,4 +194,19 @@ class UserSettings(Base):
     default_member_role: Mapped[str] = mapped_column(String(20), default="member")
     experience_level: Mapped[str | None] = mapped_column(String(20), nullable=True, default=None)
     secrets_json: Mapped[str] = mapped_column(Text, default="[]")
+    grafana_org_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    monitoring_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class UserSecret(Base):
+    __tablename__ = "user_secrets"
+
+    id: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    value_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    secret_type: Mapped[str] = mapped_column(Text, nullable=False, default="other")
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)

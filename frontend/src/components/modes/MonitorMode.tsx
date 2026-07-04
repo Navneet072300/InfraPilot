@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   TrendingUp, TrendingDown, AlertTriangle, RefreshCw, DollarSign,
   BarChart2, Loader2, CheckCircle2, Edit2, X, Eye, EyeOff,
   ShieldAlert, Activity, Trash2, Server, Layers, BellOff, Wrench,
-  AlertOctagon, AlertCircle, Info, BarChart3, ThumbsUp,
+  AlertOctagon, AlertCircle, Info, BarChart3, ThumbsUp, LineChart,
 } from 'lucide-react';
 import { useClusterStore } from '../../store/clusterStore';
 import { useClusterOverview, useNamespaces, useResources, useNodeMetrics } from '../../hooks/useKubernetes';
@@ -989,9 +989,237 @@ function ResourceExplorerPanel() {
   );
 }
 
+// ─── Metrics Tab ──────────────────────────────────────────────────────────────
+
+type TimeRange = '1h' | '6h' | '24h' | '7d';
+type MetricsSubTab = 'dashboard' | 'raw';
+
+interface RawMetrics {
+  cpu: { metric: Record<string, string>; values: [number, string][] }[];
+  memory: { metric: Record<string, string>; values: [number, string][] }[];
+  restarts: { metric: Record<string, string>; values: [number, string][] }[];
+  pod_status: { metric: Record<string, string>; values: [number, string][] }[];
+}
+
+function Sparkline({ values, color = 'var(--accent)', height = 40 }: { values: number[]; color?: string; height?: number }) {
+  if (values.length < 2) return <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 10 }}>No data</div>;
+  const max = Math.max(...values, 0.0001);
+  const pts = values.map((v, i) => `${(i / (values.length - 1)) * 100},${height - (v / max) * (height - 4) - 2}`).join(' ');
+  return (
+    <svg width="100%" height={height} preserveAspectRatio="none" viewBox={`0 0 100 ${height}`} style={{ display: 'block' }}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <polyline points={`0,${height} ${pts} 100,${height}`} fill={color} fillOpacity="0.1" stroke="none" />
+    </svg>
+  );
+}
+
+function MetricCard({ title, unit, series, color, empty }: {
+  title: string;
+  unit: string;
+  series: { label: string; values: number[] }[];
+  color: string;
+  empty: boolean;
+}) {
+  const latest = series[0]?.values.slice(-1)[0] ?? 0;
+  const allValues = series.flatMap(s => s.values);
+
+  return (
+    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{title}</span>
+        {!empty && <span style={{ fontSize: 18, fontWeight: 700, color }}>{latest.toFixed(2)}<span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 3 }}>{unit}</span></span>}
+      </div>
+      {empty
+        ? <div style={{ height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 11 }}>No data — Prometheus not connected</div>
+        : <Sparkline values={allValues} color={color} height={44} />
+      }
+      {!empty && series.slice(0, 3).map((s, i) => (
+        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>{s.label || '(default)'}</span>
+          <span style={{ fontFamily: 'monospace' }}>{s.values.slice(-1)[0]?.toFixed(2)} {unit}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MetricsTab() {
+  const clusters = useClusterStore(s => s.clusters);
+  const activeCluster = clusters.find(c => c.active) ?? clusters[0];
+
+  const [subTab, setSubTab] = useState<MetricsSubTab>('dashboard');
+  const [timeRange, setTimeRange] = useState<TimeRange>('1h');
+  const [embedUrl, setEmbedUrl] = useState<string | null>(null);
+  const [embedError, setEmbedError] = useState<string | null>(null);
+  const [embedLoading, setEmbedLoading] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  const fetchEmbedUrl = async () => {
+    setEmbedLoading(true);
+    setEmbedError(null);
+    try {
+      const r = await fetch('/api/monitoring/embed-url', { credentials: 'include' });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail ?? 'Failed to get embed URL');
+      setEmbedUrl(data.embed_url);
+    } catch (e) {
+      setEmbedError(String(e));
+    } finally {
+      setEmbedLoading(false);
+    }
+  };
+
+  // Fetch embed URL on mount and on visibility change
+  useEffect(() => {
+    if (subTab === 'dashboard') fetchEmbedUrl();
+  }, [subTab]);
+
+  useEffect(() => {
+    const handler = () => { if (document.visibilityState === 'visible' && subTab === 'dashboard') fetchEmbedUrl(); };
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
+  }, [subTab]);
+
+  const { data: rawMetrics, isLoading: metricsLoading } = useQuery<RawMetrics>({
+    queryKey: ['monitoring-metrics', activeCluster?.name, timeRange],
+    queryFn: async () => {
+      const cluster = activeCluster?.name ?? '';
+      const r = await fetch(`/api/monitoring/metrics?cluster=${encodeURIComponent(cluster)}&time_range=${timeRange}`, { credentials: 'include' });
+      return r.json();
+    },
+    enabled: subTab === 'raw',
+    refetchInterval: 60_000,
+  });
+
+  const toSeries = (result: RawMetrics[keyof RawMetrics] = []) =>
+    result.map(r => ({
+      label: Object.values(r.metric ?? {}).join('/'),
+      values: (r.values ?? []).map(([, v]) => parseFloat(v)),
+    }));
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Sub-tab bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 0, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
+        {([
+          { id: 'dashboard' as const, label: 'Live Dashboard' },
+          { id: 'raw' as const, label: 'Raw Metrics' },
+        ]).map(t => (
+          <button key={t.id} type="button" onClick={() => setSubTab(t.id)} style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: `2px solid ${subTab === t.id ? 'var(--accent)' : 'transparent'}`, color: subTab === t.id ? 'var(--accent)' : 'var(--text-muted)', fontSize: 13, fontWeight: subTab === t.id ? 700 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
+            {t.label}
+          </button>
+        ))}
+        {subTab === 'raw' && (
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+            {(['1h', '6h', '24h', '7d'] as TimeRange[]).map(r => (
+              <button key={r} type="button" onClick={() => setTimeRange(r)} style={{ padding: '4px 10px', fontSize: 11, fontWeight: timeRange === r ? 700 : 400, background: timeRange === r ? 'rgba(99,102,241,0.15)' : 'var(--bg-hover)', border: `1px solid ${timeRange === r ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 5, color: timeRange === r ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                {r}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Live Dashboard sub-tab */}
+      {subTab === 'dashboard' && (
+        <div>
+          {embedLoading && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '20px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text-muted)', fontSize: 13 }}>
+              <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite', color: 'var(--accent)' }} />
+              Loading Grafana dashboard…
+            </div>
+          )}
+          {embedError && !embedLoading && (
+            <div style={{ padding: '18px 20px', background: 'rgba(248,113,113,0.07)', border: '1px solid rgba(248,113,113,0.25)', borderRadius: 10, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <AlertCircle size={16} style={{ color: 'var(--error)', flexShrink: 0, marginTop: 1 }} />
+              <div style={{ flex: 1 }}>
+                <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: 'var(--error)' }}>Grafana not available</p>
+                <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--text-muted)' }}>{embedError}</p>
+                <p style={{ margin: 0, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                  Start monitoring with: <code style={{ fontSize: 11, background: 'var(--bg-hover)', padding: '1px 6px', borderRadius: 3 }}>docker-compose --profile monitoring up -d</code>
+                </p>
+              </div>
+              <button type="button" onClick={fetchEmbedUrl} style={{ flexShrink: 0, padding: '5px 12px', background: 'none', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <RefreshCw size={11} /> Retry
+              </button>
+            </div>
+          )}
+          {embedUrl && !embedLoading && (
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Activity size={12} style={{ color: 'var(--accent)' }} />
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Live Grafana — refreshes every 30s · embed expires in ~1 hour</span>
+                <button type="button" onClick={fetchEmbedUrl} style={{ marginLeft: 'auto', padding: '3px 8px', background: 'none', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <RefreshCw size={9} /> Refresh URL
+                </button>
+              </div>
+              <iframe
+                ref={iframeRef}
+                src={embedUrl}
+                style={{ width: '100%', height: 520, border: 'none', display: 'block' }}
+                title="Grafana Dashboard"
+                sandbox="allow-same-origin allow-scripts allow-forms"
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Raw Metrics sub-tab */}
+      {subTab === 'raw' && (
+        <div>
+          {!activeCluster && (
+            <div style={{ padding: '20px 24px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+              No active cluster. Add and activate a cluster in Monitor → Cluster Health.
+            </div>
+          )}
+          {activeCluster && metricsLoading && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '20px', color: 'var(--text-muted)', fontSize: 13 }}>
+              <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite', color: 'var(--accent)' }} />
+              Fetching metrics for <strong>{activeCluster.name}</strong>…
+            </div>
+          )}
+          {activeCluster && !metricsLoading && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <MetricCard
+                title="CPU Usage"
+                unit="cores"
+                color="var(--accent)"
+                series={toSeries(rawMetrics?.cpu)}
+                empty={!rawMetrics?.cpu?.length}
+              />
+              <MetricCard
+                title="Memory Usage"
+                unit="MiB"
+                color="#3b82f6"
+                series={toSeries(rawMetrics?.memory).map(s => ({ ...s, values: s.values.map(v => v / 1024 / 1024) }))}
+                empty={!rawMetrics?.memory?.length}
+              />
+              <MetricCard
+                title="Container Restarts"
+                unit="restarts"
+                color="#f59e0b"
+                series={toSeries(rawMetrics?.restarts)}
+                empty={!rawMetrics?.restarts?.length}
+              />
+              <MetricCard
+                title="Pod Status"
+                unit="pods"
+                color="var(--success)"
+                series={toSeries(rawMetrics?.pod_status)}
+                empty={!rawMetrics?.pod_status?.length}
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main MonitorMode ──────────────────────────────────────────────────────────
 
-type MonitorTab = 'issues' | 'health' | 'resources';
+type MonitorTab = 'issues' | 'health' | 'resources' | 'metrics';
 
 export function MonitorMode() {
   const totalSpend = SPEND_DATA.reduce((s, d) => s + d.monthly, 0);
@@ -1016,6 +1244,7 @@ export function MonitorMode() {
     { id: 'issues',    label: 'Issues',         icon: <AlertTriangle size={13} />, badge: activeIncidentCount || undefined },
     { id: 'health',    label: 'Cluster Health', icon: <Activity size={13} /> },
     { id: 'resources', label: 'Resources',      icon: <BarChart3 size={13} /> },
+    { id: 'metrics',   label: 'Metrics',        icon: <LineChart size={13} /> },
   ];
 
   return (
@@ -1198,6 +1427,11 @@ export function MonitorMode() {
         {/* Resources tab */}
         {activeTab === 'resources' && (
           <ResourceExplorerPanel />
+        )}
+
+        {/* Metrics tab */}
+        {activeTab === 'metrics' && (
+          <MetricsTab />
         )}
 
       </div>

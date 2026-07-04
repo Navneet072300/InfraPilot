@@ -28,6 +28,7 @@ from routes.support import router as support_router
 from routes.team import router as team_router
 from routes.deploy import router as deploy_router
 from routes.deployments import router as deployments_router
+from routes.monitoring import router as monitoring_router
 
 load_dotenv()
 
@@ -72,6 +73,7 @@ for r in (
     alerts_router,
     deploy_router,
     deployments_router,
+    monitoring_router,
 ):
     app.include_router(r, prefix="/api")
 

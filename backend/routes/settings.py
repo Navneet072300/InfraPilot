@@ -20,7 +20,7 @@ from config.unified_store import (
 )
 from core.security import decode_token
 from db.database import get_session, is_db_available
-from db.models import User, UserSettings
+from db.models import User, UserSecret, UserSettings
 from services import cache_service
 from services.k8s_service import KubernetesService
 
@@ -538,3 +538,66 @@ async def delete_secret(
         raw: list[dict] = json.loads(s.secrets_json or "[]")
         s.secrets_json = json.dumps([x for x in raw if x.get("id") != secret_id])
         await session.commit()
+
+
+# ── Bulk secrets (env file upload) ────────────────────────────────────────────
+
+class BulkSecretItem(BaseModel):
+    name: str
+    value: str
+    secret_type: str = "other"
+    description: str = ""
+
+
+class BulkSecretsInput(BaseModel):
+    secrets: list[BulkSecretItem]
+
+
+@router.post("/secrets/bulk")
+async def upsert_secrets_bulk(
+    body: BulkSecretsInput,
+    ip_session: str = Cookie(default=""),
+    authorization: str = Header(default=""),
+):
+    """Upsert multiple secrets at once (from .env file upload). Values stored encrypted."""
+    user = await _get_user(ip_session, authorization)
+    if not is_db_available():
+        raise HTTPException(503, "Database unavailable")
+
+    saved = 0
+    async with get_session() as session:
+        result = await session.execute(select(UserSettings).where(UserSettings.user_id == user.id))
+        s = result.scalar_one_or_none()
+        if not s:
+            s = UserSettings(user_id=user.id)
+            session.add(s)
+
+        raw: list[dict] = json.loads(s.secrets_json or "[]")
+        existing_by_name = {item["name"]: i for i, item in enumerate(raw)}
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for item in body.secrets:
+            name = item.name.strip()
+            value = item.value.strip()
+            if not name or not value:
+                continue
+            entry = {
+                "id": str(uuid.uuid4()),
+                "name": name,
+                "type": item.secret_type,
+                "description": item.description.strip(),
+                "value": value,
+                "created_at": now_iso,
+            }
+            if name in existing_by_name:
+                entry["id"] = raw[existing_by_name[name]]["id"]
+                entry["created_at"] = raw[existing_by_name[name]].get("created_at", now_iso)
+                raw[existing_by_name[name]] = entry
+            else:
+                raw.append(entry)
+            saved += 1
+
+        s.secrets_json = json.dumps(raw)
+        await session.commit()
+
+    return {"saved": saved}

@@ -5,8 +5,8 @@ import {
   Plus, Trash2, Edit2, CheckCircle2, Loader2,
   GitBranch, Shield, Server, Star, AlertTriangle, X,
   Eye, EyeOff, User, Bell, Cpu, CreditCard, Users, FileText,
-  Smartphone, Globe, Copy, RefreshCw, ChevronRight, ChevronLeft,
-  Lock, ToggleLeft, ToggleRight, ExternalLink,
+  Smartphone, Copy, RefreshCw, ChevronRight, ChevronLeft,
+  Lock, ToggleLeft, ToggleRight, ExternalLink, Plug,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useClusterStore } from '../store/clusterStore';
@@ -25,17 +25,16 @@ const V = {
   green: 'var(--success)', red: 'var(--error)', yellow: 'var(--warning)', purple: 'var(--accent)',
 } as const;
 
-type Tab = 'general' | 'security' | 'platforms' | 'notifications' | 'ai' | 'billing' | 'team' | 'audit';
+type Tab = 'general' | 'security' | 'notifications' | 'ai' | 'billing' | 'team' | 'audit';
 
 const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: 'general', label: 'General', icon: <User size={15} /> },
-  { id: 'security', label: 'Security', icon: <Shield size={15} /> },
-  { id: 'platforms', label: 'Connected Platforms', icon: <Globe size={15} /> },
-  { id: 'notifications', label: 'Notifications', icon: <Bell size={15} /> },
-  { id: 'ai', label: 'AI & Models', icon: <Cpu size={15} /> },
-  { id: 'billing', label: 'Billing', icon: <CreditCard size={15} /> },
-  { id: 'team', label: 'Team', icon: <Users size={15} /> },
-  { id: 'audit', label: 'Audit Log', icon: <FileText size={15} /> },
+  { id: 'general',       label: 'General',       icon: <User size={15} /> },
+  { id: 'security',      label: 'Security',       icon: <Shield size={15} /> },
+  { id: 'notifications', label: 'Notifications',  icon: <Bell size={15} /> },
+  { id: 'ai',            label: 'AI & Models',    icon: <Cpu size={15} /> },
+  { id: 'billing',       label: 'Billing',        icon: <CreditCard size={15} /> },
+  { id: 'team',          label: 'Team',           icon: <Users size={15} /> },
+  { id: 'audit',         label: 'Audit Log',      icon: <FileText size={15} /> },
 ];
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -282,6 +281,7 @@ function DeleteConfirm({ name, onConfirm, onClose }: { name: string; onConfirm: 
 // ─── General Tab ──────────────────────────────────────────────────────────────
 
 function GeneralTab() {
+  const navigate = useNavigate();
   const { user, setUser } = useAuthStore();
   const [form, setForm] = useState<GeneralSettings>({
     name: user?.name || '',
@@ -453,6 +453,22 @@ function GeneralTab() {
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <SaveBtn saving={saving} saved={saved} onClick={save} />
       </div>
+
+      {/* Platforms link */}
+      <SectionCard>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <SectionTitle>Connected Platforms</SectionTitle>
+            <p style={{ margin: 0, color: V.muted, fontSize: '0.8rem' }}>
+              Manage GitHub, clusters, secrets vaults, and monitoring integrations.
+            </p>
+          </div>
+          <button type="button" onClick={() => navigate('/app/platforms')}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0.45rem 1rem', borderRadius: 8, border: 'none', background: V.accent, color: '#fff', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <Plug size={13} /> Manage connected platforms →
+          </button>
+        </div>
+      </SectionCard>
 
       {/* Danger Zone */}
       <SectionCard style={{ border: `1px solid rgba(248,81,73,0.4)` }}>
@@ -790,6 +806,7 @@ function SecurityTab() {
         )}
       </SectionCard>
 
+      <SecretsVaultSection />
     </div>
   );
 }
@@ -801,7 +818,7 @@ function daysUntil(dateStr: string): number | null {
   return Math.ceil((new Date(dateStr).getTime() - Date.now()) / 86400000);
 }
 
-function ConnectedPlatformsTab() {
+export function ConnectedPlatformsTab() {
   const qc = useQueryClient();
   const { addCluster, updateCluster, removeCluster, setActiveCluster } = useClusterStore();
   const [modal, setModal] = useState<'add' | { edit: ClusterConfig } | { del: string } | null>(null);
@@ -1247,16 +1264,13 @@ function SecretsVaultSection() {
     <SectionCard>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
         <SectionTitle>Secrets & Credentials</SectionTitle>
-        <button
-          type="button"
-          onClick={() => setShowAdd(true)}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0.4rem 0.85rem', background: V.accent, border: 'none', borderRadius: 7, color: '#fff', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
-        >
+        <button type="button" onClick={() => setShowAdd(true)}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0.4rem 0.85rem', background: V.accent, border: 'none', borderRadius: 7, color: '#fff', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
           <Plus size={13} /> Add Secret
         </button>
       </div>
       <p style={{ fontSize: '0.8rem', color: V.muted, margin: '0 0 0.875rem', lineHeight: 1.5 }}>
-        Store API keys, passwords, tokens and cloud credentials securely. Values are masked in the UI.
+        Store API keys, passwords, tokens and cloud credentials securely. Values are masked in the UI. Use the Deploy Wizard to bulk-upload .env files.
       </p>
 
       {loading && <div style={{ color: V.muted, fontSize: '0.82rem' }}>Loading…</div>}
@@ -1950,14 +1964,13 @@ export default function SettingsPage() {
 
   function renderTab() {
     switch (tab) {
-      case 'general': return <GeneralTab />;
-      case 'security': return <SecurityTab />;
-      case 'platforms': return <ConnectedPlatformsTab />;
+      case 'general':       return <GeneralTab />;
+      case 'security':      return <SecurityTab />;
       case 'notifications': return <NotificationsTab />;
-      case 'ai': return <AIModelsTab />;
-      case 'billing': return <BillingTab />;
-      case 'team': return <TeamTab />;
-      case 'audit': return <AuditLogTab />;
+      case 'ai':            return <AIModelsTab />;
+      case 'billing':       return <BillingTab />;
+      case 'team':          return <TeamTab />;
+      case 'audit':         return <AuditLogTab />;
     }
   }
 

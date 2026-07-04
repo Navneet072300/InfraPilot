@@ -5,16 +5,18 @@ import {
   ChevronRight, ChevronDown, Loader2, FileCode2, Copy, Check,
   Server, Container, Shield, Database, Globe, Lock,
   Zap, Cloud, Package, Settings2, ExternalLink, RefreshCw,
-  Layers, FolderOpen, Folder, File, Plus, Trash2,
+  Layers, FolderOpen, Folder, File, Plus, Trash2, Upload,
 } from 'lucide-react';
 import { useStream } from '../../hooks/useStream';
 import { toast } from '../../store/toastStore';
+import { EnvUploader } from '../shared/EnvUploader';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Repo {
   id: number; full_name: string; name: string; description: string;
   private: boolean; language: string; default_branch: string; updated_at: string;
+  owner?: string; is_org?: boolean; org?: string | null;
 }
 
 interface DetectedService {
@@ -207,7 +209,8 @@ function OptionCard({ label, sub, icon, badge, selected, onClick }: {
   );
 }
 
-function EnvCard({ option, selected, onClick }: { option: typeof ENV_OPTIONS[number]; selected: boolean; onClick: () => void }) {
+function EnvCard({ option, selected, onClick, branchForEnv }: { option: typeof ENV_OPTIONS[number]; selected: boolean; onClick: () => void; branchForEnv?: (env: string) => string }) {
+  const getB = (env: string) => branchForEnv ? branchForEnv(env) : (ENV_BRANCH[env] ?? env);
   return (
     <button type="button" onClick={onClick} style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 14px', background: selected ? 'rgba(99,102,241,0.08)' : 'var(--bg-hover)', border: `1.5px solid ${selected ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 9, cursor: 'pointer', textAlign: 'left', width: '100%', fontFamily: 'inherit', transition: 'all 0.15s' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -220,7 +223,7 @@ function EnvCard({ option, selected, onClick }: { option: typeof ENV_OPTIONS[num
         {option.envs.map(env => (
           <div key={env} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 8px', borderRadius: 5, background: env === 'prod' ? 'rgba(248,113,113,0.1)' : env === 'staging' ? 'rgba(251,191,36,0.1)' : 'rgba(52,211,153,0.1)', border: `1px solid ${env === 'prod' ? 'rgba(248,113,113,0.3)' : env === 'staging' ? 'rgba(251,191,36,0.3)' : 'rgba(52,211,153,0.3)'}`, color: env === 'prod' ? '#f87171' : env === 'staging' ? '#fbbf24' : '#34d399' }}>
             <GitBranch size={9} />
-            <span>{ENV_BRANCH[env] ?? env} → {env}</span>
+            <span>{getB(env)} → {env}</span>
           </div>
         ))}
       </div>
@@ -270,9 +273,28 @@ export function DeployMode() {
   const [step, setStep] = useState<Step>('repo');
 
   const [repos, setRepos] = useState<Repo[]>([]);
+  const [repoOrgs, setRepoOrgs] = useState<string[]>([]);
   const [reposLoading, setReposLoading] = useState(true);
   const [repoSearch, setRepoSearch] = useState('');
   const [selectedRepo, setSelectedRepo] = useState<Repo | null>(null);
+
+  // Branch checking
+  const [branches, setBranches] = useState<string[]>([]);
+  const [branchIssues, setBranchIssues] = useState<{ env: string; branch: string; action: 'create' | 'use_main' | 'skip' | null }[]>([]);
+  const [branchChecking, setBranchChecking] = useState(false);
+  const [branchCreating, setBranchCreating] = useState<string | null>(null);
+  const [branchCreateConfirm, setBranchCreateConfirm] = useState<string | null>(null);
+  const [detectedBranches, setDetectedBranches] = useState<{ prod: string | null; dev: string | null; staging: string | null }>({ prod: null, dev: null, staging: null });
+
+  // Vault detection
+  const [detectedVaults, setDetectedVaults] = useState<{ id: string; label: string; details: string }[]>([]);
+  const [vaultCheckDone, setVaultCheckDone] = useState(false);
+  const [vaultChosen, setVaultChosen] = useState<string | null>(null); // overrides choices.vault when detected
+
+  // Vault step secrets management
+  const [vaultSecrets, setVaultSecrets] = useState<{ id: string; name: string; type: string; value: string }[]>([]);
+  const [vaultSecretsLoading, setVaultSecretsLoading] = useState(false);
+  const [showVaultEnvUpload, setShowVaultEnvUpload] = useState(false);
 
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
@@ -307,7 +329,7 @@ export function DeployMode() {
 
   useEffect(() => {
     fetch('/api/github/repos', { credentials: 'include' })
-      .then(r => r.json()).then(d => setRepos(d.repos ?? []))
+      .then(r => r.json()).then(d => { setRepos(d.repos ?? []); setRepoOrgs(d.orgs ?? []); })
       .catch(() => {}).finally(() => setReposLoading(false));
   }, []);
 
@@ -416,6 +438,15 @@ export function DeployMode() {
     if (!selectedRepo || !scanResult || !choices.ciTool || !choices.cdTool) return;
     setIsGenerating(true); setGenerateError(null);
     setGeneratedFiles([]); setFileTree([]); setActiveFile(null); rawRef.current = '';
+
+    const branchMap: Record<string, string> = {};
+    choices.environments.forEach(env => {
+      if (env === 'prod') branchMap[env] = branches.find(b => /^(main|master)$/i.test(b)) ?? 'main';
+      else if (env === 'dev') branchMap[env] = branches.find(b => /^(dev|develop|developer|development)$/i.test(b)) ?? 'dev';
+      else if (env === 'staging') branchMap[env] = branches.find(b => /^(staging|stage|stg)$/i.test(b)) ?? 'staging';
+      else branchMap[env] = env;
+    });
+
     await start({
       repo_full_name: selectedRepo.full_name,
       services: userServices.length > 0 ? userServices : scanResult.services,
@@ -426,23 +457,37 @@ export function DeployMode() {
       vault_deployed: choices.vaultDeployed,
       registry: choices.registry ?? 'ghcr',
       environments: choices.environments,
+      branch_map: branchMap,
       app_name: scanResult.app_name,
     });
-  }, [selectedRepo, scanResult, choices, start]);
+  }, [selectedRepo, scanResult, choices, start, branches]);
 
   const handleCommitPipeline = useCallback(async () => {
     if (!selectedRepo || !scanResult || generatedFiles.length === 0) return;
     setCommitting(true);
     try {
       const files = generatedFiles.filter(f => f.path !== 'setup-guide.md');
-      const r = await fetch('/api/deploy/commit', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo_full_name: selectedRepo.full_name, branch: scanResult.default_branch, files, message: `ci: add ${choices.ciTool}+${choices.cdTool}+${choices.configTool} pipeline via InfraPilot` }) });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail ?? 'Commit failed');
-      toast.success('Pipeline committed!', `Pushed ${files.length} file(s) to ${selectedRepo.full_name}`);
+
+      // Push to each environment's actual branch
+      const branchSet = new Set<string>();
+      choices.environments.forEach(env => {
+        if (env === 'prod') branchSet.add(branches.find(b => /^(main|master)$/i.test(b)) ?? scanResult.default_branch);
+        else if (env === 'dev') { const b = branches.find(x => /^(dev|develop|developer|development)$/i.test(x)); if (b) branchSet.add(b); }
+        else if (env === 'staging') { const b = branches.find(x => /^(staging|stage|stg)$/i.test(x)); if (b) branchSet.add(b); }
+      });
+      if (branchSet.size === 0) branchSet.add(scanResult.default_branch);
+      const targets = [...branchSet];
+
+      await Promise.all(targets.map(branch =>
+        fetch('/api/deploy/commit', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo_full_name: selectedRepo.full_name, branch, files, message: `ci: add ${choices.ciTool}+${choices.cdTool}+${choices.configTool} pipeline via InfraPilot` }) })
+          .then(async r => { if (!r.ok) throw new Error((await r.json()).detail ?? 'Commit failed'); })
+      ));
+
+      toast.success('Pipeline committed!', `Pushed to: ${targets.join(', ')}`);
       setCommitted(true);
       setShowTargetModal(true);
     } catch (e) { toast.error('Commit failed', String(e)); } finally { setCommitting(false); }
-  }, [selectedRepo, scanResult, choices, generatedFiles]);
+  }, [selectedRepo, scanResult, choices, generatedFiles, branches]);
 
   const handleSaveDeployment = useCallback(async () => {
     if (!selectedRepo || !scanResult) return;
@@ -473,6 +518,103 @@ export function DeployMode() {
 
   const handleCopy = (path: string, content: string) => { navigator.clipboard.writeText(content); setCopiedFile(path); setTimeout(() => setCopiedFile(null), 1800); };
 
+  const checkBranchesForEnvs = useCallback(async (envs: string[], repo: Repo) => {
+    const needed = envs.filter(e => e !== 'prod');
+    setBranchChecking(true);
+    try {
+      const r = await fetch(`/api/github/branches?repo=${encodeURIComponent(repo.full_name)}`, { credentials: 'include' });
+      const data = await r.json();
+      const remote: string[] = data.branches ?? [];
+      setBranches(remote);
+
+      // Fuzzy-detect actual branch names
+      const prodBranch = remote.find(b => /^(main|master)$/i.test(b)) ?? null;
+      const devBranch  = remote.find(b => /^(dev|develop|developer|development)$/i.test(b)) ?? null;
+      const stgBranch  = remote.find(b => /^(staging|stage|stg)$/i.test(b)) ?? null;
+      setDetectedBranches({ prod: prodBranch, dev: devBranch, staging: stgBranch });
+
+      if (needed.length === 0) { setBranchIssues([]); return; }
+
+      const issues = needed
+        .map(env => {
+          const found = env === 'dev' ? devBranch : env === 'staging' ? stgBranch : null;
+          return { env, branch: found ?? env, missing: !found };
+        })
+        .filter(i => i.missing)
+        .map(({ env, branch }) => ({ env, branch, action: null as 'create' | 'use_main' | 'skip' | null }));
+
+      setBranchIssues(issues);
+    } catch { setBranchIssues([]); }
+    finally { setBranchChecking(false); }
+  }, []);
+
+  const handleCreateBranch = useCallback(async (branchName: string) => {
+    if (!selectedRepo) return;
+    const fromBranch = branches.find(b => /^(main|master)$/i.test(b)) ?? selectedRepo.default_branch;
+    setBranchCreating(branchName);
+    try {
+      const r = await fetch('/api/github/branches', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo: selectedRepo.full_name, branch_name: branchName, from_branch: fromBranch }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail ?? 'Failed to create branch');
+      setBranchIssues(prev => prev.map(i => i.branch === branchName ? { ...i, action: 'create' } : i));
+      setBranches(prev => [...prev, branchName]);
+      if (/^(dev|develop|developer|development)$/i.test(branchName))
+        setDetectedBranches(prev => ({ ...prev, dev: branchName }));
+      else if (/^(staging|stage|stg)$/i.test(branchName))
+        setDetectedBranches(prev => ({ ...prev, staging: branchName }));
+      toast.success(`Branch '${branchName}' created`, `from ${fromBranch}`);
+    } catch (e) { toast.error('Branch creation failed', String(e)); }
+    finally { setBranchCreating(null); setBranchCreateConfirm(null); }
+  }, [selectedRepo, branches]);
+
+  const fetchVaultSecrets = useCallback(async () => {
+    setVaultSecretsLoading(true);
+    try {
+      const r = await fetch('/api/settings/secrets', { credentials: 'include' });
+      const d = await r.json();
+      setVaultSecrets(d.secrets ?? []);
+    } catch { setVaultSecrets([]); }
+    finally { setVaultSecretsLoading(false); }
+  }, []);
+
+  const deleteVaultSecret = useCallback(async (id: string) => {
+    await fetch(`/api/settings/secrets/${id}`, { method: 'DELETE', credentials: 'include' });
+    setVaultSecrets(prev => prev.filter(s => s.id !== id));
+    toast.success('Secret removed');
+  }, []);
+
+  const detectVaults = useCallback(async () => {
+    setVaultCheckDone(false);
+    try {
+      const r = await fetch('/api/settings/secrets', { credentials: 'include' });
+      const data = await r.json();
+      const secs: { name: string }[] = data.secrets ?? [];
+      const found: { id: string; label: string; details: string }[] = [];
+      if (secs.some(s => /vault.addr|vault.token|hashicorp/i.test(s.name)))
+        found.push({ id: 'hashicorp', label: 'HashiCorp Vault', details: 'credentials detected in your secrets' });
+      if (secs.some(s => /infisical/i.test(s.name)))
+        found.push({ id: 'infisical', label: 'Infisical', details: 'token detected in your secrets' });
+      if (secs.some(s => /aws.access.key|aws.secret.access/i.test(s.name)))
+        found.push({ id: 'aws-sm', label: 'AWS Secrets Manager', details: 'access keys detected in your secrets' });
+      setDetectedVaults(found);
+    } catch { setDetectedVaults([]); }
+    finally { setVaultCheckDone(true); }
+  }, []);
+
+  useEffect(() => {
+    if (step === 'vault') {
+      setVaultChosen(null);
+      setVaultCheckDone(false);
+      setShowVaultEnvUpload(false);
+      detectVaults();
+      fetchVaultSecrets();
+    }
+  }, [step, detectVaults, fetchVaultSecrets]);
+
   const goNext = () => {
     if (step === 'repo')       { setStep('scan'); handleScan(); }
     else if (step === 'scan')       { setStep('containers'); fetchContainerFiles(); }
@@ -496,15 +638,17 @@ export function DeployMode() {
     if (step === 'scan')       return !!scanResult && !scanning;
     if (step === 'containers') return !containersFetching;
     if (step === 'pipeline')   return !!choices.ciTool && !!choices.cdTool && !!choices.configTool;
-    if (step === 'envs')       return choices.environments.length > 0;
+    if (step === 'envs')       return choices.environments.length > 0 && !branchChecking && branchIssues.every(i => i.action !== null);
     if (step === 'vault')      return !!choices.vault && !!choices.registry;
     return false;
   };
 
-  const filteredRepos = repos.filter(r =>
-    r.full_name.toLowerCase().includes(repoSearch.toLowerCase()) ||
-    (r.description ?? '').toLowerCase().includes(repoSearch.toLowerCase())
-  );
+  const filteredRepos = repos
+    .filter(r =>
+      r.full_name.toLowerCase().includes(repoSearch.toLowerCase()) ||
+      (r.description ?? '').toLowerCase().includes(repoSearch.toLowerCase())
+    )
+    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
 
   const containerTabs = [
     ...(userServices.length > 0 ? userServices : (scanResult?.services ?? [])).map(s => ({ id: s.name, label: s.path === '.' ? 'Dockerfile' : `${s.path.replace(/\/$/, '')}/Dockerfile`, svc: s as DetectedService | null })),
@@ -556,15 +700,15 @@ export function DeployMode() {
               {reposLoading && <div style={{ display: 'flex', gap: 8, color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', alignItems: 'center' }}><Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> Loading…</div>}
               {!reposLoading && repos.length === 0 && <div style={{ padding: 24, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, textAlign: 'center' }}><GitBranch size={26} style={{ color: 'var(--text-muted)', opacity: 0.3, marginBottom: 8 }} /><p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)' }}>No GitHub repositories found.</p><p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>Go to Settings → GitHub and add a Personal Access Token first.</p></div>}
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {filteredRepos.map(repo => {
+              {!reposLoading && (() => {
+                const renderRepoRow = (repo: Repo) => {
                   const sel = selectedRepo?.id === repo.id;
                   return (
-                    <button key={repo.id} type="button" onClick={() => setSelectedRepo(repo)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: sel ? 'rgba(99,102,241,0.08)' : 'var(--bg-surface)', border: `1.5px solid ${sel ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 8, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', transition: 'all 0.1s' }}>
+                    <button key={repo.id} type="button" onClick={() => setSelectedRepo(repo)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: sel ? 'rgba(99,102,241,0.08)' : 'var(--bg-surface)', border: `1.5px solid ${sel ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 8, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', transition: 'all 0.1s', width: '100%' }}>
                       <GitBranch size={13} style={{ color: sel ? 'var(--accent)' : 'var(--text-muted)', flexShrink: 0 }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{repo.full_name}</span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{repo.name}</span>
                           {repo.private && <Lock size={10} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
                           {repo.language && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'var(--bg-hover)', color: 'var(--text-muted)', border: '1px solid var(--border)', flexShrink: 0 }}>{repo.language}</span>}
                         </div>
@@ -574,8 +718,48 @@ export function DeployMode() {
                       {sel && <CheckCircle2 size={13} style={{ color: 'var(--accent)', flexShrink: 0 }} />}
                     </button>
                   );
-                })}
-              </div>
+                };
+
+                const personalRepos = filteredRepos.filter(r => !r.is_org);
+                const orgMap: Record<string, Repo[]> = {};
+                filteredRepos.filter(r => r.is_org).forEach(r => {
+                  const org = r.org ?? r.owner ?? 'Unknown';
+                  (orgMap[org] ??= []).push(r);
+                });
+                const hasGroups = personalRepos.length > 0 && Object.keys(orgMap).length > 0;
+
+                return (
+                  <div>
+                    {personalRepos.length > 0 && (
+                      <div style={{ marginBottom: hasGroups ? 16 : 0 }}>
+                        {hasGroups && <p style={{ margin: '0 0 6px', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Personal</p>}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {personalRepos.map(renderRepoRow)}
+                        </div>
+                      </div>
+                    )}
+                    {Object.entries(orgMap).map(([org, orgRepos]) => (
+                      <div key={org} style={{ marginBottom: 16 }}>
+                        <p style={{ margin: '0 0 6px', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{org}</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {orgRepos.map(renderRepoRow)}
+                        </div>
+                      </div>
+                    ))}
+                    {personalRepos.length === 0 && Object.keys(orgMap).length === 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {filteredRepos.map(renderRepoRow)}
+                      </div>
+                    )}
+                    {repoOrgs.length === 0 && repos.length > 0 && (
+                      <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--bg-hover)', border: '1px dashed var(--border)', borderRadius: 7, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Missing org repos? Ensure your PAT has <code style={{ fontSize: 10 }}>read:org</code> scope.</span>
+                        <button type="button" onClick={() => navigate('/app/platforms')} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, padding: 0, fontFamily: 'inherit' }}>Manage in Platforms →</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -861,15 +1045,97 @@ export function DeployMode() {
             <div style={{ maxWidth: 640 }}>
               <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700 }}>Deployment Environments</h3>
               <p style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--text-muted)' }}>Which environments do you need? CI will deploy to the matching K8s namespace when the corresponding branch is pushed.</p>
-              <div style={{ marginBottom: 16, padding: '8px 12px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 7, display: 'flex', gap: 7, alignItems: 'center' }}>
+              {/* Detected branches status */}
+              {branches.length > 0 && (
+                <div style={{ marginBottom: 12, padding: '8px 12px', background: 'rgba(52,211,153,0.05)', border: '1px solid rgba(52,211,153,0.2)', borderRadius: 7, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <GitBranch size={11} style={{ color: 'var(--success)', flexShrink: 0 }} />
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    Detected:{' '}
+                    {[detectedBranches.prod, detectedBranches.dev, detectedBranches.staging].filter(Boolean).length > 0
+                      ? [detectedBranches.prod, detectedBranches.dev, detectedBranches.staging].filter(Boolean).map((b, i) => (
+                          <span key={b}>{i > 0 && ', '}<code style={{ fontSize: 11 }}>{b}</code></span>
+                        ))
+                      : <em>select an environment to scan</em>
+                    }
+                  </span>
+                </div>
+              )}
+              <div style={{ marginBottom: 12, padding: '8px 12px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 7, display: 'flex', gap: 7, alignItems: 'center' }}>
                 <Lock size={11} style={{ color: 'var(--accent)', flexShrink: 0 }} />
                 <span style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  <strong>main is protected</strong> — production deploys only happen via merge to <code style={{ fontSize: 11 }}>main</code>.
+                  <strong>{detectedBranches.prod ?? 'main'} is protected</strong> — production deploys only happen via merge to <code style={{ fontSize: 11 }}>{detectedBranches.prod ?? 'main'}</code>.
                 </span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {ENV_OPTIONS.map(opt => <EnvCard key={opt.id} option={opt} selected={selectedEnvOption === opt.id} onClick={() => { setSelectedEnvOption(opt.id); setChoices(c => ({ ...c, environments: opt.envs })); }} />)}
+                {ENV_OPTIONS.map(opt => <EnvCard key={opt.id} option={opt} selected={selectedEnvOption === opt.id}
+                  branchForEnv={env => {
+                    if (env === 'prod') return detectedBranches.prod ?? 'main';
+                    if (env === 'dev') return detectedBranches.dev ?? 'dev';
+                    if (env === 'staging') return detectedBranches.staging ?? 'staging';
+                    return env;
+                  }}
+                  onClick={() => {
+                    setSelectedEnvOption(opt.id);
+                    setChoices(c => ({ ...c, environments: opt.envs }));
+                    setBranchIssues([]);
+                    if (selectedRepo) checkBranchesForEnvs(opt.envs, selectedRepo);
+                  }} />)}
               </div>
+
+              {/* Branch status */}
+              {selectedEnvOption && (
+                <div style={{ marginTop: 16 }}>
+                  {branchChecking && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, color: 'var(--text-muted)' }}>
+                      <Loader2 size={12} style={{ animation: 'spin 0.8s linear infinite', color: 'var(--accent)', flexShrink: 0 }} />
+                      Checking branches in {selectedRepo?.name}…
+                    </div>
+                  )}
+                  {!branchChecking && branchIssues.length === 0 && branches.length > 0 && (
+                    <div style={{ padding: '9px 12px', background: 'rgba(52,211,153,0.07)', border: '1px solid rgba(52,211,153,0.25)', borderRadius: 7, display: 'flex', gap: 7, alignItems: 'center' }}>
+                      <CheckCircle2 size={12} style={{ color: 'var(--success)', flexShrink: 0 }} />
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>All required branches exist in <strong>{selectedRepo?.name}</strong>.</span>
+                    </div>
+                  )}
+                  {!branchChecking && branchIssues.length > 0 && (
+                    <div style={{ padding: '13px 15px', background: 'rgba(251,191,36,0.05)', border: '1px solid rgba(251,191,36,0.25)', borderRadius: 9 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 12 }}>
+                        <AlertCircle size={13} style={{ color: '#fbbf24', flexShrink: 0 }} />
+                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {branchIssues.filter(i => i.action === null).length} branch{branchIssues.filter(i => i.action === null).length !== 1 ? 'es' : ''} missing — resolve to continue
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {branchIssues.map(issue => (
+                          <div key={issue.env} style={{ padding: '10px 12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: issue.action === null ? 8 : 0 }}>
+                              <GitBranch size={11} style={{ color: '#fbbf24', flexShrink: 0 }} />
+                              <code style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: '#fbbf24' }}>{issue.branch}</code>
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>not found in {selectedRepo?.name}</span>
+                              {issue.action === 'create'   && <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--success)', fontWeight: 600 }}>Branch created</span>}
+                              {issue.action === 'use_main' && <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--accent)', fontWeight: 600 }}>Using {selectedRepo?.default_branch}</span>}
+                              {issue.action === 'skip'     && <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>Env skipped</span>}
+                            </div>
+                            {issue.action === null && (
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button type="button" onClick={() => setBranchCreateConfirm(issue.branch)} style={{ flex: 1, padding: '6px', fontSize: 11, background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: 6, color: 'var(--accent)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                  Create branch
+                                </button>
+                                <button type="button" onClick={() => setBranchIssues(prev => prev.map(i => i.env === issue.env ? { ...i, action: 'use_main' } : i))} style={{ flex: 1, padding: '6px', fontSize: 11, background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                  Use {selectedRepo?.default_branch ?? 'main'}
+                                </button>
+                                <button type="button" onClick={() => setBranchIssues(prev => prev.map(i => i.env === issue.env ? { ...i, action: 'skip' } : i))} style={{ flex: 1, padding: '6px', fontSize: 11, background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                  Skip env
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -879,16 +1145,177 @@ export function DeployMode() {
               <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700 }}>Vault &amp; Container Registry</h3>
               <p style={{ margin: '0 0 18px', fontSize: 13, color: 'var(--text-muted)' }}>Configure secrets management and where Docker images are pushed.</p>
 
+              {/* ── Vault detection / selection ── */}
               <div style={{ marginBottom: 22 }}>
                 <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Secrets Manager</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {VAULT_OPTIONS.map(opt => <OptionCard key={opt.id} {...opt} selected={choices.vault === opt.id} onClick={() => setChoices(c => ({ ...c, vault: opt.id }))} />)}
-                </div>
+
+                {!vaultCheckDone ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 9 }}>
+                    <Loader2 size={12} style={{ animation: 'spin 0.8s linear infinite', color: 'var(--accent)', flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Checking your configured vaults…</span>
+                  </div>
+                ) : (() => {
+                  const inDetectionMode = detectedVaults.length > 0 && vaultChosen !== 'manual';
+
+                  if (inDetectionMode && detectedVaults.length === 1) {
+                    // Case 1: one vault detected
+                    const v = detectedVaults[0];
+                    const accepted = vaultChosen === v.id;
+                    return (
+                      <div style={{ padding: '14px 16px', background: accepted ? 'rgba(52,211,153,0.06)' : 'rgba(99,102,241,0.06)', border: `1px solid ${accepted ? 'rgba(52,211,153,0.25)' : 'rgba(99,102,241,0.25)'}`, borderRadius: 9 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 12 }}>
+                          <CheckCircle2 size={13} style={{ color: accepted ? 'var(--success)' : 'var(--accent)', flexShrink: 0 }} />
+                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Found your vault</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12 }}>
+                          <Shield size={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{v.label}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{v.details}</div>
+                          </div>
+                          {accepted && <CheckCircle2 size={13} style={{ color: 'var(--success)' }} />}
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button type="button" onClick={() => { setVaultChosen(v.id); setChoices(c => ({ ...c, vault: v.id })); }}
+                            style={{ flex: 2, padding: '8px', fontSize: 12, fontWeight: accepted ? 700 : 400, background: accepted ? 'var(--accent)' : 'rgba(99,102,241,0.12)', border: `1px solid ${accepted ? 'var(--accent)' : 'rgba(99,102,241,0.3)'}`, borderRadius: 7, color: accepted ? '#fff' : 'var(--accent)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                            {accepted ? '✓ Using this vault' : 'Use this vault'}
+                          </button>
+                          <button type="button" onClick={() => { setVaultChosen('manual'); setChoices(c => ({ ...c, vault: null })); }}
+                            style={{ flex: 1, padding: '8px', fontSize: 12, background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                            Choose different
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (inDetectionMode && detectedVaults.length > 1) {
+                    // Case 2: multiple vaults detected
+                    return (
+                      <div style={{ padding: '14px 16px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 9 }}>
+                        <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Detected vaults — select one</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+                          {detectedVaults.map(v => (
+                            <button key={v.id} type="button" onClick={() => { setVaultChosen(v.id); setChoices(c => ({ ...c, vault: v.id })); }}
+                              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: choices.vault === v.id ? 'rgba(99,102,241,0.08)' : 'var(--bg-hover)', border: `1.5px solid ${choices.vault === v.id ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 8, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', width: '100%' }}>
+                              <Shield size={14} style={{ color: choices.vault === v.id ? 'var(--accent)' : 'var(--text-muted)', flexShrink: 0 }} />
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: choices.vault === v.id ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{v.label}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{v.details}</div>
+                              </div>
+                              {choices.vault === v.id && <CheckCircle2 size={13} style={{ color: 'var(--accent)' }} />}
+                            </button>
+                          ))}
+                        </div>
+                        <button type="button" onClick={() => { setVaultChosen('manual'); setChoices(c => ({ ...c, vault: null })); }}
+                          style={{ fontSize: 11, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0', fontFamily: 'inherit' }}>
+                          Show all options instead →
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  // Case 3: no vaults detected (or user chose "manual")
+                  return (
+                    <>
+                      {detectedVaults.length === 0 && (
+                        <div style={{ padding: '8px 12px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 7, marginBottom: 10, display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <Database size={12} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                          <span style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                            No vault credentials detected. K8s Secrets is simplest. Add vault credentials in{' '}
+                            <button type="button" onClick={() => navigate('/app/platforms')} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 12, padding: 0, fontFamily: 'inherit' }}>Platforms</button>{' '}
+                            to unlock smart detection next time.
+                          </span>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {VAULT_OPTIONS.map(opt => <OptionCard key={opt.id} {...opt} selected={choices.vault === opt.id} onClick={() => setChoices(c => ({ ...c, vault: opt.id }))} />)}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
 
-              {choices.vault && choices.vault !== 'none' && (
+              {/* ── Stored Secrets ─────────────────────────────────── */}
+              {vaultCheckDone && (
+                <div style={{ marginBottom: 22 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Stored Secrets</p>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button type="button" onClick={fetchVaultSecrets} disabled={vaultSecretsLoading}
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', fontSize: 11, background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        <RefreshCw size={10} style={{ animation: vaultSecretsLoading ? 'spin 0.8s linear infinite' : 'none' }} />
+                        Refresh
+                      </button>
+                      <button type="button" onClick={() => setShowVaultEnvUpload(v => !v)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', fontSize: 11, background: showVaultEnvUpload ? 'rgba(99,102,241,0.1)' : 'var(--bg-hover)', border: `1px solid ${showVaultEnvUpload ? 'rgba(99,102,241,0.35)' : 'var(--border)'}`, borderRadius: 6, color: showVaultEnvUpload ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        <Upload size={10} /> Upload .env
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* .env uploader */}
+                  {showVaultEnvUpload && (
+                    <div style={{ marginBottom: 12, padding: '14px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 9 }}>
+                      <EnvUploader
+                        context="vault"
+                        existingSecretNames={vaultSecrets.map(s => s.name)}
+                        onSecretsParsed={() => { fetchVaultSecrets(); setShowVaultEnvUpload(false); }}
+                        onCancel={() => setShowVaultEnvUpload(false)}
+                      />
+                    </div>
+                  )}
+
+                  {/* Secrets list */}
+                  {vaultSecretsLoading && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                      <Loader2 size={12} style={{ animation: 'spin 0.8s linear infinite', color: 'var(--accent)' }} /> Loading secrets…
+                    </div>
+                  )}
+                  {!vaultSecretsLoading && vaultSecrets.length === 0 && !showVaultEnvUpload && (
+                    <div style={{ padding: '14px', background: 'var(--bg-surface)', border: '1px dashed var(--border)', borderRadius: 9, textAlign: 'center' }}>
+                      <Lock size={18} style={{ color: 'var(--text-muted)', opacity: 0.3, marginBottom: 6 }} />
+                      <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)' }}>No secrets stored yet. Upload a .env file to get started.</p>
+                    </div>
+                  )}
+                  {!vaultSecretsLoading && vaultSecrets.length > 0 && (
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 9, overflow: 'hidden' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 1fr auto', padding: '6px 12px', background: 'var(--bg-hover)', borderBottom: '1px solid var(--border)' }}>
+                        {['Name', 'Type', 'Value', ''].map((h, i) => <span key={i} style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{h}</span>)}
+                      </div>
+                      <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+                        {vaultSecrets.map(s => (
+                          <div key={s.id} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 1fr auto', padding: '8px 12px', borderBottom: '1px solid var(--border)', alignItems: 'center', gap: 6 }}>
+                            <code style={{ fontSize: 11, color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</code>
+                            <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'var(--bg-hover)', border: '1px solid var(--border)', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.type}</span>
+                            <code style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.value}</code>
+                            <button type="button" onClick={() => deleteVaultSecret(s.id)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '3px', display: 'flex', borderRadius: 4, transition: 'color 0.1s' }}
+                              onMouseEnter={e => (e.currentTarget.style.color = 'var(--error)')}
+                              onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}>
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ padding: '6px 12px', borderTop: '1px solid var(--border)', background: 'var(--bg-hover)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{vaultSecrets.length} secret{vaultSecrets.length !== 1 ? 's' : ''} stored</span>
+                        <button type="button" onClick={() => setShowVaultEnvUpload(true)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>
+                          <Plus size={10} /> Add more
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* "Is vault already deployed?" — only in manual mode with non-none vault */}
+              {vaultCheckDone && choices.vault && choices.vault !== 'none' && (vaultChosen === 'manual' || detectedVaults.length === 0) && (
                 <div style={{ padding: '12px 14px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 9, marginBottom: 22 }}>
-                  <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Is {choices.vault === 'hashicorp' ? 'HashiCorp Vault' : choices.vault === 'infisical' ? 'Infisical' : 'AWS Secrets Manager'} already deployed?</p>
+                  <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Is {choices.vault === 'hashicorp' ? 'HashiCorp Vault' : choices.vault === 'infisical' ? 'Infisical' : 'AWS Secrets Manager'} already deployed?
+                  </p>
                   <div style={{ display: 'flex', gap: 8 }}>
                     {[{ val: true, label: 'Yes, already running' }, { val: false, label: 'No, include setup steps' }].map(({ val, label }) => (
                       <button key={String(val)} type="button" onClick={() => setChoices(c => ({ ...c, vaultDeployed: val }))} style={{ flex: 1, padding: '8px', fontSize: 12, fontWeight: choices.vaultDeployed === val ? 700 : 400, background: choices.vaultDeployed === val ? 'rgba(99,102,241,0.1)' : 'var(--bg-hover)', border: `1.5px solid ${choices.vaultDeployed === val ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 7, cursor: 'pointer', color: choices.vaultDeployed === val ? 'var(--accent)' : 'var(--text-secondary)', fontFamily: 'inherit', transition: 'all 0.15s' }}>
@@ -899,12 +1326,15 @@ export function DeployMode() {
                 </div>
               )}
 
-              <div>
-                <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Container Registry</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {REGISTRY_OPTIONS.map(opt => <OptionCard key={opt.id} {...opt} selected={choices.registry === opt.id} onClick={() => setChoices(c => ({ ...c, registry: opt.id }))} />)}
+              {/* Registry — always show once vault is chosen */}
+              {vaultCheckDone && choices.vault && (
+                <div>
+                  <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Container Registry</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {REGISTRY_OPTIONS.map(opt => <OptionCard key={opt.id} {...opt} selected={choices.registry === opt.id} onClick={() => setChoices(c => ({ ...c, registry: opt.id }))} />)}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
@@ -981,6 +1411,31 @@ export function DeployMode() {
 
         </div>
       </div>
+
+      {/* ── Branch create confirmation modal ───────────────────────────────── */}
+      {branchCreateConfirm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 440, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
+            <h3 style={{ margin: '0 0 8px', fontSize: 15, fontWeight: 700 }}>Create branch?</h3>
+            <p style={{ margin: '0 0 18px', fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              Create{' '}
+              <code style={{ fontSize: 12, background: 'var(--bg-hover)', padding: '1px 6px', borderRadius: 4, color: 'var(--text-primary)' }}>{branchCreateConfirm}</code>{' '}
+              from{' '}
+              <code style={{ fontSize: 12, background: 'var(--bg-hover)', padding: '1px 6px', borderRadius: 4, color: 'var(--text-primary)' }}>{detectedBranches.prod ?? selectedRepo?.default_branch ?? 'main'}</code>{' '}
+              in <strong>{selectedRepo?.full_name}</strong>?
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setBranchCreateConfirm(null)} disabled={branchCreating !== null} style={{ padding: '7px 16px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Cancel
+              </button>
+              <button type="button" onClick={() => handleCreateBranch(branchCreateConfirm)} disabled={branchCreating !== null} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 18px', background: 'var(--accent)', border: 'none', borderRadius: 7, color: '#fff', fontSize: 13, fontWeight: 600, cursor: branchCreating ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: branchCreating ? 0.7 : 1 }}>
+                {branchCreating ? <Loader2 size={12} style={{ animation: 'spin 0.8s linear infinite' }} /> : <GitBranch size={12} />}
+                {branchCreating ? 'Creating…' : 'Confirm — Create Branch'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Deploy target modal ─────────────────────────────────────────────── */}
       {showTargetModal && (

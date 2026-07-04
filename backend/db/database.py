@@ -50,6 +50,25 @@ async def _apply_schema_migrations(conn) -> None:
         # user_settings — columns added incrementally
         "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS experience_level VARCHAR(20) DEFAULT 'devops'",
         "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS secrets_json TEXT DEFAULT '[]'",
+        "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS grafana_org_id INTEGER",
+        "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS monitoring_enabled BOOLEAN DEFAULT TRUE",
+        # platform_settings — monitoring / external keys
+        "ALTER TABLE platform_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
+        # user_secrets — purpose-built secrets table replacing secrets_json
+        """
+        CREATE TABLE IF NOT EXISTS user_secrets (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            value_encrypted TEXT NOT NULL,
+            secret_type TEXT NOT NULL DEFAULT 'other',
+            description TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(user_id, name)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_user_secrets_user ON user_secrets(user_id)",
     ]
     for sql in migrations:
         try:
