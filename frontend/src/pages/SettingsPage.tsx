@@ -7,6 +7,7 @@ import {
   Eye, EyeOff, User, Bell, Cpu, CreditCard, Users, FileText,
   Smartphone, Copy, RefreshCw, ChevronRight, ChevronLeft,
   Lock, ToggleLeft, ToggleRight, ExternalLink, Plug,
+  BellRing, Check, Send, Globe, Mail, MessageSquare, ChevronDown,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useClusterStore } from '../store/clusterStore';
@@ -25,12 +26,13 @@ const V = {
   green: 'var(--success)', red: 'var(--error)', yellow: 'var(--warning)', purple: 'var(--accent)',
 } as const;
 
-type Tab = 'general' | 'security' | 'notifications' | 'ai' | 'billing' | 'team' | 'audit';
+type Tab = 'general' | 'security' | 'notifications' | 'alerts' | 'ai' | 'billing' | 'team' | 'audit';
 
 const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'general',       label: 'General',       icon: <User size={15} /> },
   { id: 'security',      label: 'Security',       icon: <Shield size={15} /> },
   { id: 'notifications', label: 'Notifications',  icon: <Bell size={15} /> },
+  { id: 'alerts',        label: 'Alerts',         icon: <BellRing size={15} /> },
   { id: 'ai',            label: 'AI & Models',    icon: <Cpu size={15} /> },
   { id: 'billing',       label: 'Billing',        icon: <CreditCard size={15} /> },
   { id: 'team',          label: 'Team',           icon: <Users size={15} /> },
@@ -1956,6 +1958,307 @@ function AuditLogTab() {
   );
 }
 
+// ─── Alerts Tab ───────────────────────────────────────────────────────────────
+
+type ChannelType = 'slack' | 'teams' | 'email' | 'discord' | 'gchat' | 'webhook';
+type AlertSeverity = 'critical' | 'high' | 'medium' | 'low';
+
+interface AlertChannel {
+  id: string;
+  channel_type: ChannelType;
+  name: string;
+  is_active: boolean;
+  alert_on: AlertSeverity[];
+  config_preview: Record<string, string>;
+  created_at: string | null;
+}
+
+const CHANNEL_META: Record<ChannelType, { label: string; color: string; icon: React.ReactNode; fields: { key: string; label: string; placeholder: string; guide: string }[] }> = {
+  slack: {
+    label: 'Slack', color: '#4A154B', icon: <MessageSquare size={14} />,
+    fields: [{ key: 'webhook_url', label: 'Webhook URL', placeholder: 'https://hooks.slack.com/services/…', guide: 'In Slack: Apps → Incoming Webhooks → Add → choose channel → copy Webhook URL' }],
+  },
+  teams: {
+    label: 'Microsoft Teams', color: '#6264A7', icon: <MessageSquare size={14} />,
+    fields: [{ key: 'webhook_url', label: 'Incoming Webhook URL', placeholder: 'https://…webhook.office.com/webhookb2/…', guide: 'In Teams: channel → ⋯ → Connectors → Incoming Webhook → Create → copy URL' }],
+  },
+  email: {
+    label: 'Email', color: '#22c55e', icon: <Mail size={14} />,
+    fields: [{ key: 'address', label: 'Email address', placeholder: 'you@example.com', guide: 'Alerts are sent from alerts@infrapilot.dev via Resend. Check spam if you don\'t receive the test.' }],
+  },
+  discord: {
+    label: 'Discord', color: '#5865F2', icon: <MessageSquare size={14} />,
+    fields: [{ key: 'webhook_url', label: 'Webhook URL', placeholder: 'https://discord.com/api/webhooks/…', guide: 'In Discord: Server Settings → Integrations → Webhooks → New Webhook → copy URL' }],
+  },
+  gchat: {
+    label: 'Google Chat', color: '#00AC47', icon: <MessageSquare size={14} />,
+    fields: [{ key: 'webhook_url', label: 'Webhook URL', placeholder: 'https://chat.googleapis.com/v1/spaces/…', guide: 'In Google Chat: open a Space → Apps & integrations → Add webhooks → copy URL' }],
+  },
+  webhook: {
+    label: 'Custom Webhook', color: '#6366f1', icon: <Globe size={14} />,
+    fields: [
+      { key: 'url', label: 'Endpoint URL', placeholder: 'https://your-server.com/infrapilot-hook', guide: 'Your server must respond with 2xx. Payloads are JSON. Add a secret to verify signatures.' },
+      { key: 'secret', label: 'HMAC secret (optional)', placeholder: 'your-signing-secret', guide: 'InfraPilot signs each request with SHA-256 HMAC. Verify the X-InfraPilot-Signature header.' },
+    ],
+  },
+};
+
+const SEV_COLORS: Record<AlertSeverity, string> = {
+  critical: '#ef4444', high: '#f59e0b', medium: '#3b82f6', low: '#22c55e',
+};
+
+function AlertsTab() {
+  const qc = useQueryClient();
+  const [addOpen, setAddOpen]           = useState(false);
+  const [editChannel, setEditChannel]   = useState<AlertChannel | null>(null);
+  const [testingId, setTestingId]       = useState<string | null>(null);
+  const [testResult, setTestResult]     = useState<Record<string, { ok: boolean; msg: string }>>({});
+  const [deleting, setDeleting]         = useState<string | null>(null);
+
+  // Form state
+  const [formType, setFormType]   = useState<ChannelType>('slack');
+  const [formName, setFormName]   = useState('');
+  const [formConfig, setFormConfig] = useState<Record<string, string>>({});
+  const [formSevs, setFormSevs]   = useState<AlertSeverity[]>(['critical', 'high']);
+  const [formErr, setFormErr]     = useState('');
+  const [formSaving, setFormSaving] = useState(false);
+  const [showGuide, setShowGuide] = useState<Record<string, boolean>>({});
+
+  const { data: channels = [], isLoading } = useQuery<AlertChannel[]>({
+    queryKey: ['alert-channels'],
+    queryFn: async () => { const r = await fetch('/api/alert-channels'); return r.json(); },
+  });
+
+  function openAdd() {
+    setFormType('slack'); setFormName(''); setFormConfig({}); setFormSevs(['critical', 'high']);
+    setFormErr(''); setShowGuide({}); setEditChannel(null); setAddOpen(true);
+  }
+
+  function openEdit(ch: AlertChannel) {
+    setFormType(ch.channel_type); setFormName(ch.name);
+    setFormConfig({}); setFormSevs(ch.alert_on);
+    setFormErr(''); setShowGuide({}); setEditChannel(ch); setAddOpen(true);
+  }
+
+  async function saveChannel() {
+    setFormErr(''); setFormSaving(true);
+    try {
+      const meta = CHANNEL_META[formType];
+      const configValid = meta.fields.every((f) => f.key === 'secret' || formConfig[f.key]?.trim());
+      if (!configValid) { setFormErr('Fill in all required fields.'); setFormSaving(false); return; }
+      if (!formName.trim()) { setFormErr('Name is required.'); setFormSaving(false); return; }
+
+      const body: Record<string, unknown> = { name: formName, alert_on: formSevs };
+      if (editChannel) {
+        if (Object.keys(formConfig).length > 0) body.config = formConfig;
+        const r = await fetch(`/api/alert-channels/${editChannel.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (!r.ok) throw new Error((await r.json()).detail ?? 'Save failed');
+      } else {
+        body.channel_type = formType; body.config = formConfig;
+        const r = await fetch('/api/alert-channels', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (!r.ok) throw new Error((await r.json()).detail ?? 'Save failed');
+      }
+      qc.invalidateQueries({ queryKey: ['alert-channels'] });
+      setAddOpen(false);
+    } catch (e: unknown) {
+      setFormErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setFormSaving(false);
+    }
+  }
+
+  async function deleteChannel(id: string) {
+    if (!confirm('Delete this alert channel?')) return;
+    setDeleting(id);
+    await fetch(`/api/alert-channels/${id}`, { method: 'DELETE' });
+    qc.invalidateQueries({ queryKey: ['alert-channels'] });
+    setDeleting(null);
+  }
+
+  async function testChannel(id: string) {
+    setTestingId(id); setTestResult((p) => ({ ...p, [id]: { ok: false, msg: 'Sending…' } }));
+    try {
+      const r = await fetch(`/api/alert-channels/${id}/test`, { method: 'POST' });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail ?? 'Test failed');
+      setTestResult((p) => ({ ...p, [id]: { ok: true, msg: data.message ?? 'Sent!' } }));
+    } catch (e: unknown) {
+      setTestResult((p) => ({ ...p, [id]: { ok: false, msg: e instanceof Error ? e.message : 'Failed' } }));
+    } finally {
+      setTestingId(null);
+    }
+  }
+
+  async function toggleActive(ch: AlertChannel) {
+    await fetch(`/api/alert-channels/${ch.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: !ch.is_active }) });
+    qc.invalidateQueries({ queryKey: ['alert-channels'] });
+  }
+
+  const sectionStyle: React.CSSProperties = { background: 'var(--bg-surface)', border: `1px solid ${V.border}`, borderRadius: 12, padding: '1.25rem' };
+  const btnPrimary: React.CSSProperties = { background: V.accent, border: 'none', borderRadius: 8, color: '#fff', fontSize: '0.85rem', fontWeight: 600, padding: '0.5rem 1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 };
+  const btnSecondary: React.CSSProperties = { background: 'transparent', border: `1px solid ${V.border}`, borderRadius: 8, color: V.muted, fontSize: '0.8rem', padding: '0.4rem 0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 };
+  const inputStyle = inp();
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: '1.1rem', color: V.text }}>Alert Channels</h2>
+          <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: V.muted }}>Send incident alerts to Slack, Teams, Email, Discord, Google Chat, or any webhook.</p>
+        </div>
+        <button type="button" onClick={openAdd} style={btnPrimary}><Plus size={14} />Add Channel</button>
+      </div>
+
+      {/* Channel list */}
+      {isLoading ? (
+        <div style={{ color: V.muted, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />Loading…</div>
+      ) : channels.length === 0 ? (
+        <div style={{ ...sectionStyle, textAlign: 'center', padding: '2rem' }}>
+          <BellRing size={28} color={V.muted} style={{ marginBottom: 10 }} />
+          <div style={{ color: V.text, fontSize: '0.9rem', marginBottom: 4 }}>No alert channels yet</div>
+          <div style={{ color: V.muted, fontSize: '0.82rem', marginBottom: 16 }}>Add a channel to receive incident notifications.</div>
+          <button type="button" onClick={openAdd} style={btnPrimary}><Plus size={13} />Add your first channel</button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {channels.map((ch) => {
+            const meta = CHANNEL_META[ch.channel_type];
+            const res = testResult[ch.id];
+            return (
+              <div key={ch.id} style={{ ...sectionStyle, display: 'flex', alignItems: 'center', gap: 14 }}>
+                {/* Type badge */}
+                <div style={{ width: 36, height: 36, borderRadius: 8, background: `${meta.color}22`, border: `1px solid ${meta.color}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: meta.color, flexShrink: 0 }}>
+                  {meta.icon}
+                </div>
+
+                {/* Info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: '0.9rem', color: V.text, fontWeight: 500 }}>{ch.name}</span>
+                    <span style={{ fontSize: '0.72rem', color: V.muted }}>({meta.label})</span>
+                    {!ch.is_active && <span style={{ fontSize: '0.7rem', color: V.muted, background: `${V.border}`, padding: '1px 6px', borderRadius: 4 }}>Disabled</span>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 4, marginTop: 5 }}>
+                    {ch.alert_on.map((s) => (
+                      <span key={s} style={{ fontSize: '0.68rem', color: SEV_COLORS[s], background: `${SEV_COLORS[s]}18`, border: `1px solid ${SEV_COLORS[s]}33`, borderRadius: 100, padding: '1px 7px', fontWeight: 700, textTransform: 'uppercase' }}>{s}</span>
+                    ))}
+                  </div>
+                  {res && (
+                    <div style={{ marginTop: 4, fontSize: '0.75rem', color: res.ok ? '#22c55e' : '#ef4444', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {res.ok ? <Check size={10} /> : <X size={10} />}{res.msg}
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  <button type="button" onClick={() => toggleActive(ch)} style={{ ...btnSecondary, color: ch.is_active ? V.accent : V.muted }}>
+                    {ch.is_active ? <ToggleRight size={13} /> : <ToggleLeft size={13} />}
+                    {ch.is_active ? 'On' : 'Off'}
+                  </button>
+                  <button type="button" onClick={() => testChannel(ch.id)} disabled={testingId === ch.id || !ch.is_active} style={{ ...btnSecondary, opacity: !ch.is_active ? 0.4 : 1 }}>
+                    {testingId === ch.id ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={11} />}Test
+                  </button>
+                  <button type="button" onClick={() => openEdit(ch)} style={btnSecondary}><Edit2 size={11} />Edit</button>
+                  <button type="button" onClick={() => deleteChannel(ch.id)} disabled={deleting === ch.id}
+                    style={{ ...btnSecondary, color: '#ef4444', borderColor: '#ef444433' }}>
+                    {deleting === ch.id ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <Trash2 size={11} />}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Add/Edit Modal */}
+      {addOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ background: 'var(--bg-surface)', border: `1px solid ${V.border}`, borderRadius: 14, width: '100%', maxWidth: 540, maxHeight: '90vh', overflow: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem 1.5rem', borderBottom: `1px solid ${V.border}` }}>
+              <div style={{ fontSize: '1rem', fontWeight: 600, color: V.text }}>{editChannel ? 'Edit Channel' : 'Add Alert Channel'}</div>
+              <button type="button" onClick={() => setAddOpen(false)} style={{ background: 'none', border: 'none', color: V.muted, cursor: 'pointer' }}><X size={16} /></button>
+            </div>
+
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+              {/* Channel type */}
+              {!editChannel && (
+                <div>
+                  <div style={{ fontSize: '0.78rem', color: V.muted, marginBottom: 8 }}>Channel type</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                    {(Object.keys(CHANNEL_META) as ChannelType[]).map((t) => {
+                      const m = CHANNEL_META[t];
+                      const active = formType === t;
+                      return (
+                        <button key={t} type="button" onClick={() => { setFormType(t); setFormConfig({}); setFormErr(''); setShowGuide({}); }}
+                          style={{ border: `1px solid ${active ? m.color : V.border}`, borderRadius: 8, background: active ? `${m.color}18` : 'transparent', color: active ? m.color : V.muted, padding: '10px 8px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: active ? 700 : 400, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 }}>
+                          {m.icon}{m.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Name */}
+              <div>
+                <label style={{ fontSize: '0.78rem', color: V.muted, display: 'block', marginBottom: 4 }}>Display name</label>
+                <input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder={`My ${CHANNEL_META[formType].label} channel`} style={inputStyle} />
+              </div>
+
+              {/* Config fields */}
+              {CHANNEL_META[formType].fields.map((field) => (
+                <div key={field.key}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <label style={{ fontSize: '0.78rem', color: V.muted }}>{field.label}{field.key !== 'secret' ? ' *' : ''}</label>
+                    <button type="button" onClick={() => setShowGuide((p) => ({ ...p, [field.key]: !p[field.key] }))}
+                      style={{ background: 'none', border: 'none', color: V.muted, cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 2, fontSize: '0.72rem' }}>
+                      How to get this <ChevronDown size={10} style={{ transform: showGuide[field.key] ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+                    </button>
+                  </div>
+                  {showGuide[field.key] && (
+                    <div style={{ background: `${V.accent}12`, border: `1px solid ${V.accent}33`, borderRadius: 6, padding: '8px 12px', marginBottom: 6, fontSize: '0.77rem', color: V.muted }}>{field.guide}</div>
+                  )}
+                  {editChannel
+                    ? <input value={formConfig[field.key] ?? ''} onChange={(e) => setFormConfig((p) => ({ ...p, [field.key]: e.target.value }))} placeholder={`Leave blank to keep existing ${field.label.toLowerCase()}`} style={inputStyle} />
+                    : <input value={formConfig[field.key] ?? ''} onChange={(e) => setFormConfig((p) => ({ ...p, [field.key]: e.target.value }))} placeholder={field.placeholder} style={inputStyle} />
+                  }
+                </div>
+              ))}
+
+              {/* Alert on severities */}
+              <div>
+                <div style={{ fontSize: '0.78rem', color: V.muted, marginBottom: 8 }}>Alert on severity</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {(['critical', 'high', 'medium', 'low'] as AlertSeverity[]).map((s) => {
+                    const on = formSevs.includes(s);
+                    return (
+                      <button key={s} type="button" onClick={() => setFormSevs((p) => on ? p.filter((x) => x !== s) : [...p, s])}
+                        style={{ border: `1px solid ${on ? SEV_COLORS[s] : V.border}`, borderRadius: 100, background: on ? `${SEV_COLORS[s]}20` : 'transparent', color: on ? SEV_COLORS[s] : V.muted, padding: '4px 12px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: on ? 700 : 400, textTransform: 'capitalize' }}>
+                        {s}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {formErr && <div style={{ color: '#ef4444', fontSize: '0.8rem' }}>{formErr}</div>}
+
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: `1px solid ${V.border}`, paddingTop: '1rem' }}>
+                <button type="button" onClick={() => setAddOpen(false)} style={btnSecondary}>Cancel</button>
+                <button type="button" onClick={saveChannel} disabled={formSaving} style={{ ...btnPrimary, opacity: formSaving ? 0.7 : 1 }}>
+                  {formSaving ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={13} />}
+                  {editChannel ? 'Save changes' : 'Add channel'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -1966,6 +2269,7 @@ export default function SettingsPage() {
       case 'general':       return <GeneralTab />;
       case 'security':      return <SecurityTab />;
       case 'notifications': return <NotificationsTab />;
+      case 'alerts':        return <AlertsTab />;
       case 'ai':            return <AIModelsTab />;
       case 'billing':       return <BillingTab />;
       case 'team':          return <TeamTab />;

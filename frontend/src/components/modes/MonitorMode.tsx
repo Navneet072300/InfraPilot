@@ -5,6 +5,7 @@ import {
   BarChart2, Loader2, CheckCircle2, Edit2, X, Eye, EyeOff,
   ShieldAlert, Activity, Trash2, Server, Layers, BellOff, Wrench,
   AlertOctagon, AlertCircle, Info, BarChart3, ThumbsUp, LineChart,
+  Bot, Copy, Check, RefreshCcw, Wifi, WifiOff, Clock,
 } from 'lucide-react';
 import { useClusterStore } from '../../store/clusterStore';
 import { useClusterOverview, useNamespaces, useResources, useNodeMetrics } from '../../hooks/useKubernetes';
@@ -1179,9 +1180,367 @@ function HealthTab() {
   );
 }
 
+// ─── Agent tab ────────────────────────────────────────────────────────────────
+
+interface AgentStatus {
+  has_token: boolean;
+  installed: boolean;
+  last_seen: string | null;
+  last_seen_minutes_ago: number | null;
+  agent_version: string | null;
+  token_prefix: string;
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  };
+  return (
+    <button type="button" onClick={copy} style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: 4, color: copied ? C.success : C.muted, cursor: 'pointer', padding: '4px 8px', fontSize: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
+      {copied ? <Check size={10} /> : <Copy size={10} />}{copied ? 'Copied!' : 'Copy'}
+    </button>
+  );
+}
+
+function AgentTab() {
+  const { clusters } = useClusterStore();
+  const activeCluster = clusters.find((c) => c.active) ?? clusters[0];
+  const clusterName = activeCluster?.name ?? '';
+  const queryClient = useQueryClient();
+
+  const [generating, setGenerating] = useState(false);
+  const [newToken, setNewToken]     = useState<{ token: string; helm_command: string } | null>(null);
+  const [revoking, setRevoking]     = useState(false);
+  const [installTab, setInstallTab] = useState<'linux' | 'powershell' | 'cmd' | 'nohelm'>('linux');
+  const [error, setError]           = useState('');
+
+  const { data: status, isLoading } = useQuery<AgentStatus>({
+    queryKey: ['agent-status', clusterName],
+    queryFn: async () => {
+      if (!clusterName) return { has_token: false, installed: false, last_seen: null, last_seen_minutes_ago: null, agent_version: null, token_prefix: '' };
+      const r = await fetch(`/api/agent/status/${encodeURIComponent(clusterName)}`);
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    },
+    refetchInterval: 30_000,
+    enabled: !!clusterName,
+  });
+
+  const generateToken = async (regenerate = false) => {
+    setGenerating(true); setError(''); setNewToken(null);
+    try {
+      const endpoint = regenerate ? '/api/agent/token/regenerate' : '/api/agent/token';
+      const r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cluster_name: clusterName }) });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Request failed');
+      if (data.is_new && data.token) {
+        setNewToken({ token: data.token, helm_command: data.helm_command });
+      }
+      queryClient.invalidateQueries({ queryKey: ['agent-status', clusterName] });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const revokeToken = async () => {
+    if (!confirm('Revoke agent token? The agent will stop sending data until you reinstall.')) return;
+    setRevoking(true); setError('');
+    try {
+      const r = await fetch(`/api/agent/token/${encodeURIComponent(clusterName)}`, { method: 'DELETE' });
+      if (!r.ok) throw new Error(await r.text());
+      setNewToken(null);
+      queryClient.invalidateQueries({ queryKey: ['agent-status', clusterName] });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRevoking(false);
+    }
+  };
+
+  if (!clusterName) {
+    return <div style={{ color: C.muted, fontSize: 12, padding: 24, textAlign: 'center' }}>No cluster selected</div>;
+  }
+
+  const cardStyle: React.CSSProperties = { background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 24, maxWidth: 640 };
+  const labelStyle: React.CSSProperties = { fontSize: 10, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 };
+  const valueStyle: React.CSSProperties = { fontSize: 13, color: C.primary, fontFamily: 'monospace' };
+
+  // ── State: token was just generated (show once) ───────────────────────────
+  if (newToken) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* One-time warning */}
+        <div style={{ background: '#1f1700', border: `1px solid ${C.warning}44`, borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+          <AlertTriangle size={14} color={C.warning} style={{ marginTop: 1, flexShrink: 0 }} />
+          <div>
+            <div style={{ fontSize: 11, color: C.warning, fontWeight: 700, marginBottom: 2 }}>Save this token — it will not be shown again.</div>
+            <div style={{ fontSize: 11, color: C.muted }}>After you navigate away, only the first 12 characters will be visible. Copy it now and store it securely.</div>
+          </div>
+        </div>
+
+        <div style={cardStyle}>
+          <div style={{ fontSize: 13, color: C.primary, fontWeight: 600, marginBottom: 16 }}>Step 1 — Save your agent token</div>
+          <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontFamily: 'monospace', fontSize: 12, color: C.success, wordBreak: 'break-all' }}>{newToken.token}</span>
+            <CopyButton text={newToken.token} />
+          </div>
+
+          <div style={{ fontSize: 13, color: C.primary, fontWeight: 600, margin: '20px 0 10px' }}>Step 2 — Install the agent</div>
+
+          {/* Helm not installed banner */}
+          <div style={{ background: `${C.dim}18`, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 10, color: C.muted }}>Helm must be installed to use tabs 1–3. If you don't have Helm, use the "Without Helm" tab.</span>
+            <a href="https://helm.sh/docs/intro/install/" target="_blank" rel="noreferrer" style={{ fontSize: 10, color: C.accent, textDecoration: 'none', whiteSpace: 'nowrap' }}>Install Helm →</a>
+          </div>
+
+          {/* Tab strip */}
+          <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, marginBottom: 12 }}>
+            {([
+              { id: 'linux',      label: 'Linux / macOS' },
+              { id: 'powershell', label: 'Windows — PowerShell' },
+              { id: 'cmd',        label: 'Windows — CMD' },
+              { id: 'nohelm',     label: 'Without Helm' },
+            ] as const).map((t) => (
+              <button key={t.id} type="button" onClick={() => setInstallTab(t.id)}
+                style={{ background: 'none', border: 'none', borderBottom: `2px solid ${installTab === t.id ? C.accent : 'transparent'}`, color: installTab === t.id ? C.primary : C.dim, fontSize: 10, fontWeight: installTab === t.id ? 700 : 400, padding: '6px 12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab: Linux / macOS */}
+          {installTab === 'linux' && (() => {
+            const cmd = `helm repo add infrapilot https://charts.infrapilot.dev\nhelm repo update\nhelm install infrapilot-agent \\\n  infrapilot/infrapilot-agent \\\n  --namespace infrapilot-system \\\n  --create-namespace \\\n  --set infrapilot.token=${newToken.token} \\\n  --set infrapilot.endpoint=https://api.infrapilot.dev \\\n  --set infrapilot.clusterName=${clusterName}`;
+            return (
+              <div>
+                <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '12px 14px', marginBottom: 6 }}>
+                  <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 11, color: C.muted, whiteSpace: 'pre-wrap' }}>{cmd}</pre>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}><CopyButton text={cmd} /></div>
+              </div>
+            );
+          })()}
+
+          {/* Tab: Windows — PowerShell */}
+          {installTab === 'powershell' && (() => {
+            const cmd = `helm repo add infrapilot https://charts.infrapilot.dev\nhelm repo update\nhelm install infrapilot-agent \`\n  infrapilot/infrapilot-agent \`\n  --namespace infrapilot-system \`\n  --create-namespace \`\n  --set infrapilot.token=${newToken.token} \`\n  --set infrapilot.endpoint=https://api.infrapilot.dev \`\n  --set infrapilot.clusterName=${clusterName}`;
+            return (
+              <div>
+                <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '12px 14px', marginBottom: 6 }}>
+                  <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 11, color: C.muted, whiteSpace: 'pre-wrap' }}>{cmd}</pre>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 10, color: C.dim }}>PowerShell uses backtick ` for line continuation</span>
+                  <CopyButton text={cmd} />
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Tab: Windows — CMD */}
+          {installTab === 'cmd' && (() => {
+            const cmd = `helm repo add infrapilot https://charts.infrapilot.dev && helm repo update && helm install infrapilot-agent infrapilot/infrapilot-agent --namespace infrapilot-system --create-namespace --set infrapilot.token=${newToken.token} --set infrapilot.endpoint=https://api.infrapilot.dev --set infrapilot.clusterName=${clusterName}`;
+            return (
+              <div>
+                <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '12px 14px', marginBottom: 6 }}>
+                  <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 11, color: C.muted, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{cmd}</pre>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 10, color: C.dim }}>CMD does not support line continuation. This is one single command — copy it all.</span>
+                  <CopyButton text={cmd} />
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Tab: Without Helm */}
+          {installTab === 'nohelm' && (() => {
+            const step1Linux  = `curl -o infrapilot-agent.yaml \\\n  https://charts.infrapilot.dev/manifest/latest.yaml`;
+            const step1PS     = `Invoke-WebRequest -Uri \`\n  https://charts.infrapilot.dev/manifest/latest.yaml \`\n  -OutFile infrapilot-agent.yaml`;
+            const step1Cmd    = `curl -o infrapilot-agent.yaml https://charts.infrapilot.dev/manifest/latest.yaml`;
+            const step2Linux  = `sed -i 's/INFRAPILOT_TOKEN/${newToken.token}/g' \\\n  infrapilot-agent.yaml`;
+            const step2PS     = `(Get-Content infrapilot-agent.yaml) \`\n  -replace 'INFRAPILOT_TOKEN','${newToken.token}' \`\n  | Set-Content infrapilot-agent.yaml`;
+            const step3       = `kubectl apply -f infrapilot-agent.yaml`;
+            const codeBlock = (text: string) => (
+              <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5, padding: '10px 12px', marginBottom: 4 }}>
+                <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 10, color: C.muted, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{text}</pre>
+              </div>
+            );
+            const osLabel = (label: string) => (
+              <div style={{ fontSize: 9, color: C.dim, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4, marginTop: 8 }}>{label}</div>
+            );
+            const stepHeader = (n: number, title: string) => (
+              <div style={{ fontSize: 11, color: C.primary, fontWeight: 600, marginTop: 16, marginBottom: 8 }}>Step {n} — {title}</div>
+            );
+            return (
+              <div>
+                {stepHeader(1, 'Download the manifest')}
+                {osLabel('Linux / macOS')}
+                {codeBlock(step1Linux)}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}><CopyButton text={step1Linux} /></div>
+                {osLabel('Windows — PowerShell')}
+                {codeBlock(step1PS)}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}><CopyButton text={step1PS} /></div>
+                {osLabel('Windows — CMD')}
+                {codeBlock(step1Cmd)}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}><CopyButton text={step1Cmd} /></div>
+
+                {stepHeader(2, 'Set your token')}
+                {osLabel('Linux / macOS')}
+                {codeBlock(step2Linux)}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}><CopyButton text={step2Linux} /></div>
+                {osLabel('Windows — PowerShell')}
+                {codeBlock(step2PS)}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}><CopyButton text={step2PS} /></div>
+
+                {stepHeader(3, 'Apply to your cluster')}
+                {codeBlock(step3)}
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}><CopyButton text={step3} /></div>
+              </div>
+            );
+          })()}
+
+          <div style={{ marginTop: 20, fontSize: 11, color: C.dim }}>
+            The agent runs in the <code style={{ background: C.bg, padding: '1px 4px', borderRadius: 3 }}>infrapilot-system</code> namespace with a read-only ClusterRole. Once installed, it appears as <strong style={{ color: C.success }}>Connected</strong> within about 60 seconds.
+          </div>
+
+          <button type="button" onClick={() => { setNewToken(null); queryClient.invalidateQueries({ queryKey: ['agent-status', clusterName] }); }}
+            style={{ marginTop: 20, background: C.accent, border: 'none', borderRadius: 6, color: '#fff', fontSize: 12, fontWeight: 600, padding: '8px 18px', cursor: 'pointer' }}>
+            Done — I saved the token
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── State: loading ────────────────────────────────────────────────────────
+  if (isLoading) {
+    return <div style={{ color: C.muted, fontSize: 12, padding: 24, display: 'flex', alignItems: 'center', gap: 8 }}><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Checking agent status…</div>;
+  }
+
+  // ── State: no token yet ───────────────────────────────────────────────────
+  if (!status?.has_token) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={cardStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <Bot size={20} color={C.accent} />
+            <div>
+              <div style={{ fontSize: 14, color: C.primary, fontWeight: 600 }}>Install InfraPilot Agent</div>
+              <div style={{ fontSize: 11, color: C.muted }}>A lightweight Helm chart that sends heartbeats and metrics from <strong>{clusterName}</strong> to your workspace.</div>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, margin: '16px 0', borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`, padding: '14px 0' }}>
+            {[['Read-only', 'ClusterRole lists only allowed resources — no write access'],
+              ['Heartbeat', 'Sends a ping every 60 s to show the cluster is reachable'],
+              ['Rate limited', '1 heartbeat per 30 s · 1 metrics push per 60 s per token'],
+              ['Namespace', 'Runs in infrapilot-system — isolated from your workloads']].map(([t, d]) => (
+              <div key={t}>
+                <div style={{ fontSize: 10, color: C.accent, fontWeight: 700, marginBottom: 2 }}>{t}</div>
+                <div style={{ fontSize: 10, color: C.muted }}>{d}</div>
+              </div>
+            ))}
+          </div>
+          {error && <div style={{ color: C.error, fontSize: 11, marginBottom: 10 }}>{error}</div>}
+          <button type="button" onClick={() => generateToken(false)} disabled={generating} style={{ background: C.accent, border: 'none', borderRadius: 6, color: '#fff', fontSize: 12, fontWeight: 600, padding: '9px 20px', cursor: generating ? 'not-allowed' : 'pointer', opacity: generating ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+            {generating ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Bot size={12} />}
+            {generating ? 'Generating…' : 'Generate Agent Token'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── State: token exists — show status ────────────────────────────────────
+  const offline = status.has_token && !status.installed;
+  const minutesAgo = status.last_seen_minutes_ago;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Offline warning */}
+      {offline && status.last_seen && (
+        <div style={{ background: '#1a1400', border: `1px solid ${C.warning}44`, borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <WifiOff size={13} color={C.warning} />
+          <span style={{ fontSize: 11, color: C.warning }}>
+            Agent offline — last seen {minutesAgo !== null ? `${minutesAgo} min ago` : 'unknown'}. Check that the Helm chart is running in <code style={{ background: `${C.warning}22`, padding: '1px 4px', borderRadius: 3 }}>infrapilot-system</code>.
+          </span>
+        </div>
+      )}
+
+      {/* Status card */}
+      <div style={cardStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+          {status.installed
+            ? <div style={{ width: 10, height: 10, borderRadius: '50%', background: C.success, animation: 'livePulse 2s ease-in-out infinite', flexShrink: 0 }} />
+            : <div style={{ width: 10, height: 10, borderRadius: '50%', background: status.last_seen ? C.warning : C.dim, flexShrink: 0 }} />
+          }
+          <div>
+            <div style={{ fontSize: 14, color: C.primary, fontWeight: 600 }}>{status.installed ? 'Agent Connected' : status.last_seen ? 'Agent Offline' : 'Waiting for agent…'}</div>
+            <div style={{ fontSize: 11, color: C.muted }}>Cluster: {clusterName}</div>
+          </div>
+          <div style={{ flex: 1 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {status.installed ? <Wifi size={13} color={C.success} /> : <WifiOff size={13} color={offline ? C.warning : C.dim} />}
+            <span style={{ fontSize: 10, color: status.installed ? C.success : offline ? C.warning : C.dim, fontWeight: 700 }}>
+              {status.installed ? 'ONLINE' : offline ? 'OFFLINE' : 'NOT SEEN'}
+            </span>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 20 }}>
+          <div>
+            <div style={labelStyle}>Token prefix</div>
+            <div style={valueStyle}>{status.token_prefix}…</div>
+          </div>
+          <div>
+            <div style={labelStyle}>Agent version</div>
+            <div style={valueStyle}>{status.agent_version ?? '—'}</div>
+          </div>
+          <div>
+            <div style={labelStyle}>Last seen</div>
+            <div style={{ ...valueStyle, display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Clock size={10} color={C.dim} />
+              {minutesAgo !== null ? (minutesAgo === 0 ? 'Just now' : `${minutesAgo} min ago`) : '—'}
+            </div>
+          </div>
+        </div>
+
+        {error && <div style={{ color: C.error, fontSize: 11, marginBottom: 12 }}>{error}</div>}
+
+        <div style={{ display: 'flex', gap: 8, borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
+          <button type="button" onClick={() => generateToken(true)} disabled={generating}
+            style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, fontSize: 11, padding: '7px 14px', cursor: generating ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <RefreshCcw size={10} />{generating ? 'Regenerating…' : 'Reinstall'}
+          </button>
+          <button type="button" onClick={revokeToken} disabled={revoking}
+            style={{ background: 'none', border: `1px solid ${C.error}44`, borderRadius: 6, color: C.error, fontSize: 11, padding: '7px 14px', cursor: revoking ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <Trash2 size={10} />{revoking ? 'Revoking…' : 'Revoke Token'}
+          </button>
+        </div>
+      </div>
+
+      {/* Install hint if no agent seen yet */}
+      {!status.last_seen && (
+        <div style={{ ...cardStyle, background: '#0d0d12' }}>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>Token generated — run the Helm command to install the agent:</div>
+          <div style={{ fontSize: 11, color: C.dim }}>
+            <code style={{ background: C.bg, padding: '2px 6px', borderRadius: 3 }}>helm repo add infrapilot https://charts.infrapilot.dev</code>
+            <br /><br />
+            Then install with your token using the command shown when the token was first generated.
+            If you need a new command, click <strong>Reinstall</strong> above to regenerate the token.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main MonitorMode ─────────────────────────────────────────────────────────
 
-type MonitorTab = 'health' | 'issues' | 'resources' | 'metrics';
+type MonitorTab = 'health' | 'issues' | 'resources' | 'metrics' | 'agent';
 type TopTimeRange = '15m' | '1h' | '3h' | '24h' | '7d';
 
 export function MonitorMode() {
@@ -1210,6 +1569,7 @@ export function MonitorMode() {
     { id: 'issues',    label: 'Issues',    icon: <AlertTriangle size={11} />, badge: activeIncidentCount || undefined },
     { id: 'resources', label: 'Resources', icon: <BarChart3 size={11} /> },
     { id: 'metrics',   label: 'Metrics',   icon: <LineChart size={11} /> },
+    { id: 'agent',     label: 'Agent',     icon: <Bot size={11} /> },
   ];
 
   const fmt = (d: Date) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1267,6 +1627,7 @@ export function MonitorMode() {
           {activeTab === 'issues'    && <IssuesPanel incidents={incidents} summary={incidentsData?.summary} />}
           {activeTab === 'resources' && <ResourceExplorerPanel />}
           {activeTab === 'metrics'   && <MetricsTab />}
+          {activeTab === 'agent'     && <AgentTab />}
         </div>
       </div>
 

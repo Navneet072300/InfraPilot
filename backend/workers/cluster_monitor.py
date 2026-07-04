@@ -337,6 +337,19 @@ async def _maybe_re_alert(incident: dict):
 # ─── Alert sending ────────────────────────────────────────────────────────────
 
 async def _send_incident_alert(incident: dict, cluster: dict):
+    # Fire new-style DB-backed alert sender (non-blocking, never raises)
+    try:
+        from services import alert_sender
+        asyncio.create_task(
+            alert_sender.send_incident(
+                incident.get("user_id", "system"),
+                incident,
+                incident.get("diagnosis") or {},
+            )
+        )
+    except Exception:
+        pass
+
     user_id = incident.get("user_id", "system")
     channels = _user_channels.get(user_id, [])
 
@@ -370,6 +383,28 @@ async def _send_re_alert(incident: dict, minutes_active: int, escalate: bool):
 
 
 async def _send_recovery_alert(incident: dict):
+    # Fire new-style DB-backed alert sender (non-blocking, never raises)
+    try:
+        from services import alert_sender
+        resolved_at = incident.get("resolved_at") or ""
+        detected_at = incident.get("detected_at") or resolved_at
+        dur = 0
+        if resolved_at and detected_at:
+            from datetime import timedelta
+            t1 = datetime.fromisoformat(detected_at.replace("Z", "+00:00"))
+            t2 = datetime.fromisoformat(resolved_at.replace("Z", "+00:00"))
+            dur = int((t2 - t1).total_seconds() // 60)
+        asyncio.create_task(
+            alert_sender.send_resolution(
+                incident.get("user_id", "system"),
+                incident,
+                duration_minutes=dur,
+                fix_method=incident.get("status", "auto_resolved"),
+            )
+        )
+    except Exception:
+        pass
+
     user_id = incident.get("user_id", "system")
     channels = _user_channels.get(user_id, [])
     for ch in channels:

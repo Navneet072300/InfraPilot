@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "infrapilot-agent.name" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "infrapilot-agent.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "infrapilot-agent.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "infrapilot-agent.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "infrapilot-agent.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      # Only schedule on Linux nodes.
+      nodeSelector:
+        kubernetes.io/os: linux
+        {{- range $k, $v := .Values.nodeSelector }}
+        {{ $k }}: {{ $v }}
+        {{- end }}
+
+      containers:
+
+        # ── Container 1: Prometheus ─────────────────────────────────────────────
+        - name: prometheus
+          image: "{{ .Values.prometheus.image.repository }}:{{ .Values.prometheus.image.tag }}"
+          imagePullPolicy: {{ .Values.prometheus.image.pullPolicy }}
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=2h
+            - --web.listen-address=127.0.0.1:9090
+          securityContext:
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: prometheus-config
+              mountPath: /etc/prometheus
+            - name: prometheus-data
+              mountPath: /prometheus
+          resources:
+            {{- toYaml .Values.prometheus.resources | nindent 12 }}
+
+        # ── Container 2: Heartbeat / metrics sender ─────────────────────────────
+        - name: heartbeat-sender
+          image: "{{ .Values.heartbeatSender.image.repository }}:{{ .Values.heartbeatSender.image.tag }}"
+          imagePullPolicy: {{ .Values.heartbeatSender.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "infrapilot-agent.name" . }}-config
+          env:
+            - name: INFRAPILOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "infrapilot-agent.name" . }}-token
+                  key: INFRAPILOT_TOKEN
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+          resources:
+            {{- toYaml .Values.heartbeatSender.resources | nindent 12 }}
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "test -f /tmp/alive"]
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            failureThreshold: 3
+
+      volumes:
+        - name: prometheus-config
+          configMap:
+            name: {{ include "infrapilot-agent.name" . }}-config
+        - name: prometheus-data
+          emptyDir: {}
+
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

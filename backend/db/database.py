@@ -69,6 +69,50 @@ async def _apply_schema_migrations(conn) -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_user_secrets_user ON user_secrets(user_id)",
+        # agent_tokens — per-cluster Helm agent authentication
+        """
+        CREATE TABLE IF NOT EXISTS agent_tokens (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            cluster_name TEXT NOT NULL,
+            token TEXT NOT NULL UNIQUE,
+            token_prefix TEXT NOT NULL,
+            is_active BOOLEAN DEFAULT true,
+            last_seen_at TIMESTAMPTZ,
+            agent_version TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(user_id, cluster_name)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_agent_tokens_user ON agent_tokens(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_agent_tokens_token ON agent_tokens(token)",
+        # alert_channels — user-configured notification channels
+        """
+        CREATE TABLE IF NOT EXISTS alert_channels (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            channel_type TEXT NOT NULL CHECK (channel_type IN ('slack','teams','email','discord','gchat','webhook')),
+            name TEXT NOT NULL,
+            config_encrypted TEXT NOT NULL,
+            is_active BOOLEAN DEFAULT true,
+            alert_on TEXT DEFAULT '["critical","high"]',
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_alert_channels_user ON alert_channels(user_id)",
+        # alert_history — send log per channel per incident
+        """
+        CREATE TABLE IF NOT EXISTS alert_history (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            incident_id TEXT,
+            channel_id UUID,
+            channel_type TEXT NOT NULL,
+            sent_at TIMESTAMPTZ DEFAULT NOW(),
+            status TEXT DEFAULT 'sent' CHECK (status IN ('sent','failed')),
+            error_text TEXT
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_alert_history_incident ON alert_history(incident_id)",
     ]
     for sql in migrations:
         try:
