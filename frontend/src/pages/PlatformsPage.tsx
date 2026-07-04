@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   GitBranch, GitMerge, Server, Shield, Cloud, Database,
-  Activity, BarChart2, Loader2,
-  Plus, Trash2, Edit2, ChevronDown, ChevronRight,
-  Zap,
+  Activity, BarChart2, Loader2, Plus, Trash2, Edit2,
+  Search, X, Zap, CheckCircle2,
 } from 'lucide-react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { useClusterStore } from '../store/clusterStore';
@@ -15,532 +14,680 @@ const V = {
   green: 'var(--success)', red: 'var(--error)', yellow: 'var(--warning)',
 } as const;
 
-// Status pill component
-type PlatformStatus = 'connected' | 'untested' | 'not_connected' | 'builtin';
+// ─── Catalog definition ────────────────────────────────────────────────────────
 
-function StatusPill({ status }: { status: PlatformStatus }) {
-  const cfg = {
-    connected:     { label: '● Connected',     bg: 'rgba(63,185,80,0.12)',  color: '#3fb950' },
-    untested:      { label: '● Untested',      bg: 'rgba(210,153,34,0.12)', color: '#d2991c' },
-    not_connected: { label: '○ Not connected', bg: 'rgba(110,118,129,0.12)',color: '#6e7681' },
-    builtin:       { label: '★ Built-in',      bg: 'rgba(88,166,255,0.12)', color: '#58a6ff' },
-  }[status];
-  return (
-    <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 100, background: cfg.bg, color: cfg.color, whiteSpace: 'nowrap' }}>
-      {cfg.label}
-    </span>
-  );
+type Category = 'all' | 'source-control' | 'infrastructure' | 'secrets' | 'monitoring';
+
+interface FieldDef {
+  key: string;
+  label: string;
+  placeholder: string;
+  secret?: boolean;
+  hint?: string;
 }
 
-// Generic platform card
-interface PlatformCardProps {
-  icon: React.ReactNode;
+interface CatalogEntry {
+  id: string;
   name: string;
-  status: PlatformStatus;
-  details?: string;
-  onEdit?: () => void;
-  onDisconnect?: () => void;
-  onConnect?: () => void;
-  onExpand?: () => void;
-  expanded?: boolean;
-  children?: React.ReactNode;
+  category: Exclude<Category, 'all'>;
+  description: string;
+  icon: React.ReactNode;
+  color: string;
+  settingKey: string;
+  fields: FieldDef[];
+  special?: 'github' | 'cluster';
+  multi?: boolean;
 }
 
-function PlatformCard({ icon, name, status, details, onEdit, onDisconnect, onConnect, onExpand, expanded, children }: PlatformCardProps) {
-  return (
-    <div style={{ background: V.bg, border: `1px solid ${V.border}`, borderRadius: 10, overflow: 'hidden' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0.875rem 1rem' }}>
-        <div style={{ width: 36, height: 36, borderRadius: 8, background: `${V.accent}12`, border: `1px solid ${V.accent}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: V.accent }}>
-          {icon}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-            <span style={{ fontWeight: 600, fontSize: '0.9rem', color: V.text }}>{name}</span>
-            <StatusPill status={status} />
-          </div>
-          <div style={{ fontSize: '0.75rem', color: V.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {details || (status === 'not_connected' ? 'Not connected' : '')}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-          {status === 'not_connected' && onConnect ? (
-            <button type="button" onClick={onConnect}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 7, border: 'none', background: V.accent, color: '#fff', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}>
-              Connect →
-            </button>
-          ) : status !== 'builtin' ? (
-            <>
-              {onEdit && <button type="button" onClick={onEdit} style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><Edit2 size={12} /></button>}
-              {onDisconnect && <button type="button" onClick={onDisconnect} style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${V.border}`, background: 'transparent', color: V.red, fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><Trash2 size={12} /></button>}
-            </>
-          ) : null}
-          {onExpand && (
-            <button type="button" onClick={onExpand} style={{ padding: '4px 6px', borderRadius: 6, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            </button>
-          )}
-        </div>
-      </div>
-      {expanded && children && (
-        <div style={{ borderTop: `1px solid ${V.border}`, padding: '0.875rem 1rem' }}>
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
+const CATALOG: CatalogEntry[] = [
+  // Source control
+  {
+    id: 'github', name: 'GitHub', category: 'source-control',
+    description: 'Connect repositories, trigger workflows, and pull code.',
+    icon: <GitBranch size={18} />, color: '#f0f0f5', settingKey: 'github', special: 'github',
+    fields: [{ key: 'pat', label: 'Personal Access Token', placeholder: 'ghp_xxxxxxxxxxxx', secret: true, hint: 'Needs repo, workflow scopes.' }],
+  },
+  {
+    id: 'gitlab', name: 'GitLab', category: 'source-control',
+    description: 'Connect GitLab projects, CI/CD pipelines, and merge requests.',
+    icon: <GitMerge size={18} />, color: '#fc6d26', settingKey: 'gitlab',
+    fields: [
+      { key: 'url', label: 'GitLab URL', placeholder: 'https://gitlab.com' },
+      { key: 'token', label: 'Access Token', placeholder: 'glpat-xxxxxxxxxxxx', secret: true },
+    ],
+  },
+  // Infrastructure
+  {
+    id: 'cluster', name: 'Kubernetes Cluster', category: 'infrastructure',
+    description: 'Add a cluster to monitor, deploy to, and diagnose.',
+    icon: <Server size={18} />, color: '#326ce5', settingKey: 'cluster',
+    special: 'cluster', multi: true, fields: [],
+  },
+  {
+    id: 'cloudflare', name: 'Cloudflare', category: 'infrastructure',
+    description: 'Manage DNS records and CDN configuration.',
+    icon: <Cloud size={18} />, color: '#f6821f', settingKey: 'cloudflare',
+    fields: [
+      { key: 'api_token', label: 'API Token', placeholder: 'Your Cloudflare API token', secret: true },
+      { key: 'zone_id', label: 'Zone ID (optional)', placeholder: 'Zone ID for DNS management' },
+    ],
+  },
+  // Secrets
+  {
+    id: 'hashicorp_vault', name: 'HashiCorp Vault', category: 'secrets',
+    description: 'Pull secrets from Vault for deployments and pipelines.',
+    icon: <Shield size={18} />, color: '#ffca28', settingKey: 'hashicorp_vault',
+    fields: [
+      { key: 'address', label: 'Vault Address', placeholder: 'https://vault.company.com' },
+      { key: 'token', label: 'Vault Token', placeholder: 'hvs.xxxxxxxxxxxx', secret: true },
+      { key: 'namespace', label: 'Namespace (optional)', placeholder: 'admin' },
+    ],
+  },
+  {
+    id: 'infisical', name: 'Infisical', category: 'secrets',
+    description: 'Sync secrets from Infisical projects automatically.',
+    icon: <Database size={18} />, color: '#a855f7', settingKey: 'infisical',
+    fields: [
+      { key: 'client_id', label: 'Client ID', placeholder: 'Your Infisical client ID' },
+      { key: 'client_secret', label: 'Client Secret', placeholder: 'Your Infisical client secret', secret: true },
+      { key: 'project_slug', label: 'Project Slug', placeholder: 'my-app' },
+    ],
+  },
+  {
+    id: 'aws_secrets', name: 'AWS Secrets Manager', category: 'secrets',
+    description: 'Pull secrets from AWS Secrets Manager.',
+    icon: <Cloud size={18} />, color: '#ff9900', settingKey: 'aws_secrets',
+    fields: [
+      { key: 'access_key_id', label: 'Access Key ID', placeholder: 'AKIA…' },
+      { key: 'secret_access_key', label: 'Secret Access Key', placeholder: 'Your AWS secret', secret: true },
+      { key: 'region', label: 'Region', placeholder: 'us-east-1' },
+    ],
+  },
+  {
+    id: 'azure_keyvault', name: 'Azure Key Vault', category: 'secrets',
+    description: 'Pull secrets from Azure Key Vault.',
+    icon: <Cloud size={18} />, color: '#0089d6', settingKey: 'azure_keyvault',
+    fields: [
+      { key: 'vault_url', label: 'Vault URL', placeholder: 'https://myvault.vault.azure.net' },
+      { key: 'client_id', label: 'Client ID', placeholder: 'Azure AD App client ID' },
+      { key: 'client_secret', label: 'Client Secret', placeholder: 'Azure AD client secret', secret: true },
+      { key: 'tenant_id', label: 'Tenant ID', placeholder: 'Azure tenant ID' },
+    ],
+  },
+  {
+    id: 'gcp_secrets', name: 'GCP Secret Manager', category: 'secrets',
+    description: 'Pull secrets from Google Cloud Secret Manager.',
+    icon: <Cloud size={18} />, color: '#4285f4', settingKey: 'gcp_secrets',
+    fields: [
+      { key: 'project_id', label: 'Project ID', placeholder: 'my-gcp-project' },
+      { key: 'service_account_json', label: 'Service Account JSON', placeholder: '{"type":"service_account"…}', secret: true },
+    ],
+  },
+  // Monitoring
+  {
+    id: 'grafana_external', name: 'Grafana', category: 'monitoring',
+    description: 'Embed dashboards from an external Grafana instance.',
+    icon: <BarChart2 size={18} />, color: '#f46800', settingKey: 'grafana_external',
+    fields: [
+      { key: 'url', label: 'Grafana URL', placeholder: 'https://grafana.company.com' },
+      { key: 'api_key', label: 'Service Account Token', placeholder: 'glsa_xxxxxxxxxxxx', secret: true },
+    ],
+  },
+  {
+    id: 'datadog', name: 'Datadog', category: 'monitoring',
+    description: 'Send metrics and events to Datadog.',
+    icon: <BarChart2 size={18} />, color: '#632ca6', settingKey: 'datadog',
+    fields: [
+      { key: 'api_key', label: 'API Key', placeholder: 'Your Datadog API key', secret: true },
+      { key: 'app_key', label: 'Application Key', placeholder: 'Your Datadog app key', secret: true },
+      { key: 'site', label: 'Site', placeholder: 'datadoghq.com' },
+    ],
+  },
+  {
+    id: 'newrelic', name: 'New Relic', category: 'monitoring',
+    description: 'Forward metrics and traces to New Relic.',
+    icon: <Activity size={18} />, color: '#1ce783', settingKey: 'newrelic',
+    fields: [
+      { key: 'license_key', label: 'License Key', placeholder: 'Your New Relic license key', secret: true },
+      { key: 'account_id', label: 'Account ID', placeholder: '1234567' },
+    ],
+  },
+  {
+    id: 'prometheus_external', name: 'Prometheus', category: 'monitoring',
+    description: 'Connect an external Prometheus instance.',
+    icon: <Zap size={18} />, color: '#e6522c', settingKey: 'prometheus_external',
+    fields: [
+      { key: 'url', label: 'Prometheus URL', placeholder: 'https://prometheus.company.com' },
+      { key: 'username', label: 'Username (optional)', placeholder: 'For basic auth' },
+      { key: 'password', label: 'Password (optional)', placeholder: 'For basic auth', secret: true },
+    ],
+  },
+];
 
-function SectionHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom: '0.625rem' }}>
-      <h2 style={{ margin: 0, fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.1em', color: V.muted, textTransform: 'uppercase' }}>{children}</h2>
-    </div>
-  );
-}
+const CATEGORIES: { id: Category; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'source-control', label: 'Source Control' },
+  { id: 'infrastructure', label: 'Infrastructure' },
+  { id: 'secrets', label: 'Secrets' },
+  { id: 'monitoring', label: 'Monitoring' },
+];
 
-// ─── GitHub Section ───────────────────────────────────────────────────────────
+// ─── Add / Edit Modal ─────────────────────────────────────────────────────────
 
-function GitHubCard() {
-  const [pat, setPat] = useState('');
-  const [username, setUsername] = useState<string | null>(null);
-  const [expiry, setExpiry] = useState('');
-  const [editing, setEditing] = useState(false);
-  const [saveErr, setSaveErr] = useState<string | null>(null);
+function AddModal({ entry, onClose, onSaved }: { entry: CatalogEntry; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [error, setError] = useState('');
+  const qc = useQueryClient();
+  const { addCluster } = useClusterStore();
 
-  useEffect(() => {
-    fetch('/api/settings/platform').then(r => r.json()).then(d => {
-      if (d.github?.pat) setPat(d.github.pat);
-      if (d.github?.username) setUsername(d.github.username);
-      if (d.github?.pat_expires_at) setExpiry(d.github.pat_expires_at);
-    }).catch(() => {});
-  }, []);
-
-  const connected = !!pat;
-  const status: PlatformStatus = connected ? 'connected' : 'not_connected';
+  // Cluster-specific form
+  const [clusterForm, setClusterForm] = useState({ name: '', environment: 'dev', connection_type: 'token', api_url: '', token: '' });
 
   async function handleSave() {
-    if (!pat) return;
-    setSaving(true); setSaveErr(null);
+    setSaving(true); setError('');
     try {
-      const vr = await fetch('/api/github/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pat }) });
-      const vd = await vr.json();
-      if (!vd.success) { setSaveErr(vd.error || 'Invalid token'); return; }
-      setUsername(vd.username);
-      await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.pat', value: pat }) });
-      if (vd.username) await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.username', value: vd.username }) });
-      setEditing(false);
+      if (entry.special === 'cluster') {
+        if (!clusterForm.name.trim()) throw new Error('Cluster name is required');
+        const r = await fetch('/api/settings/clusters', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(clusterForm) });
+        if (!r.ok) throw new Error((await r.json()).detail ?? 'Failed');
+        const d = await r.json();
+        addCluster(d.cluster);
+        qc.invalidateQueries({ queryKey: ['platforms-clusters'] });
+      } else if (entry.special === 'github') {
+        if (!form.pat?.trim()) throw new Error('Token is required');
+        const vr = await fetch('/api/github/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pat: form.pat }) });
+        const vd = await vr.json();
+        if (!vd.success) throw new Error(vd.error ?? 'Invalid token');
+        await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.pat', value: form.pat }) });
+        if (vd.username) await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.username', value: vd.username }) });
+      } else {
+        await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: entry.settingKey, value: JSON.stringify({ ...form, connected: true }) }) });
+      }
+      qc.invalidateQueries({ queryKey: ['platform-data'] });
+      onSaved();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', background: V.bg, border: `1px solid ${V.border}`,
+    borderRadius: 8, padding: '0.5rem 0.75rem', color: V.text,
+    fontSize: '0.875rem', boxSizing: 'border-box',
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 14, width: '100%', maxWidth: 480 }}>
+
+        {/* Modal header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '1.25rem 1.5rem', borderBottom: `1px solid ${V.border}` }}>
+          <div style={{ width: 36, height: 36, borderRadius: 8, background: `${entry.color}18`, border: `1px solid ${entry.color}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: entry.color, flexShrink: 0 }}>
+            {entry.icon}
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '0.95rem', fontWeight: 600, color: V.text }}>Connect {entry.name}</div>
+            <div style={{ fontSize: '0.78rem', color: V.muted }}>{entry.description}</div>
+          </div>
+          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', color: V.muted, cursor: 'pointer', padding: 4 }}><X size={16} /></button>
+        </div>
+
+        {/* Modal body */}
+        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {entry.special === 'cluster' ? (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>Cluster Name *</label>
+                  <input value={clusterForm.name} onChange={e => setClusterForm(f => ({ ...f, name: e.target.value }))} placeholder="prod-eks" style={inputStyle} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>Environment</label>
+                  <select value={clusterForm.environment} onChange={e => setClusterForm(f => ({ ...f, environment: e.target.value }))}
+                    style={{ ...inputStyle, colorScheme: 'dark' }}>
+                    <option value="dev">dev</option><option value="staging">staging</option><option value="prod">prod</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>API Server URL</label>
+                <input value={clusterForm.api_url} onChange={e => setClusterForm(f => ({ ...f, api_url: e.target.value }))} placeholder="https://k8s.example.com:6443" style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>Bearer Token</label>
+                <input type="password" value={clusterForm.token} onChange={e => setClusterForm(f => ({ ...f, token: e.target.value }))} placeholder="eyJhbGci…" style={inputStyle} />
+              </div>
+            </>
+          ) : (
+            entry.fields.map(f => (
+              <div key={f.key}>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>{f.label}</label>
+                {f.hint && <div style={{ fontSize: '0.73rem', color: V.muted, marginBottom: 6, opacity: 0.8 }}>{f.hint}</div>}
+                <input
+                  type={f.secret ? 'password' : 'text'}
+                  value={form[f.key] ?? ''}
+                  onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
+                  placeholder={f.placeholder}
+                  style={inputStyle}
+                />
+              </div>
+            ))
+          )}
+
+          {error && (
+            <div style={{ fontSize: '0.8rem', color: V.red, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <X size={12} />{error}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
+            <button type="button" onClick={handleSave} disabled={saving}
+              style={{ flex: 1, padding: '0.55rem', borderRadius: 8, border: 'none', background: V.accent, color: '#fff', fontSize: '0.875rem', fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              {saving ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle2 size={14} />}
+              {saving ? 'Connecting…' : (entry.special === 'github' ? 'Validate & Connect' : 'Connect')}
+            </button>
+            <button type="button" onClick={onClose}
+              style={{ padding: '0.55rem 1.25rem', borderRadius: 8, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.875rem', cursor: 'pointer' }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Edit Cluster Modal ───────────────────────────────────────────────────────
+
+function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfig; onClose: () => void; onSaved: () => void }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({ name: cluster.name, environment: cluster.environment, api_url: cluster.api_url ?? '', token: '' });
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await fetch(`/api/settings/clusters/${encodeURIComponent(cluster.name)}`, { method: 'DELETE' });
+      await fetch('/api/settings/clusters', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      qc.invalidateQueries({ queryKey: ['platforms-clusters'] });
+      onSaved();
     } finally { setSaving(false); }
   }
 
+  const inputStyle: React.CSSProperties = {
+    width: '100%', background: V.bg, border: `1px solid ${V.border}`,
+    borderRadius: 8, padding: '0.5rem 0.75rem', color: V.text,
+    fontSize: '0.875rem', boxSizing: 'border-box',
+  };
+
   return (
-    <PlatformCard
-      icon={<GitBranch size={18} />}
-      name="GitHub"
-      status={status}
-      details={username ? `@${username}${expiry ? ` · expires ${expiry}` : ''}` : undefined}
-      onEdit={connected && !editing ? () => setEditing(true) : undefined}
-      onDisconnect={connected && !editing ? async () => {
-        await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.pat', value: '' }) });
-        setPat(''); setUsername(null);
-      } : undefined}
-      onConnect={!connected ? () => setExpanded(true) : undefined}
-      onExpand={connected ? () => setExpanded(e => !e) : undefined}
-      expanded={expanded}
-    >
-      {editing || !connected ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-          <div style={{ fontSize: '0.8rem', color: V.muted, marginBottom: 4 }}>
-            Paste your GitHub Personal Access Token (needs <code>repo</code>, <code>workflow</code> scopes).
-            {' '}<a href="https://github.com/settings/tokens/new?scopes=repo,workflow,write:packages&description=InfraPilot" target="_blank" rel="noopener noreferrer" style={{ color: V.accent }}>Generate one →</a>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 14, width: '100%', maxWidth: 480 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '1.25rem 1.5rem', borderBottom: `1px solid ${V.border}` }}>
+          <div style={{ width: 36, height: 36, borderRadius: 8, background: '#326ce518', border: '1px solid #326ce530', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#326ce5', flexShrink: 0 }}>
+            <Server size={18} />
           </div>
-          <input type="password" value={pat.includes('***') ? '' : pat} onChange={e => setPat(e.target.value)}
-            placeholder="ghp_xxxxxxxxxxxx"
-            style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 8, padding: '0.5rem 0.75rem', color: V.text, fontSize: '0.875rem', boxSizing: 'border-box' }} />
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" onClick={handleSave} disabled={saving || !pat}
-              style={{ padding: '0.45rem 1rem', borderRadius: 7, border: 'none', background: V.accent, color: '#fff', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
-              {saving ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : null} Validate & Save
-            </button>
-            {editing && <button type="button" onClick={() => setEditing(false)} style={{ padding: '0.45rem 0.875rem', borderRadius: 7, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.8rem', cursor: 'pointer' }}>Cancel</button>}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '0.95rem', fontWeight: 600, color: V.text }}>Edit Cluster</div>
+            <div style={{ fontSize: '0.78rem', color: V.muted }}>{cluster.name}</div>
           </div>
-          {saveErr && <p style={{ margin: 0, fontSize: '0.78rem', color: V.red }}>✗ {saveErr}</p>}
+          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', color: V.muted, cursor: 'pointer' }}><X size={16} /></button>
         </div>
-      ) : null}
-    </PlatformCard>
+        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>Name</label>
+              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inputStyle} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>Environment</label>
+              <select value={form.environment} onChange={e => setForm(f => ({ ...f, environment: e.target.value as 'dev' | 'staging' | 'prod' }))} style={{ ...inputStyle, colorScheme: 'dark' }}>
+                <option value="dev">dev</option><option value="staging">staging</option><option value="prod">prod</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>API Server URL</label>
+            <input value={form.api_url} onChange={e => setForm(f => ({ ...f, api_url: e.target.value }))} placeholder="https://k8s.example.com:6443" style={inputStyle} />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>New Bearer Token (leave blank to keep)</label>
+            <input type="password" value={form.token} onChange={e => setForm(f => ({ ...f, token: e.target.value }))} placeholder="eyJhbGci…" style={inputStyle} />
+          </div>
+          <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
+            <button type="button" onClick={handleSave} disabled={saving}
+              style={{ flex: 1, padding: '0.55rem', borderRadius: 8, border: 'none', background: V.accent, color: '#fff', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer' }}>
+              {saving ? 'Saving…' : 'Save Changes'}
+            </button>
+            <button type="button" onClick={onClose}
+              style={{ padding: '0.55rem 1.25rem', borderRadius: 8, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.875rem', cursor: 'pointer' }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
-// ─── Clusters Section ─────────────────────────────────────────────────────────
+// ─── Connected item row ───────────────────────────────────────────────────────
 
-function ClustersSection() {
-  const { addCluster, removeCluster } = useClusterStore();
-  const qc = useQueryClient();
-  const [addOpen, setAddOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', environment: 'dev', connection_type: 'token', api_url: '', token: '' });
-  const [saving, setSaving] = useState(false);
-  const [editingCluster, setEditingCluster] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ name: '', environment: 'dev', connection_type: 'token', api_url: '', token: '' });
-  const [editSaving, setEditSaving] = useState(false);
-
-  const { data: clusters = [], isLoading } = useQuery({
-    queryKey: ['platforms-clusters'],
-    queryFn: () => fetch('/api/settings/clusters').then(r => r.json()).then(d => d.clusters as ClusterConfig[]),
-  });
-
-  async function handleAdd() {
-    setSaving(true);
-    try {
-      const r = await fetch('/api/settings/clusters', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
-      if (!r.ok) throw new Error((await r.json()).detail);
-      const d = await r.json();
-      addCluster(d.cluster);
-      qc.invalidateQueries({ queryKey: ['platforms-clusters'] });
-      setAddOpen(false);
-      setForm({ name: '', environment: 'dev', connection_type: 'token', api_url: '', token: '' });
-    } catch { /* toast */ } finally { setSaving(false); }
-  }
-
-  async function handleDelete(name: string) {
-    await fetch(`/api/settings/clusters/${encodeURIComponent(name)}`, { method: 'DELETE' });
-    removeCluster(name);
-    qc.invalidateQueries({ queryKey: ['platforms-clusters'] });
-  }
-
-  async function handleSaveEdit(originalName: string) {
-    setEditSaving(true);
-    try {
-      await fetch(`/api/settings/clusters/${encodeURIComponent(originalName)}`, { method: 'DELETE' });
-      const r = await fetch('/api/settings/clusters', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editForm) });
-      if (!r.ok) throw new Error((await r.json()).detail);
-      qc.invalidateQueries({ queryKey: ['platforms-clusters'] });
-      setEditingCluster(null);
-    } catch { /* toast */ } finally { setEditSaving(false); }
-  }
-
+function ConnectedRow({
+  entry, detail, onEdit, onDisconnect,
+}: {
+  entry: CatalogEntry; detail: string; onEdit: () => void; onDisconnect: () => void;
+}) {
+  const catLabel = CATEGORIES.find(c => c.id === entry.category)?.label ?? '';
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      {isLoading ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: V.muted, padding: '1rem' }}>
-          <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Loading clusters…
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '0.875rem 1rem', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10 }}>
+      <div style={{ width: 36, height: 36, borderRadius: 8, background: `${entry.color}18`, border: `1px solid ${entry.color}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: entry.color, flexShrink: 0 }}>
+        {entry.icon}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+          <span style={{ fontSize: '0.9rem', fontWeight: 600, color: V.text }}>{entry.name}</span>
+          <span style={{ fontSize: '0.68rem', color: V.green, background: 'rgba(63,185,80,0.1)', border: '1px solid rgba(63,185,80,0.2)', padding: '1px 7px', borderRadius: 100, fontWeight: 700 }}>● Connected</span>
+          <span style={{ fontSize: '0.68rem', color: V.muted, background: V.bg, border: `1px solid ${V.border}`, padding: '1px 7px', borderRadius: 100 }}>{catLabel}</span>
         </div>
-      ) : (
-        clusters.map(c => (
-          <div key={c.name}>
-            <PlatformCard
-              icon={<Server size={18} />}
-              name={c.name}
-              status="connected"
-              details={`${c.environment} · ${c.connection_type === 'kubeconfig' ? 'kubeconfig' : c.api_url || 'Bearer Token'}`}
-              onEdit={() => { setEditingCluster(c.name); setEditForm({ name: c.name, environment: c.environment, connection_type: c.connection_type, api_url: c.api_url ?? '', token: '' }); }}
-              onDisconnect={() => handleDelete(c.name)}
-            />
-            {editingCluster === c.name && (
-              <div style={{ background: V.bg, border: `1px solid ${V.accent}40`, borderRadius: 10, padding: '0.875rem 1rem', marginTop: 4 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.625rem', marginBottom: '0.625rem' }}>
-                  <div>
-                    <label style={{ display: 'block', color: V.muted, fontSize: '0.75rem', marginBottom: 3 }}>Name</label>
-                    <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
-                      style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.4rem 0.625rem', color: V.text, fontSize: '0.82rem', boxSizing: 'border-box' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', color: V.muted, fontSize: '0.75rem', marginBottom: 3 }}>Environment</label>
-                    <select value={editForm.environment} onChange={e => setEditForm(f => ({ ...f, environment: e.target.value }))} style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.4rem 0.625rem', color: V.text, fontSize: '0.82rem', colorScheme: 'dark' }}>
-                      <option>dev</option><option>staging</option><option>prod</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', color: V.muted, fontSize: '0.75rem', marginBottom: 3 }}>API Server URL</label>
-                    <input value={editForm.api_url} onChange={e => setEditForm(f => ({ ...f, api_url: e.target.value }))} placeholder="https://k8s.example.com:6443"
-                      style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.4rem 0.625rem', color: V.text, fontSize: '0.82rem', boxSizing: 'border-box' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', color: V.muted, fontSize: '0.75rem', marginBottom: 3 }}>New Bearer Token (leave blank to keep)</label>
-                    <input type="password" value={editForm.token} onChange={e => setEditForm(f => ({ ...f, token: e.target.value }))} placeholder="eyJhbGci…"
-                      style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.4rem 0.625rem', color: V.text, fontSize: '0.82rem', boxSizing: 'border-box' }} />
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button type="button" onClick={() => handleSaveEdit(c.name)} disabled={editSaving}
-                    style={{ padding: '0.45rem 1rem', borderRadius: 7, border: 'none', background: V.accent, color: '#fff', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
-                    {editSaving ? 'Saving…' : 'Save Changes'}
-                  </button>
-                  <button type="button" onClick={() => setEditingCluster(null)} style={{ padding: '0.45rem 0.875rem', borderRadius: 7, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.8rem', cursor: 'pointer' }}>Cancel</button>
-                </div>
-              </div>
-            )}
-          </div>
-        ))
-      )}
-      {addOpen ? (
-        <div style={{ background: V.bg, border: `1px solid ${V.accent}40`, borderRadius: 10, padding: '0.875rem 1rem' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.625rem', marginBottom: '0.625rem' }}>
-            <div>
-              <label style={{ display: 'block', color: V.muted, fontSize: '0.75rem', marginBottom: 3 }}>Name *</label>
-              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="dev-aks"
-                style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.4rem 0.625rem', color: V.text, fontSize: '0.82rem', boxSizing: 'border-box' }} />
-            </div>
-            <div>
-              <label style={{ display: 'block', color: V.muted, fontSize: '0.75rem', marginBottom: 3 }}>Environment</label>
-              <select value={form.environment} onChange={e => setForm(f => ({ ...f, environment: e.target.value }))} style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.4rem 0.625rem', color: V.text, fontSize: '0.82rem', colorScheme: 'dark' }}>
-                <option>dev</option><option>staging</option><option>prod</option>
-              </select>
-            </div>
-            <div>
-              <label style={{ display: 'block', color: V.muted, fontSize: '0.75rem', marginBottom: 3 }}>API Server URL</label>
-              <input value={form.api_url} onChange={e => setForm(f => ({ ...f, api_url: e.target.value }))} placeholder="https://k8s.example.com:6443"
-                style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.4rem 0.625rem', color: V.text, fontSize: '0.82rem', boxSizing: 'border-box' }} />
-            </div>
-            <div>
-              <label style={{ display: 'block', color: V.muted, fontSize: '0.75rem', marginBottom: 3 }}>Bearer Token</label>
-              <input type="password" value={form.token} onChange={e => setForm(f => ({ ...f, token: e.target.value }))} placeholder="eyJhbGci…"
-                style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.4rem 0.625rem', color: V.text, fontSize: '0.82rem', boxSizing: 'border-box' }} />
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" onClick={handleAdd} disabled={saving || !form.name}
-              style={{ padding: '0.45rem 1rem', borderRadius: 7, border: 'none', background: V.accent, color: '#fff', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', opacity: !form.name ? 0.5 : 1 }}>
-              {saving ? 'Adding…' : 'Add Cluster'}
-            </button>
-            <button type="button" onClick={() => setAddOpen(false)} style={{ padding: '0.45rem 0.875rem', borderRadius: 7, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.8rem', cursor: 'pointer' }}>Cancel</button>
-          </div>
+        <div style={{ fontSize: '0.75rem', color: V.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{detail}</div>
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+        <button type="button" onClick={onEdit}
+          style={{ padding: '5px 10px', borderRadius: 7, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <Edit2 size={11} /> Edit
+        </button>
+        <button type="button" onClick={onDisconnect}
+          style={{ padding: '5px 10px', borderRadius: 7, border: `1px solid rgba(248,81,73,0.3)`, background: 'transparent', color: V.red, fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <Trash2 size={11} /> Remove
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Catalog result card ──────────────────────────────────────────────────────
+
+function CatalogCard({ entry, isConnected, onAdd }: { entry: CatalogEntry; isConnected: boolean; onAdd: () => void }) {
+  const catLabel = CATEGORIES.find(c => c.id === entry.category)?.label ?? '';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '0.875rem 1rem', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10, transition: 'border-color 0.15s' }}>
+      <div style={{ width: 38, height: 38, borderRadius: 9, background: `${entry.color}18`, border: `1px solid ${entry.color}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: entry.color, flexShrink: 0 }}>
+        {entry.icon}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3 }}>
+          <span style={{ fontSize: '0.88rem', fontWeight: 600, color: V.text }}>{entry.name}</span>
+          <span style={{ fontSize: '0.67rem', color: V.muted, background: V.bg, border: `1px solid ${V.border}`, padding: '1px 6px', borderRadius: 100 }}>{catLabel}</span>
         </div>
+        <div style={{ fontSize: '0.75rem', color: V.muted }}>{entry.description}</div>
+      </div>
+      {isConnected ? (
+        <span style={{ fontSize: '0.72rem', color: V.green, background: 'rgba(63,185,80,0.1)', border: '1px solid rgba(63,185,80,0.2)', padding: '3px 10px', borderRadius: 100, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
+          ● Connected
+        </span>
       ) : (
-        <button type="button" onClick={() => setAddOpen(true)}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0.5rem 0.875rem', borderRadius: 8, border: `1px dashed ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.8rem', cursor: 'pointer', width: 'fit-content' }}>
-          <Plus size={13} /> Add Cluster
+        <button type="button" onClick={onAdd}
+          style={{ padding: '5px 14px', borderRadius: 7, border: 'none', background: V.accent, color: '#fff', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
+          <Plus size={12} /> Add
         </button>
       )}
     </div>
   );
 }
 
-// ─── External vault card ──────────────────────────────────────────────────────
-
-function ExternalVaultCard({ name, icon, settingKey, fields }: { name: string; icon: React.ReactNode; settingKey: string; fields: { key: string; label: string; placeholder: string; secret?: boolean }[] }) {
-  const [connected, setConnected] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  const [form, setForm] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    fetch('/api/settings/platform').then(r => r.json()).then(d => {
-      const val = d[settingKey];
-      if (val && typeof val === 'object' && val.connected) setConnected(true);
-    }).catch(() => {});
-  }, [settingKey]);
-
-  async function handleSave() {
-    setSaving(true);
-    try {
-      await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: settingKey, value: JSON.stringify({ ...form, connected: true }) }) });
-      setConnected(true); setExpanded(false);
-    } finally { setSaving(false); }
-  }
-
-  return (
-    <PlatformCard
-      icon={icon}
-      name={name}
-      status={connected ? 'untested' : 'not_connected'}
-      details={connected ? 'Credentials saved — click Test to verify' : undefined}
-      onConnect={!connected ? () => setExpanded(true) : undefined}
-      onEdit={connected ? () => setExpanded(e => !e) : undefined}
-      onDisconnect={connected ? async () => {
-        await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: settingKey, value: '' }) });
-        setConnected(false); setForm({});
-      } : undefined}
-      onExpand={connected ? () => setExpanded(e => !e) : undefined}
-      expanded={expanded}
-    >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-        {fields.map(f => (
-          <div key={f.key}>
-            <label style={{ display: 'block', color: V.muted, fontSize: '0.75rem', marginBottom: 3 }}>{f.label}</label>
-            <input type={f.secret ? 'password' : 'text'} value={form[f.key] ?? ''} onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
-              placeholder={f.placeholder}
-              style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.4rem 0.625rem', color: V.text, fontSize: '0.82rem', boxSizing: 'border-box' }} />
-          </div>
-        ))}
-        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-          <button type="button" onClick={handleSave} disabled={saving}
-            style={{ padding: '0.45rem 1rem', borderRadius: 7, border: 'none', background: V.accent, color: '#fff', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-          <button type="button" onClick={() => setExpanded(false)} style={{ padding: '0.45rem 0.875rem', borderRadius: 7, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.8rem', cursor: 'pointer' }}>Cancel</button>
-        </div>
-      </div>
-    </PlatformCard>
-  );
-}
-
-// ─── InfraPilot Monitor card ──────────────────────────────────────────────────
-
-function InfraPilotMonitorCard() {
-  const [status, setStatus] = useState<{ prometheus_running?: boolean; clusters_monitored?: number } | null>(null);
-
-  useEffect(() => {
-    fetch('/api/monitoring/status').then(r => r.json()).then(setStatus).catch(() => {});
-  }, []);
-
-  const details = status
-    ? `Prometheus ${status.prometheus_running ? 'running' : 'not running'} · ${status.clusters_monitored ?? 0} cluster${status.clusters_monitored !== 1 ? 's' : ''} monitored · 30-day retention`
-    : 'Automatic time-series monitoring for connected clusters';
-
-  return (
-    <PlatformCard
-      icon={<Activity size={18} />}
-      name="InfraPilot Monitor"
-      status="builtin"
-      details={details}
-    />
-  );
-}
-
-// ─── Main PlatformsPage ───────────────────────────────────────────────────────
+// ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function PlatformsPage() {
+  const { removeCluster } = useClusterStore();
+
+  const [search, setSearch] = useState('');
+  const [category, setCategory] = useState<Category>('all');
+  const [addEntry, setAddEntry] = useState<CatalogEntry | null>(null);
+  const [editCluster, setEditCluster] = useState<ClusterConfig | null>(null);
+  const [editEntry, setEditEntry] = useState<CatalogEntry | null>(null);
+
+  // ── Fetch platform data ──
+  const { data: platformData = {}, refetch: refetchPlatform } = useQuery<Record<string, Record<string, string> | string>>({
+    queryKey: ['platform-data'],
+    queryFn: () => fetch('/api/settings/platform').then(r => r.json()),
+    staleTime: 10_000,
+  });
+
+  const { data: clusters = [], refetch: refetchClusters } = useQuery<ClusterConfig[]>({
+    queryKey: ['platforms-clusters'],
+    queryFn: () => fetch('/api/settings/clusters').then(r => r.json()).then(d => d.clusters ?? []),
+    staleTime: 10_000,
+  });
+
+  // ── Derive which catalog entries are connected ──
+  const connectedIds = useMemo<Set<string>>(() => {
+    const ids = new Set<string>();
+    const gh = platformData.github as Record<string, string> | undefined;
+    if (gh?.pat) ids.add('github');
+    for (const entry of CATALOG) {
+      if (entry.special === 'github' || entry.special === 'cluster') continue;
+      const val = platformData[entry.settingKey] as Record<string, string> | undefined;
+      if (val?.connected) ids.add(entry.id);
+    }
+    if (clusters.length > 0) ids.add('cluster');
+    return ids;
+  }, [platformData, clusters]);
+
+  // ── Search / filter logic ──
+  const q = search.toLowerCase().trim();
+  const filtered = useMemo(() => CATALOG.filter(e => {
+    const matchCat = category === 'all' || e.category === category;
+    const matchSearch = !q || e.name.toLowerCase().includes(q) || e.description.toLowerCase().includes(q) || e.category.includes(q);
+    return matchCat && matchSearch;
+  }), [q, category]);
+
+  async function disconnectEntry(entry: CatalogEntry) {
+    if (!confirm(`Remove ${entry.name}?`)) return;
+    if (entry.special === 'github') {
+      await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.pat', value: '' }) });
+    } else {
+      await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: entry.settingKey, value: '' }) });
+    }
+    refetchPlatform();
+  }
+
+  async function disconnectCluster(name: string) {
+    if (!confirm(`Remove cluster "${name}"?`)) return;
+    await fetch(`/api/settings/clusters/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    removeCluster(name);
+    refetchClusters();
+  }
+
+  function connectedDetail(entry: CatalogEntry): string {
+    if (entry.special === 'github') {
+      const gh = platformData.github as Record<string, string> | undefined;
+      return gh?.username ? `@${gh.username}` : 'Connected';
+    }
+    return 'Credentials saved';
+  }
+
+  const showSearch = q.length > 0 || category !== 'all';
+  const connectedSingletons = CATALOG.filter(e => e.special !== 'cluster' && connectedIds.has(e.id));
+
   return (
-    <div style={{ maxWidth: 760, margin: '0 auto', padding: '1.5rem' }}>
+    <div style={{ maxWidth: 760, margin: '0 auto', padding: '1.75rem 1.5rem' }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
       {/* Header */}
-      <div style={{ marginBottom: '2rem' }}>
-        <h1 style={{ margin: '0 0 6px', fontSize: '1.4rem', fontWeight: 700, color: V.text }}>Connected Platforms</h1>
-        <p style={{ margin: 0, color: V.muted, fontSize: '0.875rem' }}>Manage your integrations and credentials</p>
+      <div style={{ marginBottom: '1.5rem' }}>
+        <h1 style={{ margin: '0 0 4px', fontSize: '1.35rem', fontWeight: 700, color: V.text }}>Integrations</h1>
+        <p style={{ margin: 0, color: V.muted, fontSize: '0.85rem' }}>Search and connect external services to InfraPilot.</p>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-
-        {/* Section A: Infrastructure & Cloud */}
-        <section>
-          <SectionHeader>Infrastructure &amp; Cloud</SectionHeader>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <GitHubCard />
-            <ExternalVaultCard
-              name="GitLab"
-              icon={<GitMerge size={18} />}
-              settingKey="gitlab"
-              fields={[
-                { key: 'url', label: 'GitLab URL', placeholder: 'https://gitlab.com' },
-                { key: 'token', label: 'Access Token', placeholder: 'glpat-xxxxxxxxxxxx', secret: true },
-              ]}
-            />
-            <ClustersSection />
-            <ExternalVaultCard
-              name="Cloudflare"
-              icon={<Cloud size={18} />}
-              settingKey="cloudflare"
-              fields={[
-                { key: 'api_token', label: 'API Token', placeholder: 'Your Cloudflare API token', secret: true },
-                { key: 'zone_id', label: 'Zone ID (optional)', placeholder: 'Zone ID for DNS management' },
-              ]}
-            />
-          </div>
-        </section>
-
-        {/* Section B: Secrets & Vaults */}
-        <section>
-          <SectionHeader>Secrets &amp; Vaults</SectionHeader>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <ExternalVaultCard
-              name="HashiCorp Vault"
-              icon={<Shield size={18} />}
-              settingKey="hashicorp_vault"
-              fields={[
-                { key: 'address', label: 'Vault Address', placeholder: 'https://vault.company.com' },
-                { key: 'token', label: 'Vault Token', placeholder: 'hvs.xxxxxxxxxxxx', secret: true },
-                { key: 'namespace', label: 'Namespace (optional)', placeholder: 'admin' },
-              ]}
-            />
-            <ExternalVaultCard
-              name="Infisical"
-              icon={<Database size={18} />}
-              settingKey="infisical"
-              fields={[
-                { key: 'client_id', label: 'Client ID', placeholder: 'Your Infisical client ID' },
-                { key: 'client_secret', label: 'Client Secret', placeholder: 'Your Infisical client secret', secret: true },
-                { key: 'project_slug', label: 'Project Slug', placeholder: 'my-app' },
-              ]}
-            />
-            <ExternalVaultCard
-              name="AWS Secrets Manager"
-              icon={<Cloud size={18} />}
-              settingKey="aws_secrets"
-              fields={[
-                { key: 'access_key_id', label: 'Access Key ID', placeholder: 'AKIA…' },
-                { key: 'secret_access_key', label: 'Secret Access Key', placeholder: 'Your AWS secret', secret: true },
-                { key: 'region', label: 'Region', placeholder: 'us-east-1' },
-              ]}
-            />
-            <ExternalVaultCard
-              name="Azure Key Vault"
-              icon={<Cloud size={18} />}
-              settingKey="azure_keyvault"
-              fields={[
-                { key: 'vault_url', label: 'Vault URL', placeholder: 'https://myvault.vault.azure.net' },
-                { key: 'client_id', label: 'Client ID', placeholder: 'Azure AD App client ID' },
-                { key: 'client_secret', label: 'Client Secret', placeholder: 'Azure AD client secret', secret: true },
-                { key: 'tenant_id', label: 'Tenant ID', placeholder: 'Azure tenant ID' },
-              ]}
-            />
-            <ExternalVaultCard
-              name="GCP Secret Manager"
-              icon={<Cloud size={18} />}
-              settingKey="gcp_secrets"
-              fields={[
-                { key: 'project_id', label: 'Project ID', placeholder: 'my-gcp-project' },
-                { key: 'service_account_json', label: 'Service Account JSON', placeholder: '{"type":"service_account"…}', secret: true },
-              ]}
-            />
-          </div>
-        </section>
-
-        {/* Section C: Monitoring & Observability */}
-        <section>
-          <SectionHeader>Monitoring &amp; Observability</SectionHeader>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <InfraPilotMonitorCard />
-            <ExternalVaultCard
-              name="Grafana"
-              icon={<BarChart2 size={18} />}
-              settingKey="grafana_external"
-              fields={[
-                { key: 'url', label: 'Grafana URL', placeholder: 'https://grafana.company.com' },
-                { key: 'api_key', label: 'Service Account Token', placeholder: 'glsa_xxxxxxxxxxxx', secret: true },
-              ]}
-            />
-            <ExternalVaultCard
-              name="Datadog"
-              icon={<BarChart2 size={18} />}
-              settingKey="datadog"
-              fields={[
-                { key: 'api_key', label: 'API Key', placeholder: 'Your Datadog API key', secret: true },
-                { key: 'app_key', label: 'Application Key', placeholder: 'Your Datadog app key', secret: true },
-                { key: 'site', label: 'Site', placeholder: 'datadoghq.com' },
-              ]}
-            />
-            <ExternalVaultCard
-              name="New Relic"
-              icon={<Activity size={18} />}
-              settingKey="newrelic"
-              fields={[
-                { key: 'license_key', label: 'License Key', placeholder: 'Your New Relic license key', secret: true },
-                { key: 'account_id', label: 'Account ID', placeholder: '1234567' },
-              ]}
-            />
-            <ExternalVaultCard
-              name="Prometheus (external)"
-              icon={<Zap size={18} />}
-              settingKey="prometheus_external"
-              fields={[
-                { key: 'url', label: 'Prometheus URL', placeholder: 'https://prometheus.company.com' },
-                { key: 'username', label: 'Username (optional)', placeholder: 'For basic auth' },
-                { key: 'password', label: 'Password (optional)', placeholder: 'For basic auth', secret: true },
-              ]}
-            />
-          </div>
-        </section>
+      {/* Search bar */}
+      <div style={{ position: 'relative', marginBottom: '0.875rem' }}>
+        <Search size={15} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', pointerEvents: 'none' }} />
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search integrations — GitHub, AWS, Datadog, Vault…"
+          style={{
+            width: '100%', boxSizing: 'border-box', paddingLeft: 40, paddingRight: search ? 36 : 14,
+            paddingTop: '0.65rem', paddingBottom: '0.65rem',
+            background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10,
+            color: V.text, fontSize: '0.9rem', outline: 'none',
+          }}
+        />
+        {search && (
+          <button type="button" onClick={() => setSearch('')}
+            style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 2 }}>
+            <X size={14} />
+          </button>
+        )}
       </div>
+
+      {/* Category pills */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+        {CATEGORIES.map(c => (
+          <button key={c.id} type="button" onClick={() => setCategory(c.id)}
+            style={{
+              padding: '4px 14px', borderRadius: 100, border: `1px solid ${category === c.id ? V.accent : V.border}`,
+              background: category === c.id ? `${V.accent}18` : 'transparent',
+              color: category === c.id ? V.accent : V.muted,
+              fontSize: '0.78rem', fontWeight: category === c.id ? 700 : 400, cursor: 'pointer',
+            }}>
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Search results ── */}
+      {showSearch ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: '2rem', textAlign: 'center', color: V.muted, fontSize: '0.875rem', background: V.surface, borderRadius: 10, border: `1px solid ${V.border}` }}>
+              No integrations found for "{search || CATEGORIES.find(c => c.id === category)?.label}"
+            </div>
+          ) : (
+            filtered.map(entry => (
+              <CatalogCard
+                key={entry.id}
+                entry={entry}
+                isConnected={connectedIds.has(entry.id)}
+                onAdd={() => setAddEntry(entry)}
+              />
+            ))
+          )}
+        </div>
+      ) : (
+        /* ── Connected view (no active search) ── */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+          {/* Connected singletons (GitHub, GitLab, Cloudflare, etc.) */}
+          {connectedSingletons.length > 0 && (
+            <div>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.1em', color: V.muted, textTransform: 'uppercase', marginBottom: '0.625rem' }}>
+                Connected — {connectedSingletons.length + (clusters.length > 0 ? clusters.length : 0)}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {connectedSingletons.map(entry => (
+                  <ConnectedRow
+                    key={entry.id}
+                    entry={entry}
+                    detail={connectedDetail(entry)}
+                    onEdit={() => setEditEntry(entry)}
+                    onDisconnect={() => disconnectEntry(entry)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Connected clusters */}
+          {clusters.length > 0 && (
+            <div>
+              {connectedSingletons.length === 0 && (
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.1em', color: V.muted, textTransform: 'uppercase', marginBottom: '0.625rem' }}>
+                  Connected — {clusters.length}
+                </div>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {clusters.map(c => {
+                  return (
+                    <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '0.875rem 1rem', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 8, background: '#326ce518', border: '1px solid #326ce530', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#326ce5', flexShrink: 0 }}>
+                        <Server size={18} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                          <span style={{ fontSize: '0.9rem', fontWeight: 600, color: V.text }}>{c.name}</span>
+                          <span style={{ fontSize: '0.68rem', color: V.green, background: 'rgba(63,185,80,0.1)', border: '1px solid rgba(63,185,80,0.2)', padding: '1px 7px', borderRadius: 100, fontWeight: 700 }}>● Connected</span>
+                          <span style={{ fontSize: '0.68rem', color: V.muted, background: V.bg, border: `1px solid ${V.border}`, padding: '1px 7px', borderRadius: 100 }}>{c.environment}</span>
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: V.muted }}>{c.api_url || 'Bearer token auth'}</div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                        <button type="button" onClick={() => setEditCluster(c)}
+                          style={{ padding: '5px 10px', borderRadius: 7, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <Edit2 size={11} /> Edit
+                        </button>
+                        <button type="button" onClick={() => disconnectCluster(c.name)}
+                          style={{ padding: '5px 10px', borderRadius: 7, border: 'solid rgba(248,81,73,0.3)', borderWidth: 1, background: 'transparent', color: V.red, fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <Trash2 size={11} /> Remove
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Add cluster button (always visible) */}
+          <div>
+            <button type="button" onClick={() => setAddEntry(CATALOG.find(e => e.id === 'cluster')!)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0.5rem 0.875rem', borderRadius: 8, border: `1px dashed ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.8rem', cursor: 'pointer' }}>
+              <Plus size={13} /> Add Kubernetes Cluster
+            </button>
+          </div>
+
+          {/* Empty state */}
+          {connectedSingletons.length === 0 && clusters.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '3rem 1.5rem', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 12 }}>
+              <div style={{ fontSize: '2rem', marginBottom: 12 }}>🔌</div>
+              <div style={{ fontSize: '1rem', fontWeight: 600, color: V.text, marginBottom: 6 }}>No integrations connected yet</div>
+              <div style={{ fontSize: '0.85rem', color: V.muted, marginBottom: 20 }}>Search above to add GitHub, AWS, Datadog, Vault, and more.</div>
+              <button type="button" onClick={() => { const el = document.querySelector('input[placeholder*="Search"]') as HTMLInputElement; el?.focus(); }}
+                style={{ padding: '0.55rem 1.25rem', borderRadius: 8, border: 'none', background: V.accent, color: '#fff', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Search size={14} /> Search integrations
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Modals ── */}
+      {addEntry && (
+        <AddModal
+          entry={addEntry}
+          onClose={() => setAddEntry(null)}
+          onSaved={() => { setAddEntry(null); refetchPlatform(); refetchClusters(); }}
+        />
+      )}
+
+      {editEntry && (
+        <AddModal
+          entry={editEntry}
+          onClose={() => setEditEntry(null)}
+          onSaved={() => { setEditEntry(null); refetchPlatform(); }}
+        />
+      )}
+
+      {editCluster && (
+        <EditClusterModal
+          cluster={editCluster}
+          onClose={() => setEditCluster(null)}
+          onSaved={() => { setEditCluster(null); refetchClusters(); }}
+        />
+      )}
     </div>
   );
 }
