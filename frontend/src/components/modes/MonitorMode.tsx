@@ -8,7 +8,34 @@ import {
 } from 'lucide-react';
 import { useClusterStore } from '../../store/clusterStore';
 import { useClusterOverview, useNamespaces, useResources, useNodeMetrics } from '../../hooks/useKubernetes';
-import type { ClusterConfig, ClusterOverview } from '../../types';
+import type { ClusterConfig, ClusterOverview, K8sNode } from '../../types';
+
+// ─── Design tokens ────────────────────────────────────────────────────────────
+
+const C = {
+  bg:      '#0d0d12',
+  surface: '#111118',
+  border:  '#1e1e2a',
+  rowWarn: '#0f0e0a',
+  rowErr:  '#100d0d',
+  badgeErr:'#2a1515',
+  primary: '#f0f0f5',
+  muted:   '#8b8b9e',
+  dim:     '#5a5a6e',
+  dead:    '#3a3a4a',
+  accent:  '#6366f1',
+  success: '#22c55e',
+  warning: '#f59e0b',
+  error:   '#ef4444',
+} as const;
+
+function barColor(pct: number) {
+  if (pct > 85) return C.error;
+  if (pct > 60) return C.warning;
+  return C.accent;
+}
+
+// ─── Incident type ────────────────────────────────────────────────────────────
 
 interface Incident {
   id: string;
@@ -25,30 +52,31 @@ interface Incident {
   snoozed_until?: string;
 }
 
-// ─── Demo data (cost/drift) ───────────────────────────────────────────────────
+// ─── Demo data ────────────────────────────────────────────────────────────────
+
 const SPEND_DATA = [
-  { service: 'EC2', monthly: 842, color: '#f97316' },
-  { service: 'RDS', monthly: 380, color: 'var(--success)' },
-  { service: 'EKS', monthly: 320, color: '#3b82f6' },
+  { service: 'EC2',        monthly: 842, color: '#f97316' },
+  { service: 'RDS',        monthly: 380, color: C.success },
+  { service: 'EKS',        monthly: 320, color: '#3b82f6' },
   { service: 'CloudFront', monthly: 185, color: '#a855f7' },
-  { service: 'S3', monthly: 43, color: '#eab308' },
-  { service: 'Other', monthly: 115, color: '#6b7280' },
+  { service: 'S3',         monthly: 43,  color: '#eab308' },
+  { service: 'Other',      monthly: 115, color: '#6b7280' },
 ];
 const DRIFT_RESOURCES = [
   { resource: 'aws_security_group.web-sg', type: 'aws_security_group', expected: 'port 443 only', actual: 'ports 443, 8080 open', severity: 'high' as const },
-  { resource: 'aws_instance.bastion', type: 'aws_instance', expected: 't3.micro', actual: 't3.medium', severity: 'medium' as const },
-  { resource: 'aws_s3_bucket.assets', type: 'aws_s3_bucket', expected: 'versioning: enabled', actual: 'versioning: disabled', severity: 'high' as const },
+  { resource: 'aws_instance.bastion',      type: 'aws_instance',       expected: 't3.micro',       actual: 't3.medium',           severity: 'medium' as const },
+  { resource: 'aws_s3_bucket.assets',      type: 'aws_s3_bucket',      expected: 'versioning: enabled', actual: 'versioning: disabled', severity: 'high' as const },
 ];
 const OPTIMIZATIONS = [
-  { title: 'Right-size EC2 instances', desc: '4 instances at ~15% avg CPU. Downgrade to t3.small.', saving: '$218/mo' },
-  { title: 'Reserve 3× RDS instances', desc: '1-year Reserved Instances for predictable workload.', saving: '$148/mo' },
-  { title: 'Enable S3 Intelligent-Tiering', desc: 'Move infrequently accessed objects automatically.', saving: '$31/mo' },
-  { title: 'Delete 12 unused snapshots', desc: 'Snapshots older than 90 days with no attached volume.', saving: '$22/mo' },
+  { title: 'Right-size EC2 instances',     desc: '4 instances at ~15% avg CPU. Downgrade to t3.small.',           saving: '$218/mo' },
+  { title: 'Reserve 3× RDS instances',     desc: '1-year Reserved Instances for predictable workload.',           saving: '$148/mo' },
+  { title: 'Enable S3 Intelligent-Tiering',desc: 'Move infrequently accessed objects automatically.',              saving: '$31/mo' },
+  { title: 'Delete 12 unused snapshots',   desc: 'Snapshots older than 90 days with no attached volume.',         saving: '$22/mo' },
 ];
-const SEV_COLORS: Record<'high' | 'medium' | 'low', string> = { high: 'var(--error)', medium: 'var(--warning)', low: 'var(--info)' };
+const SEV_COLORS: Record<'high' | 'medium' | 'low', string> = { high: C.error, medium: C.warning, low: '#60a5fa' };
 const maxSpend = Math.max(...SPEND_DATA.map((d) => d.monthly));
 
-// ─── Inline token fix form ────────────────────────────────────────────────────
+// ─── Token fix form ───────────────────────────────────────────────────────────
 
 function isTokenError(error?: string) {
   return error && /401|unauthorized|token.*expir|invalid.*token|authentication|forbidden/i.test(error);
@@ -64,72 +92,61 @@ function TokenFixForm({ cluster, onClose, onSaved }: TokenFixFormProps) {
   const [connType, setConnType] = useState<'token' | 'kubeconfig'>(
     cluster.connection_type === 'kubeconfig' ? 'kubeconfig' : 'token'
   );
-  const [apiUrl, setApiUrl] = useState(cluster.api_url ?? '');
-  const [token, setToken] = useState('');
+  const [apiUrl,     setApiUrl]     = useState(cluster.api_url ?? '');
+  const [token,      setToken]      = useState('');
   const [kubeconfig, setKubeconfig] = useState('');
-  const [showToken, setShowToken] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [showToken,  setShowToken]  = useState(false);
+  const [testing,    setTesting]    = useState(false);
+  const [saving,     setSaving]     = useState(false);
   const [testResult, setTestResult] = useState<{ healthy?: boolean; error?: string; version?: string } | null>(null);
-  const [confirmProd, setConfirmProd] = useState(false);
+  const [confirmProd,setConfirmProd]= useState(false);
 
   async function handleTest() {
-    setTesting(true);
-    setTestResult(null);
+    setTesting(true); setTestResult(null);
     try {
       const body: Record<string, string> = { connection_type: connType };
-      if (apiUrl) body.api_url = apiUrl;
-      if (token) body.token = token;
+      if (apiUrl)     body.api_url    = apiUrl;
+      if (token)      body.token      = token;
       if (kubeconfig) body.kubeconfig = kubeconfig;
       const r = await fetch(`/api/settings/clusters/${encodeURIComponent(cluster.name)}/test`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       });
       setTestResult(await r.json());
-    } catch (e) {
-      setTestResult({ healthy: false, error: String(e) });
-    } finally {
-      setTesting(false);
-    }
+    } catch (e) { setTestResult({ healthy: false, error: String(e) }); }
+    finally { setTesting(false); }
   }
 
   async function doSave() {
     setSaving(true);
     try {
       const body: Record<string, string> = { connection_type: connType };
-      if (apiUrl) body.api_url = apiUrl;
-      if (token) body.token = token;
+      if (apiUrl)     body.api_url    = apiUrl;
+      if (token)      body.token      = token;
       if (kubeconfig) body.kubeconfig = kubeconfig;
       const r = await fetch(`/api/settings/clusters/${encodeURIComponent(cluster.name)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       });
       if (!r.ok) throw new Error('Save failed');
-      onSaved();
-      onClose();
-    } catch (e) {
-      setTestResult({ healthy: false, error: String(e) });
-    } finally {
-      setSaving(false);
-    }
+      onSaved(); onClose();
+    } catch (e) { setTestResult({ healthy: false, error: String(e) }); }
+    finally { setSaving(false); }
   }
 
   function handleSave() {
-    if (cluster.environment === 'prod') {
-      setConfirmProd(true);
-    } else {
-      doSave();
-    }
+    if (cluster.environment === 'prod') setConfirmProd(true);
+    else doSave();
   }
 
-  const V = { border: 'var(--border)', surface: 'var(--bg-surface)', bg: 'var(--bg-base)', text: 'var(--text-primary)', muted: 'var(--text-secondary)', accent: 'var(--accent)', green: 'var(--success)', red: 'var(--error)', yellow: 'var(--warning)' };
+  const V = {
+    border: C.border, surface: C.surface, bg: C.bg,
+    text: C.primary, muted: C.muted, accent: C.accent,
+    green: C.success, red: C.error,
+  };
 
   return (
     <div style={{ background: V.bg, border: `1px solid ${V.border}`, borderRadius: 10, padding: '1rem', marginTop: '0.5rem' }}>
       {confirmProd && (
-        <div style={{ background: 'rgba(248,81,73,0.08)', border: `1px solid ${V.red}`, borderRadius: 8, padding: '0.875rem', marginBottom: '0.875rem' }}>
+        <div style={{ background: 'rgba(239,68,68,0.08)', border: `1px solid ${V.red}`, borderRadius: 8, padding: '0.875rem', marginBottom: '0.875rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: V.red, fontWeight: 600, fontSize: '0.875rem' }}>
             <ShieldAlert size={16} /> Production cluster — confirm change
           </div>
@@ -137,75 +154,47 @@ function TokenFixForm({ cluster, onClose, onSaved }: TokenFixFormProps) {
             You are updating credentials for a <strong style={{ color: V.red }}>PRODUCTION</strong> cluster. Are you sure?
           </p>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button type="button" onClick={() => setConfirmProd(false)} style={{ flex: 1, padding: '0.4rem', borderRadius: 7, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, cursor: 'pointer', fontSize: '0.8rem' }}>
-              Cancel
-            </button>
+            <button type="button" onClick={() => setConfirmProd(false)} style={{ flex: 1, padding: '0.4rem', borderRadius: 7, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, cursor: 'pointer', fontSize: '0.8rem' }}>Cancel</button>
             <button type="button" onClick={doSave} disabled={saving} style={{ flex: 1, padding: '0.4rem', borderRadius: 7, border: 'none', background: V.red, color: '#fff', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}>
               {saving ? '...' : 'Confirm Update'}
             </button>
           </div>
         </div>
       )}
-
-      {/* Connection type */}
       <div style={{ display: 'flex', gap: '0.375rem', marginBottom: '0.75rem' }}>
         {([{ val: 'token', label: 'Bearer Token' }, { val: 'kubeconfig', label: 'Kubeconfig' }] as { val: 'token' | 'kubeconfig'; label: string }[]).map(({ val, label }) => (
-          <button key={val} type="button" onClick={() => setConnType(val)}
-            style={{ flex: 1, padding: '0.3rem', borderRadius: 7, border: `1px solid ${connType === val ? V.accent : V.border}`, background: connType === val ? 'rgba(88,166,255,0.08)' : 'transparent', color: connType === val ? V.accent : V.muted, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 500 }}>
+          <button key={val} type="button" onClick={() => setConnType(val)} style={{ flex: 1, padding: '0.3rem', borderRadius: 7, border: `1px solid ${connType === val ? V.accent : V.border}`, background: connType === val ? `${V.accent}14` : 'transparent', color: connType === val ? V.accent : V.muted, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 500 }}>
             {label}
           </button>
         ))}
       </div>
-
       {connType === 'token' ? (
         <>
-          <input
-            value={apiUrl}
-            onChange={(e) => setApiUrl(e.target.value)}
-            placeholder="API URL (e.g. https://k8s.example.com:6443)"
-            style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.425rem 0.625rem', color: V.text, fontSize: '0.8rem', marginBottom: '0.5rem', boxSizing: 'border-box' }}
-          />
+          <input value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} placeholder="API URL (e.g. https://k8s.example.com:6443)"
+            style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.425rem 0.625rem', color: V.text, fontSize: '0.8rem', marginBottom: '0.5rem', boxSizing: 'border-box' }} />
           <div style={{ position: 'relative', marginBottom: '0.5rem' }}>
-            <input
-              type={showToken ? 'text' : 'password'}
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="New bearer token..."
-              style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.425rem 2.25rem 0.425rem 0.625rem', color: V.text, fontSize: '0.8rem', boxSizing: 'border-box' }}
-            />
-            <button type="button" onClick={() => setShowToken(!showToken)}
-              style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: V.muted }}>
+            <input type={showToken ? 'text' : 'password'} value={token} onChange={(e) => setToken(e.target.value)} placeholder="New bearer token..."
+              style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.425rem 2.25rem 0.425rem 0.625rem', color: V.text, fontSize: '0.8rem', boxSizing: 'border-box' }} />
+            <button type="button" onClick={() => setShowToken(!showToken)} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: V.muted }}>
               {showToken ? <EyeOff size={13} /> : <Eye size={13} />}
             </button>
           </div>
         </>
       ) : (
-        <textarea
-          value={kubeconfig}
-          onChange={(e) => setKubeconfig(e.target.value)}
-          placeholder="Paste kubeconfig YAML..."
-          rows={4}
-          style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.425rem 0.625rem', color: V.text, fontSize: '0.78rem', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box', marginBottom: '0.5rem' }}
-        />
+        <textarea value={kubeconfig} onChange={(e) => setKubeconfig(e.target.value)} placeholder="Paste kubeconfig YAML..." rows={4}
+          style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.425rem 0.625rem', color: V.text, fontSize: '0.78rem', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box', marginBottom: '0.5rem' }} />
       )}
-
       {testResult && (
-        <div style={{ borderRadius: 7, padding: '0.5rem 0.625rem', fontSize: '0.78rem', marginBottom: '0.5rem', background: testResult.healthy ? 'rgba(63,185,80,0.08)' : 'rgba(248,81,73,0.08)', border: `1px solid ${testResult.healthy ? V.green : V.red}`, color: testResult.healthy ? V.green : V.red }}>
+        <div style={{ borderRadius: 7, padding: '0.5rem 0.625rem', fontSize: '0.78rem', marginBottom: '0.5rem', background: testResult.healthy ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)', border: `1px solid ${testResult.healthy ? V.green : V.red}`, color: testResult.healthy ? V.green : V.red }}>
           {testResult.healthy ? `✓ ${testResult.version || 'Connected'}` : `✗ ${testResult.error || 'Connection failed'}`}
         </div>
       )}
-
       <div style={{ display: 'flex', gap: '0.375rem', justifyContent: 'flex-end' }}>
-        <button type="button" onClick={handleTest} disabled={testing}
-          style={{ padding: '0.375rem 0.75rem', borderRadius: 7, border: `1px solid ${V.border}`, background: 'transparent', color: V.text, cursor: 'pointer', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: 4 }}>
+        <button type="button" onClick={handleTest} disabled={testing} style={{ padding: '0.375rem 0.75rem', borderRadius: 7, border: `1px solid ${V.border}`, background: 'transparent', color: V.text, cursor: 'pointer', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: 4 }}>
           {testing ? <Loader2 size={12} /> : <CheckCircle2 size={12} />} Test
         </button>
-        <button type="button" onClick={onClose}
-          style={{ padding: '0.375rem 0.75rem', borderRadius: 7, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, cursor: 'pointer', fontSize: '0.78rem' }}>
-          Cancel
-        </button>
-        <button type="button" onClick={handleSave} disabled={saving || (!token && !kubeconfig && !apiUrl)}
-          style={{ padding: '0.375rem 0.875rem', borderRadius: 7, border: 'none', background: V.accent, color: '#fff', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
+        <button type="button" onClick={onClose} style={{ padding: '0.375rem 0.75rem', borderRadius: 7, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, cursor: 'pointer', fontSize: '0.78rem' }}>Cancel</button>
+        <button type="button" onClick={handleSave} disabled={saving || (!token && !kubeconfig && !apiUrl)} style={{ padding: '0.375rem 0.875rem', borderRadius: 7, border: 'none', background: V.accent, color: '#fff', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
           {saving ? '...' : 'Save'}
         </button>
       </div>
@@ -218,21 +207,17 @@ function TokenFixForm({ cluster, onClose, onSaved }: TokenFixFormProps) {
 function ClusterHealthCard({ cluster }: { cluster: ClusterConfig }) {
   const qc = useQueryClient();
   const { setActiveCluster, removeCluster } = useClusterStore();
-  const [showFix, setShowFix] = useState(false);
+  const [showFix,       setShowFix]       = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [deleting,      setDeleting]      = useState(false);
 
   async function handleDelete() {
     setDeleting(true);
     try {
       await fetch(`/api/settings/clusters/${encodeURIComponent(cluster.name)}`, { method: 'DELETE' });
       removeCluster(cluster.name);
-    } catch {
-      // removed from store regardless
-    } finally {
-      setDeleting(false);
-      setDeleteConfirm(false);
-    }
+    } catch { /* removed from store regardless */ }
+    finally { setDeleting(false); setDeleteConfirm(false); }
   }
 
   const { data: health, isFetching } = useQuery({
@@ -244,11 +229,10 @@ function ClusterHealthCard({ cluster }: { cluster: ClusterConfig }) {
     refetchInterval: 30_000,
   });
 
-  const healthy = health?.healthy;
+  const healthy      = health?.healthy;
   const tokenExpired = !healthy && isTokenError(health?.error);
-  const errorMsg = health?.error;
-
-  const envColor = cluster.environment === 'prod' ? 'var(--error)' : cluster.environment === 'staging' ? 'var(--warning)' : 'var(--success)';
+  const errorMsg     = health?.error;
+  const envColor     = cluster.environment === 'prod' ? C.error : cluster.environment === 'staging' ? C.warning : C.success;
 
   function handleSaved() {
     qc.invalidateQueries({ queryKey: ['monitor-health', cluster.name] });
@@ -257,98 +241,59 @@ function ClusterHealthCard({ cluster }: { cluster: ClusterConfig }) {
 
   return (
     <div style={{
-      background: 'var(--bg-base)',
-      border: `1px solid ${healthy === undefined ? 'var(--border)' : healthy ? 'rgba(63,185,80,0.35)' : 'rgba(248,81,73,0.35)'}`,
-      borderRadius: '8px',
-      overflow: 'hidden',
+      background: C.surface,
+      border: `1px solid ${healthy === undefined ? C.border : healthy ? `${C.success}44` : `${C.error}44`}`,
+      borderRadius: 8, overflow: 'hidden',
     }}>
-      <div style={{ padding: '12px 16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          {/* Status dot */}
-          <div style={{ position: 'relative', flexShrink: 0 }}>
+      <div style={{ padding: '10px 14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ flexShrink: 0 }}>
             {isFetching ? (
-              <Loader2 size={14} style={{ animation: 'spin 1s linear infinite', color: 'var(--text-muted)' }} />
+              <Loader2 size={12} style={{ animation: 'spin 1s linear infinite', color: C.muted }} />
             ) : (
-              <div style={{
-                width: 12,
-                height: 12,
-                borderRadius: '50%',
-                background: healthy === undefined ? 'var(--border)' : healthy ? 'var(--success)' : 'var(--error)',
-                boxShadow: healthy ? '0 0 6px var(--success)66' : healthy === false ? '0 0 6px var(--error)66' : 'none',
-              }} />
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: healthy === undefined ? C.border : healthy ? C.success : C.error, boxShadow: healthy ? `0 0 6px ${C.success}66` : healthy === false ? `0 0 6px ${C.error}44` : 'none' }} />
             )}
           </div>
-
-          {/* Name + badges */}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-              <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '13px' }}>{cluster.name}</span>
-              {cluster.active && (
-                <span style={{ background: 'rgba(88,166,255,0.12)', color: 'var(--accent)', borderRadius: '4px', padding: '1px 6px', fontSize: '10px', fontWeight: 700 }}>ACTIVE</span>
-              )}
-              <span style={{ background: `${envColor}18`, color: envColor, borderRadius: '4px', padding: '1px 6px', fontSize: '10px', fontWeight: 600 }}>{cluster.environment.toUpperCase()}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span style={{ color: C.primary, fontWeight: 600, fontSize: 12, fontFamily: 'monospace' }}>{cluster.name}</span>
+              {cluster.active && <span style={{ background: `${C.accent}22`, color: C.accent, borderRadius: 3, padding: '1px 5px', fontSize: 9, fontWeight: 700, letterSpacing: '0.06em' }}>ACTIVE</span>}
+              <span style={{ background: `${envColor}18`, color: envColor, borderRadius: 3, padding: '1px 5px', fontSize: 9, fontWeight: 600, letterSpacing: '0.06em' }}>{cluster.environment.toUpperCase()}</span>
             </div>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-              {healthy
-                ? `✓ Connected · ${health?.version || 'cluster reachable'}`
-                : healthy === false
-                ? (tokenExpired ? '✗ Token expired or invalid' : `✗ ${errorMsg?.slice(0, 60) || 'Unreachable'}`)
-                : 'Checking...'}
+            <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>
+              {healthy ? `✓ ${health?.version || 'cluster reachable'}` : healthy === false ? (tokenExpired ? '✗ Token expired or invalid' : `✗ ${errorMsg?.slice(0, 60) || 'Unreachable'}`) : 'Checking…'}
             </div>
           </div>
-
-          {/* Right actions */}
-          <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
             {!cluster.active && (
-              <button type="button" onClick={() => setActiveCluster(cluster.name)}
-                style={{ padding: '3px 8px', background: 'transparent', border: '1px solid var(--border)', borderRadius: '5px', color: 'var(--text-muted)', fontSize: '11px', cursor: 'pointer' }}>
-                Activate
-              </button>
+              <button type="button" onClick={() => setActiveCluster(cluster.name)} style={{ padding: '3px 8px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 4, color: C.muted, fontSize: 10, cursor: 'pointer' }}>Activate</button>
             )}
-            <button type="button" onClick={() => setShowFix(!showFix)} title={tokenExpired ? 'Fix Token' : 'Edit Credentials'}
-              style={{ padding: '4px 8px', background: tokenExpired ? 'rgba(248,81,73,0.1)' : 'transparent', border: `1px solid ${tokenExpired ? 'var(--error)' : 'var(--border)'}`, borderRadius: '5px', color: tokenExpired ? 'var(--error)' : 'var(--text-muted)', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: tokenExpired ? 600 : 400 }}>
-              {tokenExpired ? (
-                <><ShieldAlert size={12} /> Fix Token</>
-              ) : (
-                <><Edit2 size={12} /> Edit</>
-              )}
+            <button type="button" onClick={() => setShowFix(!showFix)} title={tokenExpired ? 'Fix Token' : 'Edit'} style={{ padding: '3px 8px', background: tokenExpired ? `${C.error}14` : 'transparent', border: `1px solid ${tokenExpired ? C.error : C.border}`, borderRadius: 4, color: tokenExpired ? C.error : C.muted, fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, fontWeight: tokenExpired ? 600 : 400 }}>
+              {tokenExpired ? <><ShieldAlert size={10} /> Fix Token</> : <><Edit2 size={10} /> Edit</>}
             </button>
-            {showFix && (
-              <button type="button" onClick={() => setShowFix(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px' }}>
-                <X size={14} />
-              </button>
-            )}
-            <button type="button" onClick={() => setDeleteConfirm(true)} title="Remove cluster"
-              style={{ padding: '4px 8px', background: 'transparent', border: '1px solid var(--border)', borderRadius: '5px', color: 'var(--text-muted)', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <Trash2 size={12} /> Delete
+            {showFix && <button type="button" onClick={() => setShowFix(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, padding: '3px' }}><X size={12} /></button>}
+            <button type="button" onClick={() => setDeleteConfirm(true)} style={{ padding: '3px 8px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 4, color: C.muted, fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
+              <Trash2 size={10} /> Delete
             </button>
           </div>
         </div>
       </div>
-
-      {/* Inline fix form */}
       {showFix && (
-        <div style={{ padding: '0 12px 12px' }}>
+        <div style={{ padding: '0 10px 10px' }}>
           <TokenFixForm cluster={cluster} onClose={() => setShowFix(false)} onSaved={handleSaved} />
         </div>
       )}
-
-      {/* Delete confirmation */}
       {deleteConfirm && (
-        <div style={{ margin: '0 12px 12px', background: 'rgba(248,81,73,0.06)', border: '1px solid rgba(248,81,73,0.35)', borderRadius: 8, padding: '10px 14px' }}>
-          <p style={{ fontSize: '12px', fontWeight: 600, color: 'var(--error)', margin: '0 0 4px' }}>Remove cluster?</p>
-          <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '0 0 10px', lineHeight: 1.5 }}>
-            <strong style={{ color: 'var(--text-primary)' }}>{cluster.name}</strong> will be removed from InfraPilot. This cannot be undone.
+        <div style={{ margin: '0 10px 10px', background: `${C.error}0a`, border: `1px solid ${C.error}44`, borderRadius: 6, padding: '10px 12px' }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: C.error, margin: '0 0 4px' }}>Remove cluster?</p>
+          <p style={{ fontSize: 11, color: C.muted, margin: '0 0 10px', lineHeight: 1.5 }}>
+            <strong style={{ color: C.primary }}>{cluster.name}</strong> will be removed. This cannot be undone.
           </p>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button type="button" disabled={deleting} onClick={handleDelete}
-              style={{ flex: 1, padding: '5px', background: 'var(--error)', border: 'none', borderRadius: 5, color: '#fff', fontSize: '11px', fontWeight: 600, cursor: 'pointer', opacity: deleting ? 0.6 : 1 }}>
+          <div style={{ display: 'flex', gap: 5 }}>
+            <button type="button" disabled={deleting} onClick={handleDelete} style={{ flex: 1, padding: '4px', background: C.error, border: 'none', borderRadius: 4, color: '#fff', fontSize: 10, fontWeight: 600, cursor: 'pointer', opacity: deleting ? 0.6 : 1 }}>
               {deleting ? 'Removing…' : 'Remove'}
             </button>
-            <button type="button" onClick={() => setDeleteConfirm(false)}
-              style={{ flex: 1, padding: '5px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-secondary)', fontSize: '11px', cursor: 'pointer' }}>
-              Cancel
-            </button>
+            <button type="button" onClick={() => setDeleteConfirm(false)} style={{ flex: 1, padding: '4px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 4, color: C.muted, fontSize: 10, cursor: 'pointer' }}>Cancel</button>
           </div>
         </div>
       )}
@@ -356,42 +301,38 @@ function ClusterHealthCard({ cluster }: { cluster: ClusterConfig }) {
   );
 }
 
-// ─── Cluster health section (all clusters) ────────────────────────────────────
+// ─── Cluster health section ───────────────────────────────────────────────────
 
 function ClusterHealthSection() {
   const { clusters } = useClusterStore();
-
   if (clusters.length === 0) {
     return (
-      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 20, textAlign: 'center', color: C.dim, fontSize: 12 }}>
         No clusters configured. Go to Settings to add a cluster.
       </div>
     );
   }
-
   return (
-    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <Activity size={14} color="var(--text-primary)" />
-        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>Cluster Health</span>
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Polls every 30s</span>
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+      <div style={{ padding: '9px 14px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 7 }}>
+        <Activity size={12} color={C.muted} />
+        <span style={{ fontSize: 11, fontWeight: 700, color: C.primary, letterSpacing: '0.05em' }}>Cluster Connections</span>
+        <span style={{ fontSize: 10, color: C.dim }}>polls every 30s</span>
       </div>
-      <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {clusters.map((c) => (
-          <ClusterHealthCard key={c.name} cluster={c} />
-        ))}
+      <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {clusters.map((c) => <ClusterHealthCard key={c.name} cluster={c} />)}
       </div>
     </div>
   );
 }
 
-// ─── Usage bar helper ─────────────────────────────────────────────────────────
+// ─── Usage bar ────────────────────────────────────────────────────────────────
 
 function UsageBar({ pct, color }: { pct: number; color: string }) {
   const clamped = Math.max(0, Math.min(100, pct));
   return (
-    <div style={{ height: 5, background: 'var(--bg-hover)', borderRadius: 3, overflow: 'hidden', width: '100%' }}>
-      <div style={{ height: '100%', width: `${clamped}%`, background: color, borderRadius: 3, transition: 'width 0.4s' }} />
+    <div style={{ height: 4, background: C.border, borderRadius: 2, overflow: 'hidden', width: '100%' }}>
+      <div style={{ height: '100%', width: `${clamped}%`, background: color, borderRadius: 2, transition: 'width 0.4s' }} />
     </div>
   );
 }
@@ -399,10 +340,10 @@ function UsageBar({ pct, color }: { pct: number; color: string }) {
 // ─── Issues panel ────────────────────────────────────────────────────────────
 
 const SEV_COLOR_MAP: Record<string, string> = {
-  all:      '#818cf8',
-  critical: '#f87171',
+  all:      C.accent,
+  critical: C.error,
   high:     '#f97316',
-  medium:   '#fbbf24',
+  medium:   C.warning,
   low:      '#60a5fa',
 };
 const SEV_ICON_MAP: Record<string, React.ReactNode> = {
@@ -414,7 +355,7 @@ const SEV_ICON_MAP: Record<string, React.ReactNode> = {
 
 function timeAgo(iso: string): string {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60) return `${Math.floor(diff)}s ago`;
+  if (diff < 60)   return `${Math.floor(diff)}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   return `${Math.floor(diff / 3600)}h ago`;
 }
@@ -434,157 +375,97 @@ function IssuesPanel({ incidents, summary }: { incidents: Incident[]; summary?: 
     await fetch(`/api/incidents/${id}/acknowledge`, { method: 'POST' });
     qc.invalidateQueries({ queryKey: ['incidents'] });
   }
-
   async function handleSnooze(id: string, mins: number) {
-    await fetch(`/api/incidents/${id}/snooze`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ minutes: mins }),
-    });
+    await fetch(`/api/incidents/${id}/snooze`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minutes: mins }) });
     setShowSnooze(null);
     qc.invalidateQueries({ queryKey: ['incidents'] });
   }
-
   async function handleFixAuto(id: string) {
     await fetch(`/api/incidents/${id}/fix-auto`, { method: 'POST' });
     qc.invalidateQueries({ queryKey: ['incidents'] });
   }
-
   async function handleResolve(id: string, what: string) {
-    await fetch(`/api/incidents/${id}/fix-manual`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ what_changed: what || 'Manually resolved', verification: '' }),
-    });
+    await fetch(`/api/incidents/${id}/fix-manual`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ what_changed: what || 'Manually resolved', verification: '' }) });
     qc.invalidateQueries({ queryKey: ['incidents'] });
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Summary cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
         {[
-          { label: 'Active', value: summary?.active ?? 0, color: 'var(--error)' },
-          { label: 'Snoozed', value: summary?.snoozed ?? 0, color: 'var(--warning)' },
-          { label: 'Resolved Today', value: summary?.resolved_today ?? 0, color: 'var(--success)' },
-        ].map((c) => (
-          <div key={c.label} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '14px 16px' }}>
-            <p style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{c.label}</p>
-            <p style={{ fontSize: 28, fontWeight: 700, color: c.color, lineHeight: 1 }}>{c.value}</p>
+          { label: 'Active',         value: summary?.active ?? 0,         color: C.error   },
+          { label: 'Snoozed',        value: summary?.snoozed ?? 0,        color: C.warning  },
+          { label: 'Resolved Today', value: summary?.resolved_today ?? 0, color: C.success  },
+        ].map((card) => (
+          <div key={card.label} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 14px' }}>
+            <p style={{ fontSize: 10, color: C.dim, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>{card.label}</p>
+            <p style={{ fontSize: 26, fontWeight: 700, color: card.color, lineHeight: 1, fontFamily: 'monospace' }}>{card.value}</p>
           </div>
         ))}
       </div>
 
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
         {['all', 'critical', 'high', 'medium', 'low'].map((sev) => {
           const col = SEV_COLOR_MAP[sev];
           const active = sevFilter === sev;
           return (
-            <button
-              key={sev}
-              type="button"
-              onClick={() => setSevFilter(sev)}
-              style={{
-                padding: '5px 14px', borderRadius: 100,
-                border: `1px solid ${active ? col : `${col}55`}`,
-                background: active ? `${col}22` : `${col}0d`,
-                color: active ? col : `${col}99`,
-                fontSize: 11, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize',
-                display: 'inline-flex', alignItems: 'center', gap: 5,
-                transition: 'all 0.15s',
-              }}
-            >
+            <button key={sev} type="button" onClick={() => setSevFilter(sev)} style={{ padding: '4px 12px', borderRadius: 100, border: `1px solid ${active ? col : `${col}55`}`, background: active ? `${col}22` : `${col}0d`, color: active ? col : `${col}99`, fontSize: 10, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               {sev === 'all' ? 'All' : <>{SEV_ICON_MAP[sev]} {sev}</>}
             </button>
           );
         })}
       </div>
 
-      {/* Incident cards */}
       {displayed.length === 0 && (
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-          <CheckCircle2 size={28} style={{ color: 'var(--success)', marginBottom: 8 }} />
-          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>No active issues</p>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>All clusters are healthy. Monitor checks every 60 seconds.</p>
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+          <CheckCircle2 size={26} style={{ color: C.success, marginBottom: 8 }} />
+          <p style={{ fontSize: 13, fontWeight: 600, color: C.primary, marginBottom: 4 }}>No active issues</p>
+          <p style={{ fontSize: 11, color: C.dim }}>All clusters are healthy. Monitor checks every 60 seconds.</p>
         </div>
       )}
 
       {displayed.map((inc) => {
-        const sev = inc.severity;
-        const col = SEV_COLOR_MAP[sev] || 'var(--text-muted)';
+        const col = SEV_COLOR_MAP[inc.severity] || C.muted;
         return (
-          <div
-            key={inc.id}
-            style={{ background: 'var(--bg-surface)', border: `1px solid ${col}44`, borderRadius: 10, padding: 16, borderLeft: `3px solid ${col}` }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: col, background: `${col}15`, padding: '2px 8px', borderRadius: 100, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  {SEV_ICON_MAP[sev]} {sev}
+          <div key={inc.id} style={{ background: C.surface, border: `1px solid ${col}44`, borderRadius: 8, padding: 14, borderLeft: `3px solid ${col}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, color: col, background: `${col}15`, padding: '2px 7px', borderRadius: 100, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  {SEV_ICON_MAP[inc.severity]} {inc.severity}
                 </span>
-                {inc.status === 'acknowledged' && (
-                  <span style={{ fontSize: 10, color: 'var(--warning)', fontWeight: 600 }}>ACK</span>
-                )}
-                {inc.status === 'fixing' && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, color: 'var(--accent)', fontWeight: 600 }}><Wrench size={10} /> FIXING</span>
-                )}
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{timeAgo(inc.detected_at)}</span>
+                {inc.status === 'acknowledged' && <span style={{ fontSize: 9, color: C.warning, fontWeight: 700 }}>ACK</span>}
+                {inc.status === 'fixing' && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 9, color: C.accent, fontWeight: 700 }}><Wrench size={9} /> FIXING</span>}
+                <span style={{ fontSize: 10, color: C.dim }}>{timeAgo(inc.detected_at)}</span>
               </div>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{inc.cluster_name}</span>
+              <span style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace' }}>{inc.cluster_name}</span>
             </div>
-
-            <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{inc.title}</p>
-            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10, fontFamily: 'monospace' }}>
-              {inc.namespace && `${inc.namespace} / `}{inc.resource_name}
-            </p>
-
-            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={() => handleFixAuto(inc.id)}
-                style={{ padding: '5px 12px', background: 'var(--accent)', border: 'none', borderRadius: 5, color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
-              >
-                <Wrench size={11} /> Fix Now
+            <p style={{ fontSize: 13, fontWeight: 700, color: C.primary, marginBottom: 2 }}>{inc.title}</p>
+            <p style={{ fontSize: 11, color: C.muted, marginBottom: 10, fontFamily: 'monospace' }}>{inc.namespace && `${inc.namespace} / `}{inc.resource_name}</p>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => handleFixAuto(inc.id)} style={{ padding: '4px 10px', background: C.accent, border: 'none', borderRadius: 4, color: '#fff', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
+                <Wrench size={10} /> Fix Now
               </button>
               {inc.status !== 'acknowledged' && (
-                <button
-                  type="button"
-                  onClick={() => handleAcknowledge(inc.id)}
-                  style={{ padding: '5px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-secondary)', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
-                >
-                  <ThumbsUp size={11} /> Acknowledge
+                <button type="button" onClick={() => handleAcknowledge(inc.id)} style={{ padding: '4px 10px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 4, color: C.muted, fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <ThumbsUp size={10} /> Acknowledge
                 </button>
               )}
               <div style={{ position: 'relative' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowSnooze(showSnooze === inc.id ? null : inc.id)}
-                  style={{ padding: '5px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-secondary)', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
-                >
-                  <BellOff size={11} /> Snooze
+                <button type="button" onClick={() => setShowSnooze(showSnooze === inc.id ? null : inc.id)} style={{ padding: '4px 10px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 4, color: C.muted, fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <BellOff size={10} /> Snooze
                 </button>
                 {showSnooze === inc.id && (
-                  <div style={{ position: 'absolute', top: '110%', left: 0, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, zIndex: 10, overflow: 'hidden', minWidth: 120 }}>
+                  <div style={{ position: 'absolute', top: '110%', left: 0, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 6, zIndex: 10, overflow: 'hidden', minWidth: 110 }}>
                     {[30, 60, 240].map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => handleSnooze(inc.id, m)}
-                        style={{ display: 'block', width: '100%', padding: '8px 14px', background: 'none', border: 'none', color: 'var(--text-primary)', fontSize: 12, cursor: 'pointer', textAlign: 'left' }}
-                      >
+                      <button key={m} type="button" onClick={() => handleSnooze(inc.id, m)} style={{ display: 'block', width: '100%', padding: '7px 12px', background: 'none', border: 'none', color: C.primary, fontSize: 11, cursor: 'pointer', textAlign: 'left' }}>
                         {m === 240 ? '4 hours' : `${m} min`}
                       </button>
                     ))}
                   </div>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={() => handleResolve(inc.id, inc.title)}
-                style={{ padding: '5px 12px', background: 'rgba(87,171,90,0.12)', border: '1px solid var(--success)', borderRadius: 5, color: 'var(--success)', fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}
-              >
-                <CheckCircle2 size={11} /> Mark Resolved
+              <button type="button" onClick={() => handleResolve(inc.id, inc.title)} style={{ padding: '4px 10px', background: `${C.success}12`, border: `1px solid ${C.success}`, borderRadius: 4, color: C.success, fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, marginLeft: 'auto' }}>
+                <CheckCircle2 size={10} /> Mark Resolved
               </button>
             </div>
           </div>
@@ -594,7 +475,7 @@ function IssuesPanel({ incidents, summary }: { incidents: Incident[]; summary?: 
   );
 }
 
-// ─── Detailed active cluster overview ─────────────────────────────────────────
+// ─── Cluster overview panel ───────────────────────────────────────────────────
 
 function ClusterOverviewPanel() {
   const { activeCluster } = useClusterStore();
@@ -607,56 +488,49 @@ function ClusterOverviewPanel() {
   const nodeMetrics = metricsData?.metrics ?? [];
 
   return (
-    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Server size={14} color="var(--text-primary)" />
-          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>Cluster Overview</span>
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{activeCluster}</span>
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+      <div style={{ padding: '9px 14px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <Server size={12} color={C.muted} />
+          <span style={{ fontSize: 11, fontWeight: 700, color: C.primary }}>Cluster Overview</span>
+          <span style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace' }}>{activeCluster}</span>
         </div>
-        <button type="button" title="Refresh" onClick={() => refetch()}
-          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}>
-          {isFetching ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={13} />}
+        <button type="button" title="Refresh" onClick={() => refetch()} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 3 }}>
+          {isFetching ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={12} />}
         </button>
       </div>
 
-      {!overview && !isFetching && (
-        <div style={{ padding: '14px 16px' }}>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No overview data — check cluster connection above.</p>
-        </div>
-      )}
+      {!overview && !isFetching && <div style={{ padding: '12px 14px', fontSize: 11, color: C.muted }}>No overview data — check cluster connection.</div>}
       {isFetching && !overview && (
-        <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '12px' }}>
-          <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Fetching cluster state...
+        <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 7, color: C.muted, fontSize: 11 }}>
+          <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> Fetching cluster state…
         </div>
       )}
 
       {overview && (
-        <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Summary stats */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+        <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
             {[
               { label: 'Total Nodes', value: String(overview.nodes?.length ?? '—') },
-              { label: 'Ready', value: String(overview.nodes?.filter((n) => n.status === 'Ready').length ?? '—'), color: 'var(--success)' },
-              { label: 'Total Pods', value: String(overview.pod_counts?.total ?? '—') },
-              { label: 'Running', value: String(overview.pod_counts?.running ?? '—'), color: 'var(--success)' },
+              { label: 'Ready',       value: String(overview.nodes?.filter((n) => n.status === 'Ready').length ?? '—'), color: C.success },
+              { label: 'Total Pods',  value: String(overview.pod_counts?.total ?? '—') },
+              { label: 'Running',     value: String(overview.pod_counts?.running ?? '—'), color: C.success },
             ].map((stat) => (
-              <div key={stat.label} style={{ background: 'var(--bg-base)', borderRadius: '6px', padding: '10px 12px' }}>
-                <p style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>{stat.label}</p>
-                <p style={{ fontSize: '20px', fontWeight: 700, color: stat.color ?? 'var(--text-primary)' }}>{stat.value}</p>
+              <div key={stat.label} style={{ background: C.bg, borderRadius: 6, padding: '9px 11px' }}>
+                <p style={{ fontSize: 9, color: C.dim, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>{stat.label}</p>
+                <p style={{ fontSize: 20, fontWeight: 700, color: stat.color ?? C.primary, fontFamily: 'monospace' }}>{stat.value}</p>
               </div>
             ))}
           </div>
 
-          {/* Node table with CPU/memory metrics */}
           {overview.nodes && overview.nodes.length > 0 && (
             <div>
-              <p style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>Nodes</p>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+              <p style={{ fontSize: 9, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 7 }}>Nodes</p>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
                 <thead>
-                  <tr style={{ background: 'var(--bg-base)' }}>
+                  <tr style={{ background: C.bg }}>
                     {['Name', 'Status', 'Roles', 'Version', 'Age', 'CPU', 'Memory'].map((h) => (
-                      <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h} style={{ padding: '5px 9px', textAlign: 'left', fontSize: 9, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -665,44 +539,38 @@ function ClusterOverviewPanel() {
                     const m = nodeMetrics.find((nm) => nm.name === node.name);
                     const cpuPct = m ? parseInt(m.cpu_percent) : null;
                     const memPct = m ? parseInt(m.memory_percent) : null;
-                    const cpuColor = cpuPct !== null ? (cpuPct > 85 ? 'var(--error)' : cpuPct > 65 ? 'var(--warning)' : 'var(--success)') : 'var(--accent)';
-                    const memColor = memPct !== null ? (memPct > 85 ? 'var(--error)' : memPct > 65 ? 'var(--warning)' : 'var(--success)') : 'var(--accent)';
+                    const cpuColor = cpuPct !== null ? barColor(cpuPct) : C.accent;
+                    const memColor = memPct !== null ? barColor(memPct) : C.accent;
                     return (
-                      <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: 'var(--text-primary)', fontWeight: 500 }}>{node.name}</td>
-                        <td style={{ padding: '8px 10px' }}>
-                          <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: '10px', fontWeight: 600, background: node.status === 'Ready' ? 'rgba(34,197,94,0.1)' : 'rgba(248,81,73,0.1)', color: node.status === 'Ready' ? 'var(--success)' : 'var(--error)' }}>
-                            {node.status}
-                          </span>
+                      <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <td style={{ padding: '7px 9px', fontFamily: 'monospace', color: C.primary, fontWeight: 500, fontSize: 11 }}>{node.name}</td>
+                        <td style={{ padding: '7px 9px' }}>
+                          <span style={{ padding: '2px 5px', borderRadius: 3, fontSize: 9, fontWeight: 700, background: node.status === 'Ready' ? `${C.success}14` : `${C.error}14`, color: node.status === 'Ready' ? C.success : C.error }}>{node.status}</span>
                         </td>
-                        <td style={{ padding: '8px 10px', color: 'var(--text-secondary)' }}>{Array.isArray(node.roles) ? node.roles.join(',') : node.roles}</td>
-                        <td style={{ padding: '8px 10px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{node.version}</td>
-                        <td style={{ padding: '8px 10px', color: 'var(--text-muted)' }}>{node.age}</td>
-                        <td style={{ padding: '8px 10px', minWidth: 120 }}>
+                        <td style={{ padding: '7px 9px', color: C.muted }}>{Array.isArray(node.roles) ? node.roles.join(',') : node.roles}</td>
+                        <td style={{ padding: '7px 9px', color: C.dim, fontFamily: 'monospace' }}>{node.version}</td>
+                        <td style={{ padding: '7px 9px', color: C.dim }}>{node.age}</td>
+                        <td style={{ padding: '7px 9px', minWidth: 110 }}>
                           {m ? (
                             <div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                                <span style={{ color: 'var(--text-secondary)' }}>{m.cpu_cores}</span>
-                                <span style={{ color: cpuColor, fontWeight: 600 }}>{m.cpu_percent}%</span>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, fontSize: 10 }}>
+                                <span style={{ color: C.dim }}>{m.cpu_cores}</span>
+                                <span style={{ color: cpuColor, fontWeight: 600, fontFamily: 'monospace' }}>{m.cpu_percent}%</span>
                               </div>
                               <UsageBar pct={cpuPct!} color={cpuColor} />
                             </div>
-                          ) : (
-                            <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>no metrics-server</span>
-                          )}
+                          ) : <span style={{ color: C.dead, fontSize: 10 }}>no metrics-server</span>}
                         </td>
-                        <td style={{ padding: '8px 10px', minWidth: 120 }}>
+                        <td style={{ padding: '7px 9px', minWidth: 110 }}>
                           {m ? (
                             <div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                                <span style={{ color: 'var(--text-secondary)' }}>{m.memory_bytes}</span>
-                                <span style={{ color: memColor, fontWeight: 600 }}>{m.memory_percent}%</span>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, fontSize: 10 }}>
+                                <span style={{ color: C.dim }}>{Math.round(parseInt(m.memory_bytes) / 1024 / 1024)}Mi</span>
+                                <span style={{ color: memColor, fontWeight: 600, fontFamily: 'monospace' }}>{m.memory_percent}%</span>
                               </div>
                               <UsageBar pct={memPct!} color={memColor} />
                             </div>
-                          ) : (
-                            <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>
-                          )}
+                          ) : <span style={{ color: C.dead, fontSize: 10 }}>—</span>}
                         </td>
                       </tr>
                     );
@@ -712,15 +580,14 @@ function ClusterOverviewPanel() {
             </div>
           )}
 
-          {/* Warning events */}
           {overview.warning_events && overview.warning_events.length > 0 && (
             <div>
-              <p style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Warning Events</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <p style={{ fontSize: 9, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 5 }}>Warning Events</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 {overview.warning_events.slice(0, 5).map((ev, i) => (
-                  <div key={i} style={{ display: 'flex', gap: '8px', padding: '5px 8px', background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '4px', fontSize: '12px' }}>
-                    <span style={{ color: 'var(--warning)', fontWeight: 600, whiteSpace: 'nowrap' }}>{ev.reason}</span>
-                    <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.namespace}: {ev.message}</span>
+                  <div key={i} style={{ display: 'flex', gap: 7, padding: '4px 8px', background: `${C.warning}0a`, border: `1px solid ${C.warning}33`, borderRadius: 4, fontSize: 11 }}>
+                    <span style={{ color: C.warning, fontWeight: 600, whiteSpace: 'nowrap' }}>{ev.reason}</span>
+                    <span style={{ color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.namespace}: {ev.message}</span>
                   </div>
                 ))}
               </div>
@@ -732,19 +599,14 @@ function ClusterOverviewPanel() {
   );
 }
 
-// ─── Resource Explorer (kubectl get all -n namespace) ─────────────────────────
+// ─── Resource explorer ────────────────────────────────────────────────────────
 
 type ResTab = 'pods' | 'services' | 'deployments' | 'statefulsets' | 'daemonsets' | 'replicasets';
 
 const STATUS_COLOR: Record<string, string> = {
-  Running: 'var(--success)',
-  Succeeded: 'var(--success)',
-  Pending: 'var(--warning)',
-  Failed: 'var(--error)',
-  CrashLoopBackOff: 'var(--error)',
-  OOMKilled: 'var(--error)',
-  ImagePullBackOff: 'var(--error)',
-  Terminating: 'var(--warning)',
+  Running: C.success, Succeeded: C.success,
+  Pending: C.warning, Terminating: C.warning,
+  Failed: C.error, CrashLoopBackOff: C.error, OOMKilled: C.error, ImagePullBackOff: C.error,
 };
 
 function ResourceExplorerPanel() {
@@ -759,282 +621,163 @@ function ResourceExplorerPanel() {
 
   const namespaces = nsData?.namespaces ?? ['default'];
   type AnyResource = Record<string, unknown>;
-  const pods = (data?.pods ?? []) as AnyResource[];
-  const services = (data?.services ?? []) as AnyResource[];
+  const pods        = (data?.pods        ?? []) as AnyResource[];
+  const services    = (data?.services    ?? []) as AnyResource[];
   const deployments = (data?.deployments ?? []) as AnyResource[];
-  const statefulsets = (data?.statefulsets ?? []) as AnyResource[];
-  const daemonsets = (data?.daemonsets ?? []) as AnyResource[];
+  const statefulsets= (data?.statefulsets?? []) as AnyResource[];
+  const daemonsets  = (data?.daemonsets  ?? []) as AnyResource[];
   const replicasets = (data?.replicasets ?? []) as AnyResource[];
 
-  const counts: Record<ResTab, number> = {
-    pods: pods.length,
-    services: services.length,
-    deployments: deployments.length,
-    statefulsets: statefulsets.length,
-    daemonsets: daemonsets.length,
-    replicasets: replicasets.length,
-  };
-
+  const counts: Record<ResTab, number> = { pods: pods.length, services: services.length, deployments: deployments.length, statefulsets: statefulsets.length, daemonsets: daemonsets.length, replicasets: replicasets.length };
   const TABS: { id: ResTab; label: string }[] = [
-    { id: 'pods', label: 'Pods' },
-    { id: 'services', label: 'Services' },
-    { id: 'deployments', label: 'Deployments' },
-    { id: 'statefulsets', label: 'StatefulSets' },
-    { id: 'daemonsets', label: 'DaemonSets' },
-    { id: 'replicasets', label: 'ReplicaSets' },
+    { id: 'pods', label: 'Pods' }, { id: 'services', label: 'Services' }, { id: 'deployments', label: 'Deployments' },
+    { id: 'statefulsets', label: 'StatefulSets' }, { id: 'daemonsets', label: 'DaemonSets' }, { id: 'replicasets', label: 'ReplicaSets' },
   ];
 
   const TH = ({ children }: { children: React.ReactNode | string | number }) => (
-    <th style={{ padding: '6px 12px', textAlign: 'left', fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', background: 'var(--bg-base)' }}>
-      {children}
-    </th>
+    <th style={{ padding: '5px 10px', textAlign: 'left', fontSize: 9, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap', background: C.bg }}>{children}</th>
   );
   const TD = ({ children, mono, color }: { children: React.ReactNode; mono?: boolean; color?: string }) => (
-    <td style={{ padding: '7px 12px', fontSize: '12px', color: color ?? 'var(--text-secondary)', fontFamily: mono ? 'monospace' : undefined, borderBottom: '1px solid var(--border)' }}>
-      {children}
-    </td>
+    <td style={{ padding: '7px 10px', fontSize: 11, color: color ?? C.muted, fontFamily: mono ? 'monospace' : undefined, borderBottom: `1px solid ${C.border}` }}>{children}</td>
   );
-
   const statusBadge = (s: string) => {
-    const color = STATUS_COLOR[s] ?? 'var(--text-muted)';
-    return (
-      <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: '11px', fontWeight: 600, background: `${color}18`, color, border: `1px solid ${color}44` }}>
-        {s}
-      </span>
-    );
+    const color = STATUS_COLOR[s] ?? C.muted;
+    return <span style={{ padding: '2px 5px', borderRadius: 3, fontSize: 9, fontWeight: 700, background: `${color}18`, color, border: `1px solid ${color}44` }}>{s}</span>;
   };
-
-  const ageTd = (r: AnyResource) => <TD color="var(--text-muted)">{String(r.age ?? '—')}</TD>;
+  const ageTd = (r: AnyResource) => <TD color={C.dim}>{String(r.age ?? '—')}</TD>;
 
   const renderTable = () => {
-    if (isFetching && !data) {
-      return (
-        <div style={{ padding: '20px', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: '12px' }}>
-          <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Loading resources…
-        </div>
-      );
-    }
-
+    if (isFetching && !data) return (
+      <div style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: 7, color: C.muted, fontSize: 11 }}>
+        <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> Loading resources…
+      </div>
+    );
     if (activeTab === 'pods') {
-      if (!pods.length) return <div style={{ padding: '20px', fontSize: '12px', color: 'var(--text-muted)' }}>No pods in {namespace}</div>;
+      if (!pods.length) return <div style={{ padding: '16px', fontSize: 11, color: C.muted }}>No pods in {namespace}</div>;
       return (
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr><TH>Name</TH><TH>Ready</TH><TH>Status</TH><TH>Restarts</TH><TH>Age</TH><TH>Node</TH></tr></thead>
-          <tbody>
-            {pods.map((p, i) => (
-              <tr key={i}>
-                <TD mono color="var(--text-primary)">{String(p.name)}</TD>
-                <TD>{String(p.ready ?? '—')}</TD>
-                <TD>{statusBadge(String(p.status ?? 'Unknown'))}</TD>
-                <TD color={(p.restarts as number) > 0 ? 'var(--warning)' : undefined}>{String(p.restarts ?? 0)}</TD>
-                {ageTd(p)}
-                <TD mono>{String(p.node ?? '—')}</TD>
-              </tr>
-            ))}
-          </tbody>
+          <tbody>{pods.map((p, i) => (<tr key={i}><TD mono color={C.primary}>{String(p.name)}</TD><TD>{String(p.ready ?? '—')}</TD><TD>{statusBadge(String(p.status ?? 'Unknown'))}</TD><TD color={(p.restarts as number) > 0 ? C.warning : undefined}>{String(p.restarts ?? 0)}</TD>{ageTd(p)}<TD mono>{String(p.node ?? '—')}</TD></tr>))}</tbody>
         </table>
       );
     }
-
     if (activeTab === 'services') {
-      if (!services.length) return <div style={{ padding: '20px', fontSize: '12px', color: 'var(--text-muted)' }}>No services in {namespace}</div>;
+      if (!services.length) return <div style={{ padding: '16px', fontSize: 11, color: C.muted }}>No services in {namespace}</div>;
       return (
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr><TH>Name</TH><TH>Type</TH><TH>Cluster-IP</TH><TH>External-IP</TH><TH>Port(s)</TH><TH>Age</TH></tr></thead>
-          <tbody>
-            {services.map((s, i) => (
-              <tr key={i}>
-                <TD mono color="var(--text-primary)">{String(s.name)}</TD>
-                <TD>{String(s.type ?? 'ClusterIP')}</TD>
-                <TD mono>{String(s.cluster_ip ?? '—')}</TD>
-                <TD mono>{String(s.external_ip ?? '<none>')}</TD>
-                <TD mono>{String(s.ports ?? '<none>')}</TD>
-                {ageTd(s)}
-              </tr>
-            ))}
-          </tbody>
+          <tbody>{services.map((s, i) => (<tr key={i}><TD mono color={C.primary}>{String(s.name)}</TD><TD>{String(s.type ?? 'ClusterIP')}</TD><TD mono>{String(s.cluster_ip ?? '—')}</TD><TD mono>{String(s.external_ip ?? '<none>')}</TD><TD mono>{String(s.ports ?? '<none>')}</TD>{ageTd(s)}</tr>))}</tbody>
         </table>
       );
     }
-
     if (activeTab === 'deployments') {
-      if (!deployments.length) return <div style={{ padding: '20px', fontSize: '12px', color: 'var(--text-muted)' }}>No deployments in {namespace}</div>;
+      if (!deployments.length) return <div style={{ padding: '16px', fontSize: 11, color: C.muted }}>No deployments in {namespace}</div>;
       return (
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr><TH>Name</TH><TH>Ready</TH><TH>Up-to-date</TH><TH>Available</TH><TH>Age</TH></tr></thead>
-          <tbody>
-            {deployments.map((d, i) => (
-              <tr key={i}>
-                <TD mono color="var(--text-primary)">{String(d.name)}</TD>
-                <TD>{String(d.ready ?? '—')}</TD>
-                <TD>{String(d.up_to_date ?? '—')}</TD>
-                <TD>{String(d.available ?? '—')}</TD>
-                {ageTd(d)}
-              </tr>
-            ))}
-          </tbody>
+          <tbody>{deployments.map((d, i) => (<tr key={i}><TD mono color={C.primary}>{String(d.name)}</TD><TD>{String(d.ready ?? '—')}</TD><TD>{String(d.up_to_date ?? '—')}</TD><TD>{String(d.available ?? '—')}</TD>{ageTd(d)}</tr>))}</tbody>
         </table>
       );
     }
-
     if (activeTab === 'statefulsets') {
-      if (!statefulsets.length) return <div style={{ padding: '20px', fontSize: '12px', color: 'var(--text-muted)' }}>No statefulsets in {namespace}</div>;
+      if (!statefulsets.length) return <div style={{ padding: '16px', fontSize: 11, color: C.muted }}>No statefulsets in {namespace}</div>;
       return (
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr><TH>Name</TH><TH>Ready</TH><TH>Age</TH></tr></thead>
-          <tbody>
-            {statefulsets.map((s, i) => (
-              <tr key={i}>
-                <TD mono color="var(--text-primary)">{String(s.name)}</TD>
-                <TD>{String(s.ready ?? '—')}</TD>
-                {ageTd(s)}
-              </tr>
-            ))}
-          </tbody>
+          <tbody>{statefulsets.map((s, i) => (<tr key={i}><TD mono color={C.primary}>{String(s.name)}</TD><TD>{String(s.ready ?? '—')}</TD>{ageTd(s)}</tr>))}</tbody>
         </table>
       );
     }
-
     if (activeTab === 'daemonsets') {
-      if (!daemonsets.length) return <div style={{ padding: '20px', fontSize: '12px', color: 'var(--text-muted)' }}>No daemonsets in {namespace}</div>;
+      if (!daemonsets.length) return <div style={{ padding: '16px', fontSize: 11, color: C.muted }}>No daemonsets in {namespace}</div>;
       return (
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr><TH>Name</TH><TH>Desired</TH><TH>Current</TH><TH>Ready</TH><TH>Up-to-date</TH><TH>Available</TH><TH>Age</TH></tr></thead>
-          <tbody>
-            {daemonsets.map((d, i) => (
-              <tr key={i}>
-                <TD mono color="var(--text-primary)">{String(d.name)}</TD>
-                <TD>{String(d.desired ?? '—')}</TD>
-                <TD>{String(d.current ?? '—')}</TD>
-                <TD>{String(d.ready ?? '—')}</TD>
-                <TD>{String(d.up_to_date ?? '—')}</TD>
-                <TD>{String(d.available ?? '—')}</TD>
-                {ageTd(d)}
-              </tr>
-            ))}
-          </tbody>
+          <thead><tr><TH>Name</TH><TH>Desired</TH><TH>Ready</TH><TH>Age</TH></tr></thead>
+          <tbody>{daemonsets.map((d, i) => (<tr key={i}><TD mono color={C.primary}>{String(d.name)}</TD><TD>{String(d.desired ?? '—')}</TD><TD>{String(d.ready ?? '—')}</TD>{ageTd(d)}</tr>))}</tbody>
         </table>
       );
     }
-
-    if (activeTab === 'replicasets') {
-      if (!replicasets.length) return <div style={{ padding: '20px', fontSize: '12px', color: 'var(--text-muted)' }}>No replicasets in {namespace}</div>;
-      return (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr><TH>Name</TH><TH>Desired</TH><TH>Current</TH><TH>Ready</TH><TH>Age</TH></tr></thead>
-          <tbody>
-            {replicasets.map((r, i) => (
-              <tr key={i}>
-                <TD mono color="var(--text-primary)">{String(r.name)}</TD>
-                <TD>{String(r.desired ?? '—')}</TD>
-                <TD>{String(r.current ?? '—')}</TD>
-                <TD>{String(r.ready ?? '—')}</TD>
-                {ageTd(r)}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      );
-    }
-
-    return null;
+    if (!replicasets.length) return <div style={{ padding: '16px', fontSize: 11, color: C.muted }}>No replicasets in {namespace}</div>;
+    return (
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead><tr><TH>Name</TH><TH>Desired</TH><TH>Ready</TH><TH>Age</TH></tr></thead>
+        <tbody>{replicasets.map((r, i) => (<tr key={i}><TD mono color={C.primary}>{String(r.name)}</TD><TD>{String(r.desired ?? '—')}</TD><TD>{String(r.ready ?? '—')}</TD>{ageTd(r)}</tr>))}</tbody>
+      </table>
+    );
   };
 
   return (
-    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
-      {/* Header */}
-      <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-        <Layers size={14} color="var(--text-primary)" />
-        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>Resources</span>
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>kubectl get all -n {namespace}</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <select
-            value={namespace}
-            onChange={(e) => setNamespace(e.target.value)}
-            style={{ padding: '3px 8px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-primary)', fontSize: '12px', cursor: 'pointer' }}
-          >
-            {namespaces.map((ns) => <option key={ns} value={ns}>{ns}</option>)}
-          </select>
-          <button type="button" onClick={() => refetch()}
-            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}>
-            {isFetching ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={13} />}
-          </button>
-        </div>
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+      <div style={{ padding: '9px 14px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Layers size={12} color={C.muted} />
+        <span style={{ fontSize: 11, fontWeight: 700, color: C.primary }}>Resource Explorer</span>
+        <span style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace' }}>{activeCluster}</span>
+        <select value={namespace} onChange={(e) => setNamespace(e.target.value)} style={{ marginLeft: 'auto', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, color: C.muted, fontSize: 10, padding: '2px 6px', cursor: 'pointer' }}>
+          {namespaces.map((ns) => <option key={ns}>{ns}</option>)}
+        </select>
+        <button type="button" onClick={() => refetch()} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 3 }}>
+          {isFetching ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={11} />}
+        </button>
       </div>
-
-      {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
-        {TABS.map((tab) => (
-          <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)}
-            style={{
-              padding: '8px 14px', background: 'none', border: 'none', borderBottom: `2px solid ${activeTab === tab.id ? 'var(--accent)' : 'transparent'}`,
-              color: activeTab === tab.id ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', fontSize: '12px', fontWeight: activeTab === tab.id ? 600 : 400,
-              display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', transition: 'color 0.15s',
-            }}>
-            {tab.label}
-            {counts[tab.id] > 0 && (
-              <span style={{ background: activeTab === tab.id ? 'var(--accent)' : 'var(--bg-hover)', color: activeTab === tab.id ? '#fff' : 'var(--text-muted)', borderRadius: 10, padding: '0 5px', fontSize: '10px', fontWeight: 700 }}>
-                {counts[tab.id]}
-              </span>
-            )}
+      <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}` }}>
+        {TABS.map((t) => (
+          <button key={t.id} type="button" onClick={() => setActiveTab(t.id)} style={{ padding: '7px 12px', background: 'none', border: 'none', borderBottom: `2px solid ${activeTab === t.id ? C.accent : 'transparent'}`, color: activeTab === t.id ? C.primary : C.dim, fontSize: 10, fontWeight: activeTab === t.id ? 700 : 400, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+            {t.label}
+            <span style={{ background: C.border, color: C.muted, borderRadius: 3, padding: '0 4px', fontSize: 9, fontFamily: 'monospace' }}>{counts[t.id]}</span>
           </button>
         ))}
       </div>
-
-      {/* Table */}
-      <div style={{ overflowX: 'auto' }}>
-        {renderTable()}
-      </div>
+      <div style={{ overflow: 'auto' }}>{renderTable()}</div>
     </div>
   );
 }
 
-// ─── Metrics Tab ──────────────────────────────────────────────────────────────
+// ─── Sparkline with grid lines ────────────────────────────────────────────────
+
+function Sparkline({ values, color = C.accent, height = 44 }: { values: number[]; color?: string; height?: number }) {
+  if (values.length < 2) return (
+    <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.dim, fontSize: 9 }}>No data</div>
+  );
+  const max = Math.max(...values, 0.0001);
+  const pts = values.map((v, i) => `${(i / (values.length - 1)) * 100},${height - (v / max) * (height - 4) - 2}`).join(' ');
+  const gridLines = [0.25, 0.5, 0.75].map((f) => Math.round(height - f * (height - 4) - 2));
+  return (
+    <svg width="100%" height={height} preserveAspectRatio="none" viewBox={`0 0 100 ${height}`} style={{ display: 'block' }}>
+      {gridLines.map((y) => <line key={y} x1="0" y1={y} x2="100" y2={y} stroke={C.border} strokeWidth="0.8" />)}
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <polyline points={`0,${height} ${pts} 100,${height}`} fill={color} fillOpacity="0.07" stroke="none" />
+    </svg>
+  );
+}
+
+// ─── Metrics sub-components ───────────────────────────────────────────────────
 
 type TimeRange = '1h' | '6h' | '24h' | '7d';
 type MetricsSubTab = 'dashboard' | 'raw';
 
 interface RawMetrics {
-  cpu: { metric: Record<string, string>; values: [number, string][] }[];
-  memory: { metric: Record<string, string>; values: [number, string][] }[];
-  restarts: { metric: Record<string, string>; values: [number, string][] }[];
+  cpu:        { metric: Record<string, string>; values: [number, string][] }[];
+  memory:     { metric: Record<string, string>; values: [number, string][] }[];
+  restarts:   { metric: Record<string, string>; values: [number, string][] }[];
   pod_status: { metric: Record<string, string>; values: [number, string][] }[];
 }
 
-function Sparkline({ values, color = 'var(--accent)', height = 40 }: { values: number[]; color?: string; height?: number }) {
-  if (values.length < 2) return <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 10 }}>No data</div>;
-  const max = Math.max(...values, 0.0001);
-  const pts = values.map((v, i) => `${(i / (values.length - 1)) * 100},${height - (v / max) * (height - 4) - 2}`).join(' ');
-  return (
-    <svg width="100%" height={height} preserveAspectRatio="none" viewBox={`0 0 100 ${height}`} style={{ display: 'block' }}>
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      <polyline points={`0,${height} ${pts} 100,${height}`} fill={color} fillOpacity="0.1" stroke="none" />
-    </svg>
-  );
-}
-
-function MetricCard({ title, unit, series, color, empty }: {
-  title: string;
-  unit: string;
-  series: { label: string; values: number[] }[];
-  color: string;
-  empty: boolean;
-}) {
+function MetricCard({ title, unit, series, color, empty }: { title: string; unit: string; series: { label: string; values: number[] }[]; color: string; empty: boolean }) {
   const latest = series[0]?.values.slice(-1)[0] ?? 0;
   const allValues = series.flatMap(s => s.values);
-
   return (
-    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{title}</span>
-        {!empty && <span style={{ fontSize: 18, fontWeight: 700, color }}>{latest.toFixed(2)}<span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 3 }}>{unit}</span></span>}
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <span style={{ fontSize: 9, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{title}</span>
+        {!empty && <span style={{ fontSize: 18, fontWeight: 700, color, fontFamily: 'monospace' }}>{latest.toFixed(2)}<span style={{ fontSize: 9, fontWeight: 400, color: C.muted, marginLeft: 3 }}>{unit}</span></span>}
       </div>
-      {empty
-        ? <div style={{ height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 11 }}>No data — Prometheus not connected</div>
-        : <Sparkline values={allValues} color={color} height={44} />
-      }
+      {empty ? (
+        <div style={{ height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.dim, fontSize: 10 }}>No data — Prometheus not connected</div>
+      ) : (
+        <Sparkline values={allValues} color={color} height={44} />
+      )}
       {!empty && series.slice(0, 3).map((s, i) => (
-        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
+        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: C.dim, marginTop: 4 }}>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>{s.label || '(default)'}</span>
           <span style={{ fontFamily: 'monospace' }}>{s.values.slice(-1)[0]?.toFixed(2)} {unit}</span>
         </div>
@@ -1047,33 +790,25 @@ function MetricsTab() {
   const clusters = useClusterStore(s => s.clusters);
   const activeCluster = clusters.find(c => c.active) ?? clusters[0];
 
-  const [subTab, setSubTab] = useState<MetricsSubTab>('dashboard');
-  const [timeRange, setTimeRange] = useState<TimeRange>('1h');
-  const [embedUrl, setEmbedUrl] = useState<string | null>(null);
-  const [embedError, setEmbedError] = useState<string | null>(null);
-  const [embedLoading, setEmbedLoading] = useState(false);
+  const [subTab,        setSubTab]        = useState<MetricsSubTab>('dashboard');
+  const [timeRange,     setTimeRange]     = useState<TimeRange>('1h');
+  const [embedUrl,      setEmbedUrl]      = useState<string | null>(null);
+  const [embedError,    setEmbedError]    = useState<string | null>(null);
+  const [embedLoading,  setEmbedLoading]  = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const fetchEmbedUrl = async () => {
-    setEmbedLoading(true);
-    setEmbedError(null);
+    setEmbedLoading(true); setEmbedError(null);
     try {
       const r = await fetch('/api/monitoring/embed-url', { credentials: 'include' });
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail ?? 'Failed to get embed URL');
       setEmbedUrl(data.embed_url);
-    } catch (e) {
-      setEmbedError(String(e));
-    } finally {
-      setEmbedLoading(false);
-    }
+    } catch (e) { setEmbedError(String(e)); }
+    finally { setEmbedLoading(false); }
   };
 
-  // Fetch embed URL on mount and on visibility change
-  useEffect(() => {
-    if (subTab === 'dashboard') fetchEmbedUrl();
-  }, [subTab]);
-
+  useEffect(() => { if (subTab === 'dashboard') fetchEmbedUrl(); }, [subTab]);
   useEffect(() => {
     const handler = () => { if (document.visibilityState === 'visible' && subTab === 'dashboard') fetchEmbedUrl(); };
     document.addEventListener('visibilitychange', handler);
@@ -1092,27 +827,20 @@ function MetricsTab() {
   });
 
   const toSeries = (result: RawMetrics[keyof RawMetrics] = []) =>
-    result.map(r => ({
-      label: Object.values(r.metric ?? {}).join('/'),
-      values: (r.values ?? []).map(([, v]) => parseFloat(v)),
-    }));
+    result.map(r => ({ label: Object.values(r.metric ?? {}).join('/'), values: (r.values ?? []).map(([, v]) => parseFloat(v)) }));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Sub-tab bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 0, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
-        {([
-          { id: 'dashboard' as const, label: 'Live Dashboard' },
-          { id: 'raw' as const, label: 'Raw Metrics' },
-        ]).map(t => (
-          <button key={t.id} type="button" onClick={() => setSubTab(t.id)} style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: `2px solid ${subTab === t.id ? 'var(--accent)' : 'transparent'}`, color: subTab === t.id ? 'var(--accent)' : 'var(--text-muted)', fontSize: 13, fontWeight: subTab === t.id ? 700 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 0, borderBottom: `1px solid ${C.border}` }}>
+        {([{ id: 'dashboard' as const, label: 'Live Dashboard' }, { id: 'raw' as const, label: 'Raw Metrics' }]).map(t => (
+          <button key={t.id} type="button" onClick={() => setSubTab(t.id)} style={{ padding: '7px 14px', background: 'none', border: 'none', borderBottom: `2px solid ${subTab === t.id ? C.accent : 'transparent'}`, color: subTab === t.id ? C.primary : C.dim, fontSize: 11, fontWeight: subTab === t.id ? 700 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
             {t.label}
           </button>
         ))}
         {subTab === 'raw' && (
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 3 }}>
             {(['1h', '6h', '24h', '7d'] as TimeRange[]).map(r => (
-              <button key={r} type="button" onClick={() => setTimeRange(r)} style={{ padding: '4px 10px', fontSize: 11, fontWeight: timeRange === r ? 700 : 400, background: timeRange === r ? 'rgba(99,102,241,0.15)' : 'var(--bg-hover)', border: `1px solid ${timeRange === r ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 5, color: timeRange === r ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+              <button key={r} type="button" onClick={() => setTimeRange(r)} style={{ padding: '3px 8px', fontSize: 10, fontWeight: timeRange === r ? 700 : 400, background: timeRange === r ? `${C.accent}18` : C.surface, border: `1px solid ${timeRange === r ? C.accent : C.border}`, borderRadius: 4, color: timeRange === r ? C.accent : C.dim, cursor: 'pointer', fontFamily: 'monospace' }}>
                 {r}
               </button>
             ))}
@@ -1120,95 +848,57 @@ function MetricsTab() {
         )}
       </div>
 
-      {/* Live Dashboard sub-tab */}
       {subTab === 'dashboard' && (
         <div>
           {embedLoading && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '20px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text-muted)', fontSize: 13 }}>
-              <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite', color: 'var(--accent)' }} />
-              Loading Grafana dashboard…
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: 18, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted, fontSize: 12 }}>
+              <Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite', color: C.accent }} /> Loading Grafana dashboard…
             </div>
           )}
           {embedError && !embedLoading && (
-            <div style={{ padding: '18px 20px', background: 'rgba(248,113,113,0.07)', border: '1px solid rgba(248,113,113,0.25)', borderRadius: 10, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-              <AlertCircle size={16} style={{ color: 'var(--error)', flexShrink: 0, marginTop: 1 }} />
+            <div style={{ padding: '16px 18px', background: `${C.error}0a`, border: `1px solid ${C.error}33`, borderRadius: 8, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <AlertCircle size={14} style={{ color: C.error, flexShrink: 0, marginTop: 1 }} />
               <div style={{ flex: 1 }}>
-                <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: 'var(--error)' }}>Grafana not available</p>
-                <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--text-muted)' }}>{embedError}</p>
-                <p style={{ margin: 0, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                  Start monitoring with: <code style={{ fontSize: 11, background: 'var(--bg-hover)', padding: '1px 6px', borderRadius: 3 }}>docker-compose --profile monitoring up -d</code>
+                <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 600, color: C.error }}>Grafana not available</p>
+                <p style={{ margin: '0 0 8px', fontSize: 11, color: C.muted }}>{embedError}</p>
+                <p style={{ margin: 0, fontSize: 11, color: C.dim, lineHeight: 1.6 }}>
+                  Start monitoring: <code style={{ fontSize: 10, background: C.border, padding: '1px 5px', borderRadius: 3 }}>docker-compose --profile monitoring up -d</code>
                 </p>
               </div>
-              <button type="button" onClick={fetchEmbedUrl} style={{ flexShrink: 0, padding: '5px 12px', background: 'none', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
-                <RefreshCw size={11} /> Retry
+              <button type="button" onClick={fetchEmbedUrl} style={{ flexShrink: 0, padding: '4px 10px', background: 'none', border: `1px solid ${C.border}`, borderRadius: 5, color: C.muted, cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', gap: 3 }}>
+                <RefreshCw size={10} /> Retry
               </button>
             </div>
           )}
           {embedUrl && !embedLoading && (
-            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
-              <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Activity size={12} style={{ color: 'var(--accent)' }} />
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Live Grafana — refreshes every 30s · embed expires in ~1 hour</span>
-                <button type="button" onClick={fetchEmbedUrl} style={{ marginLeft: 'auto', padding: '3px 8px', background: 'none', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', gap: 3 }}>
+            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+              <div style={{ padding: '7px 12px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 7 }}>
+                <Activity size={11} style={{ color: C.accent }} />
+                <span style={{ fontSize: 10, color: C.dim }}>Live Grafana — refreshes every 30s · embed expires in ~1 hour</span>
+                <button type="button" onClick={fetchEmbedUrl} style={{ marginLeft: 'auto', padding: '2px 7px', background: 'none', border: `1px solid ${C.border}`, borderRadius: 4, color: C.dim, cursor: 'pointer', fontSize: 9, display: 'flex', alignItems: 'center', gap: 3 }}>
                   <RefreshCw size={9} /> Refresh URL
                 </button>
               </div>
-              <iframe
-                ref={iframeRef}
-                src={embedUrl}
-                style={{ width: '100%', height: 520, border: 'none', display: 'block' }}
-                title="Grafana Dashboard"
-                sandbox="allow-same-origin allow-scripts allow-forms"
-              />
+              <iframe ref={iframeRef} src={embedUrl} style={{ width: '100%', height: 520, border: 'none', display: 'block' }} title="Grafana Dashboard" sandbox="allow-same-origin allow-scripts allow-forms" />
             </div>
           )}
         </div>
       )}
 
-      {/* Raw Metrics sub-tab */}
       {subTab === 'raw' && (
         <div>
-          {!activeCluster && (
-            <div style={{ padding: '20px 24px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-              No active cluster. Add and activate a cluster in Monitor → Cluster Health.
-            </div>
-          )}
+          {!activeCluster && <div style={{ padding: '18px 22px', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, textAlign: 'center', color: C.muted, fontSize: 12 }}>No active cluster.</div>}
           {activeCluster && metricsLoading && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '20px', color: 'var(--text-muted)', fontSize: 13 }}>
-              <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite', color: 'var(--accent)' }} />
-              Fetching metrics for <strong>{activeCluster.name}</strong>…
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: 18, color: C.muted, fontSize: 12 }}>
+              <Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite', color: C.accent }} /> Fetching metrics…
             </div>
           )}
           {activeCluster && !metricsLoading && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              <MetricCard
-                title="CPU Usage"
-                unit="cores"
-                color="var(--accent)"
-                series={toSeries(rawMetrics?.cpu)}
-                empty={!rawMetrics?.cpu?.length}
-              />
-              <MetricCard
-                title="Memory Usage"
-                unit="MiB"
-                color="#3b82f6"
-                series={toSeries(rawMetrics?.memory).map(s => ({ ...s, values: s.values.map(v => v / 1024 / 1024) }))}
-                empty={!rawMetrics?.memory?.length}
-              />
-              <MetricCard
-                title="Container Restarts"
-                unit="restarts"
-                color="#f59e0b"
-                series={toSeries(rawMetrics?.restarts)}
-                empty={!rawMetrics?.restarts?.length}
-              />
-              <MetricCard
-                title="Pod Status"
-                unit="pods"
-                color="var(--success)"
-                series={toSeries(rawMetrics?.pod_status)}
-                empty={!rawMetrics?.pod_status?.length}
-              />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <MetricCard title="CPU Usage" unit="cores" color={C.accent} series={toSeries(rawMetrics?.cpu)} empty={!rawMetrics?.cpu?.length} />
+              <MetricCard title="Memory Usage" unit="MiB" color="#3b82f6" series={toSeries(rawMetrics?.memory).map(s => ({ ...s, values: s.values.map(v => v / 1024 / 1024) }))} empty={!rawMetrics?.memory?.length} />
+              <MetricCard title="Container Restarts" unit="restarts" color={C.warning} series={toSeries(rawMetrics?.restarts)} empty={!rawMetrics?.restarts?.length} />
+              <MetricCard title="Pod Status" unit="pods" color={C.success} series={toSeries(rawMetrics?.pod_status)} empty={!rawMetrics?.pod_status?.length} />
             </div>
           )}
         </div>
@@ -1217,223 +907,381 @@ function MetricsTab() {
   );
 }
 
-// ─── Main MonitorMode ──────────────────────────────────────────────────────────
+// ─── Metric summary card (Health tab top row) ─────────────────────────────────
 
-type MonitorTab = 'issues' | 'health' | 'resources' | 'metrics';
+function MetricSummaryCard({ label, value, pct }: { label: string; value: string; pct?: number }) {
+  const p = Math.min(100, Math.max(0, pct ?? 0));
+  const bc = barColor(p);
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px' }}>
+      <p style={{ fontSize: 9, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>{label}</p>
+      <p style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', color: C.primary, lineHeight: 1, margin: '0 0 10px' }}>{value}</p>
+      {pct !== undefined && (
+        <div style={{ height: 3, background: C.border, borderRadius: 2, overflow: 'hidden' }}>
+          <div style={{ width: `${p}%`, height: '100%', background: bc, borderRadius: 2, transition: 'width 0.5s' }} />
+        </div>
+      )}
+    </div>
+  );
+}
 
-export function MonitorMode() {
+// ─── Service table (Health tab primary view) ──────────────────────────────────
+
+function ServiceTablePanel() {
+  const { activeCluster } = useClusterStore();
+  const [namespace, setNamespace] = useState('default');
+  const { data: nsData } = useNamespaces(activeCluster);
+  const { data, isFetching } = useResources(activeCluster, namespace);
+
+  const namespaces = nsData?.namespaces ?? ['default'];
+  type AnyResource = Record<string, unknown>;
+  const deployments = (data?.deployments ?? []) as AnyResource[];
+
+  function deployStatus(d: AnyResource): 'healthy' | 'degraded' | 'error' {
+    const ready = String(d.ready ?? '0/0');
+    const parts = ready.split('/').map(Number);
+    const r = parts[0], t = parts[1];
+    if (!t || isNaN(r) || isNaN(t)) return 'error';
+    if (r === t && t > 0) return 'healthy';
+    if (r > 0) return 'degraded';
+    return 'error';
+  }
+
+  const STATUS_DOT: Record<string, string> = { healthy: C.success, degraded: C.warning, error: C.error };
+  const STATUS_LABEL: Record<string, string> = { healthy: 'Healthy', degraded: 'Degraded', error: 'Error' };
+
+  if (!activeCluster) {
+    return (
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '20px', textAlign: 'center', color: C.dim, fontSize: 11 }}>
+        No active cluster — activate one in Connections below.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+      <div style={{ padding: '9px 14px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: C.primary, letterSpacing: '0.04em' }}>Services</span>
+        <span style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace' }}>{activeCluster}</span>
+        <select value={namespace} onChange={(e) => setNamespace(e.target.value)} style={{ marginLeft: 'auto', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, color: C.muted, fontSize: 10, padding: '2px 6px', cursor: 'pointer' }}>
+          {namespaces.map((ns) => <option key={ns}>{ns}</option>)}
+        </select>
+        {isFetching && <Loader2 size={11} style={{ animation: 'spin 1s linear infinite', color: C.dim }} />}
+      </div>
+
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ background: C.bg }}>
+            {[['Service', '2fr'], ['Status', '1fr'], ['Pods', '1fr'], ['CPU', '1fr'], ['Memory', '1fr'], ['Req/s', '1fr']].map(([h]) => (
+              <th key={h} style={{ padding: '7px 14px', textAlign: 'left', fontSize: 9, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.08em', borderBottom: `1px solid ${C.border}` }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {deployments.map((d, i) => {
+            const st = deployStatus(d);
+            const ready = String(d.ready ?? '—');
+            const parts = ready.split('/').map(Number);
+            const r = parts[0], t = parts[1];
+            const podPct = (t && !isNaN(r) && !isNaN(t)) ? (r / t) * 100 : 0;
+            const rowBg = st === 'error' ? C.rowErr : st === 'degraded' ? C.rowWarn : 'transparent';
+            return (
+              <tr key={i} style={{ background: rowBg, borderBottom: `1px solid ${C.border}`, height: 40 }}>
+                <td style={{ padding: '0 14px', fontFamily: 'monospace', fontSize: 12, color: C.primary }}>{String(d.name)}</td>
+                <td style={{ padding: '0 14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: STATUS_DOT[st], flexShrink: 0 }} />
+                    <span style={{ fontSize: 11, color: C.muted }}>{STATUS_LABEL[st]}</span>
+                    {st === 'error' && <span style={{ fontSize: 9, background: C.badgeErr, color: C.error, padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>ERR</span>}
+                  </div>
+                </td>
+                <td style={{ padding: '0 14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ width: 40, height: 3, background: C.border, borderRadius: 2, overflow: 'hidden' }}>
+                      <div style={{ width: `${podPct}%`, height: '100%', background: barColor(100 - podPct), borderRadius: 2 }} />
+                    </div>
+                    <span style={{ fontSize: 11, fontFamily: 'monospace', color: C.muted }}>{ready}</span>
+                  </div>
+                </td>
+                <td style={{ padding: '0 14px' }}><span style={{ fontSize: 11, color: C.dead, fontFamily: 'monospace' }}>—</span></td>
+                <td style={{ padding: '0 14px' }}><span style={{ fontSize: 11, color: C.dead, fontFamily: 'monospace' }}>—</span></td>
+                <td style={{ padding: '0 14px' }}><span style={{ fontSize: 11, color: C.dead, fontFamily: 'monospace' }}>—</span></td>
+              </tr>
+            );
+          })}
+          {!isFetching && deployments.length === 0 && (
+            <tr>
+              <td colSpan={6} style={{ padding: '18px 14px', textAlign: 'center', color: C.dim, fontSize: 11 }}>No deployments in {namespace}</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─── Health tab (metric cards + service table + connections) ──────────────────
+
+function HealthTab() {
+  const { activeCluster } = useClusterStore();
+  const { data, isFetching: overviewFetching } = useClusterOverview(activeCluster);
+  const overview = data as ClusterOverview | undefined;
+  const nodes = overview?.nodes ?? [];
+  type NodeWithMetrics = K8sNode & { cpu_pct?: number; mem_pct?: number };
+  const avgCpu = nodes.length ? Math.round((nodes as NodeWithMetrics[]).reduce((s, n) => s + (n.cpu_pct ?? 0), 0) / nodes.length) : null;
+  const avgMem = nodes.length ? Math.round((nodes as NodeWithMetrics[]).reduce((s, n) => s + (n.mem_pct ?? 0), 0) / nodes.length) : null;
+  const totalNodes   = nodes.length || null;
+  const runningPods  = (overview?.pod_counts?.running as number) ?? null;
+
   const totalSpend = SPEND_DATA.reduce((s, d) => s + d.monthly, 0);
-  const vsLastMonth = -4.2;
   const budget = 2500;
   const budgetPct = Math.round((totalSpend / budget) * 100);
-  const [activeTab, setActiveTab] = useState<MonitorTab>('issues');
 
-  // Incidents polling
+  return (
+    <>
+      {/* 4 metric cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+        <MetricSummaryCard label="Nodes" value={overviewFetching && !overview ? '…' : (totalNodes ? String(totalNodes) : '—')} />
+        <MetricSummaryCard label="Running Pods" value={overviewFetching && !overview ? '…' : (runningPods !== null ? String(runningPods) : '—')} />
+        <MetricSummaryCard label="Avg CPU" value={avgCpu !== null ? `${avgCpu}%` : '—'} pct={avgCpu ?? 0} />
+        <MetricSummaryCard label="Avg Memory" value={avgMem !== null ? `${avgMem}%` : '—'} pct={avgMem ?? 0} />
+      </div>
+
+      {/* Service table */}
+      <ServiceTablePanel />
+
+      {/* Cluster node overview */}
+      <ClusterOverviewPanel />
+
+      {/* Cluster connections */}
+      <ClusterHealthSection />
+
+      {/* Cost & Drift */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+        {[
+          { label: 'Total Spend',   value: `$${totalSpend.toLocaleString()}`, sub: 'This month',      icon: <DollarSign size={16} />,  color: C.primary  },
+          { label: 'vs Last Month', value: '-4.2%',                           sub: '-$79 lower',       icon: <TrendingDown size={16} />, color: C.success  },
+          { label: 'Budget Usage',  value: `${budgetPct}%`,                   sub: `$${(budget - totalSpend).toLocaleString()} remaining`, icon: <BarChart2 size={16} />, color: budgetPct > 90 ? C.error : budgetPct > 75 ? C.warning : C.primary },
+          { label: 'Projected EOY', value: '$22,740',                         sub: '+12% YoY',          icon: <TrendingUp size={16} />,  color: C.warning  },
+        ].map((card) => (
+          <div key={card.label} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={{ fontSize: 9, color: C.dim, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{card.label}</span>
+              <span style={{ color: card.color, opacity: 0.6 }}>{card.icon}</span>
+            </div>
+            <p style={{ fontSize: 22, fontWeight: 700, color: card.color, lineHeight: 1, fontFamily: 'monospace' }}>{card.value}</p>
+            <p style={{ fontSize: 10, color: C.dim, marginTop: 4 }}>{card.sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Spend + drift */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 14 }}>
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 18 }}>
+          <p style={{ fontWeight: 700, fontSize: 11, color: C.primary, marginBottom: 14, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Spend by Service</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {SPEND_DATA.map((item) => (
+              <div key={item.service}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                  <span style={{ fontSize: 11, color: C.muted }}>{item.service}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: item.color, fontFamily: 'monospace' }}>${item.monthly}</span>
+                </div>
+                <div style={{ height: 4, background: C.border, borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${(item.monthly / maxSpend) * 100}%`, background: item.color, borderRadius: 2, transition: 'width 0.5s' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ background: `${C.error}08`, border: `1px solid ${C.error}44`, borderRadius: 8, padding: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+              <AlertTriangle size={13} color={C.error} />
+              <span style={{ fontWeight: 700, fontSize: 11, color: C.primary }}>Cost Anomaly</span>
+            </div>
+            <p style={{ fontSize: 11, color: C.muted, lineHeight: 1.6 }}>EC2 spend is <strong style={{ color: C.error }}>40% above forecast</strong> for the past 3 days.</p>
+            <button type="button" style={{ marginTop: 10, padding: '4px 10px', background: 'transparent', border: `1px solid ${C.error}`, borderRadius: 4, color: C.error, fontSize: 10, cursor: 'pointer', fontWeight: 600 }}>Investigate</button>
+          </div>
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 14 }}>
+            <p style={{ fontWeight: 700, fontSize: 11, color: C.primary, marginBottom: 10 }}>Quick Wins</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {OPTIMIZATIONS.slice(0, 2).map((opt) => (
+                <div key={opt.title} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 11, color: C.muted }}>{opt.title}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: C.success, background: `${C.success}12`, padding: '2px 6px', borderRadius: 3, whiteSpace: 'nowrap' }}>{opt.saving}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Infrastructure drift */}
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+        <div style={{ padding: '9px 14px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <p style={{ fontWeight: 700, fontSize: 11, color: C.primary }}>
+            Infrastructure Drift
+            <span style={{ marginLeft: 7, padding: '1px 7px', background: `${C.error}18`, border: `1px solid ${C.error}44`, borderRadius: 3, color: C.error, fontSize: 9, fontWeight: 700 }}>3 drifted</span>
+          </p>
+          <button type="button" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 4, color: C.muted, fontSize: 10, cursor: 'pointer' }}>
+            <RefreshCw size={10} /> Scan Now
+          </button>
+        </div>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ background: C.bg }}>
+              {['Resource', 'Type', 'Expected', 'Actual', 'Severity', 'Action'].map((h) => (
+                <th key={h} style={{ padding: '6px 12px', textAlign: 'left', fontSize: 9, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: `1px solid ${C.border}` }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {DRIFT_RESOURCES.map((row, i) => (
+              <tr key={i} style={{ borderBottom: i < DRIFT_RESOURCES.length - 1 ? `1px solid ${C.border}` : 'none' }}>
+                <td style={{ padding: '9px 12px', fontSize: 11, color: C.primary, fontFamily: 'monospace' }}>{row.resource}</td>
+                <td style={{ padding: '9px 12px', fontSize: 11, color: C.muted, fontFamily: 'monospace' }}>{row.type}</td>
+                <td style={{ padding: '9px 12px', fontSize: 11, color: C.success }}>{row.expected}</td>
+                <td style={{ padding: '9px 12px', fontSize: 11, color: C.error }}>{row.actual}</td>
+                <td style={{ padding: '9px 12px' }}>
+                  <span style={{ padding: '2px 6px', background: `${SEV_COLORS[row.severity]}18`, border: `1px solid ${SEV_COLORS[row.severity]}`, borderRadius: 3, color: SEV_COLORS[row.severity], fontSize: 9, fontWeight: 700, textTransform: 'uppercase' }}>
+                    {row.severity}
+                  </span>
+                </td>
+                <td style={{ padding: '9px 12px' }}>
+                  <button type="button" style={{ padding: '3px 8px', background: C.accent, border: 'none', borderRadius: 4, color: '#fff', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>Sync</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Optimization suggestions */}
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+        <div style={{ padding: '9px 14px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <p style={{ fontWeight: 700, fontSize: 11, color: C.primary }}>Optimization Suggestions</p>
+          <span style={{ fontSize: 11, color: C.success, fontWeight: 700, fontFamily: 'monospace' }}>
+            ${OPTIMIZATIONS.reduce((s, o) => s + parseInt(o.saving), 0)}/mo potential
+          </span>
+        </div>
+        {OPTIMIZATIONS.map((opt, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '11px 14px', borderBottom: i < OPTIMIZATIONS.length - 1 ? `1px solid ${C.border}` : 'none', gap: 14 }}>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: C.primary, marginBottom: 2 }}>{opt.title}</p>
+              <p style={{ fontSize: 10, color: C.dim }}>{opt.desc}</p>
+            </div>
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.success, whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{opt.saving}</span>
+            <button type="button" style={{ padding: '4px 10px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 4, color: C.muted, fontSize: 10, cursor: 'pointer', whiteSpace: 'nowrap' }}>Apply</button>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+// ─── Main MonitorMode ─────────────────────────────────────────────────────────
+
+type MonitorTab = 'health' | 'issues' | 'resources' | 'metrics';
+type TopTimeRange = '15m' | '1h' | '3h' | '24h' | '7d';
+
+export function MonitorMode() {
+  const [activeTab,  setActiveTab]  = useState<MonitorTab>('health');
+  const [timeRange,  setTimeRange]  = useState<TopTimeRange>('1h');
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+
+  const { clusters } = useClusterStore();
+  const activeCluster = clusters.find((c) => c.active) ?? clusters[0];
+
+  useEffect(() => {
+    const id = setInterval(() => setLastUpdate(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
   const { data: incidentsData } = useQuery({
     queryKey: ['incidents'],
-    queryFn: async () => {
-      const r = await fetch('/api/incidents');
-      return r.json();
-    },
+    queryFn: async () => { const r = await fetch('/api/incidents'); return r.json(); },
     refetchInterval: 30_000,
   });
   const incidents: Incident[] = incidentsData?.incidents ?? [];
   const activeIncidentCount = incidents.filter((i) => i.status === 'active').length;
 
   const tabs: { id: MonitorTab; label: string; icon: React.ReactNode; badge?: number }[] = [
-    { id: 'issues',    label: 'Issues',         icon: <AlertTriangle size={13} />, badge: activeIncidentCount || undefined },
-    { id: 'health',    label: 'Cluster Health', icon: <Activity size={13} /> },
-    { id: 'resources', label: 'Resources',      icon: <BarChart3 size={13} /> },
-    { id: 'metrics',   label: 'Metrics',        icon: <LineChart size={13} /> },
+    { id: 'health',    label: 'Health',    icon: <Activity size={11} /> },
+    { id: 'issues',    label: 'Issues',    icon: <AlertTriangle size={11} />, badge: activeIncidentCount || undefined },
+    { id: 'resources', label: 'Resources', icon: <BarChart3 size={11} /> },
+    { id: 'metrics',   label: 'Metrics',   icon: <LineChart size={11} /> },
   ];
 
+  const fmt = (d: Date) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
   return (
-    <div style={{ padding: '20px', overflow: 'auto', height: '100%' }}>
-      <div style={{ maxWidth: '1100px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: C.bg, overflow: 'hidden' }}>
+      <style>{`
+        @keyframes livePulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.35; transform: scale(0.75); }
+        }
+      `}</style>
 
-        {/* Tab bar */}
-        <div style={{ borderBottom: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', gap: 0 }}>
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                style={{
-                  padding: '10px 18px', background: 'none', border: 'none',
-                  borderBottom: `2px solid ${activeTab === tab.id ? 'var(--accent)' : 'transparent'}`,
-                  color: activeTab === tab.id ? 'var(--accent)' : 'var(--text-muted)',
-                  fontSize: 13, fontWeight: activeTab === tab.id ? 700 : 400,
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-                }}
-              >
-                {tab.icon}{tab.label}
-                {tab.badge !== undefined && tab.badge > 0 && (
-                  <span style={{ background: 'var(--error)', color: '#fff', borderRadius: 100, fontSize: 10, fontWeight: 700, padding: '1px 5px', minWidth: 16, textAlign: 'center' }}>
-                    {tab.badge}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Issues tab */}
-        {activeTab === 'issues' && <IssuesPanel incidents={incidents} summary={incidentsData?.summary} />}
-
-        {/* Health tab */}
-        {activeTab === 'health' && (
-          <>
-            {/* ① Cluster health — all clusters, green/red status, inline token fix */}
-            <ClusterHealthSection />
-
-            {/* ② Active cluster overview — nodes with CPU/memory bars, warning events */}
-            <ClusterOverviewPanel />
-
-            {/* Cost & drift */}
-            <>
-              <>
-                {/* ③ Cost metric cards (demo) */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
-          {[
-            { label: 'Total Spend', value: `$${totalSpend.toLocaleString()}`, sub: 'This month', icon: <DollarSign size={18} />, color: 'var(--text-primary)' },
-            { label: 'vs Last Month', value: `${vsLastMonth}%`, sub: '-$79 lower', icon: <TrendingDown size={18} />, color: 'var(--success)' },
-            { label: 'Budget Usage', value: `${budgetPct}%`, sub: `$${(budget - totalSpend).toLocaleString()} remaining`, icon: <BarChart2 size={18} />, color: budgetPct > 90 ? 'var(--error)' : budgetPct > 75 ? 'var(--warning)' : 'var(--text-primary)' },
-            { label: 'Projected EOY', value: '$22,740', sub: '+12% YoY', icon: <TrendingUp size={18} />, color: 'var(--warning)' },
-          ].map((card) => (
-            <div key={card.label} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', padding: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{card.label}</span>
-                <span style={{ color: card.color, opacity: 0.7 }}>{card.icon}</span>
-              </div>
-              <p style={{ fontSize: '24px', fontWeight: 700, color: card.color, lineHeight: 1 }}>{card.value}</p>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>{card.sub}</p>
-            </div>
+      {/* Top bar — 48px */}
+      <div style={{ height: 48, minHeight: 48, background: C.surface, borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', padding: '0 18px', gap: 10, flexShrink: 0 }}>
+        <span style={{ fontSize: 11, color: C.dim }}>Monitor</span>
+        <span style={{ color: C.border, fontSize: 14 }}>/</span>
+        {activeCluster ? (
+          <span style={{ fontSize: 11, background: C.border, color: C.muted, padding: '2px 8px', borderRadius: 4, fontFamily: 'monospace' }}>
+            {activeCluster.name}
+          </span>
+        ) : (
+          <span style={{ fontSize: 10, color: C.dim }}>no cluster</span>
+        )}
+        <div style={{ flex: 1 }} />
+        <div style={{ display: 'flex', gap: 2 }}>
+          {(['15m', '1h', '3h', '24h', '7d'] as TopTimeRange[]).map((r) => (
+            <button key={r} type="button" onClick={() => setTimeRange(r)} style={{ padding: '3px 8px', background: timeRange === r ? `${C.accent}1a` : 'transparent', border: `1px solid ${timeRange === r ? C.accent : C.border}`, borderRadius: 4, color: timeRange === r ? C.accent : C.dim, fontSize: 10, cursor: 'pointer', fontFamily: 'monospace', fontWeight: timeRange === r ? 700 : 400 }}>
+              {r}
+            </button>
           ))}
         </div>
-
-        {/* ④ Spend by service + anomaly */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '16px' }}>
-          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', padding: '20px' }}>
-            <p style={{ fontWeight: 600, fontSize: '13px', marginBottom: '16px' }}>Spend by Service</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {SPEND_DATA.map((item) => (
-                <div key={item.service}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{item.service}</span>
-                    <span style={{ fontSize: '12px', fontWeight: 600, color: item.color }}>${item.monthly}</span>
-                  </div>
-                  <div style={{ height: '6px', background: 'var(--bg-hover)', borderRadius: '3px', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${(item.monthly / maxSpend) * 100}%`, background: item.color, borderRadius: '3px', transition: 'width 0.5s ease' }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid var(--error)', borderRadius: '8px', padding: '16px', marginBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                <AlertTriangle size={16} color="var(--error)" />
-                <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>Cost Anomaly Detected</span>
-              </div>
-              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                EC2 spend is <strong style={{ color: 'var(--error)' }}>40% above forecast</strong> for the past 3 days.
-              </p>
-              <button type="button" style={{ marginTop: '12px', padding: '5px 12px', background: 'transparent', border: '1px solid var(--error)', borderRadius: '5px', color: 'var(--error)', fontSize: '12px', cursor: 'pointer', fontWeight: 600 }}>
-                Investigate
-              </button>
-            </div>
-            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', padding: '16px' }}>
-              <p style={{ fontWeight: 600, fontSize: '12px', marginBottom: '12px', color: 'var(--text-primary)' }}>Quick Wins</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {OPTIMIZATIONS.slice(0, 2).map((opt) => (
-                  <div key={opt.title} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{opt.title}</span>
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--success)', background: 'rgba(34,197,94,0.1)', padding: '2px 6px', borderRadius: '4px', whiteSpace: 'nowrap', marginLeft: '8px' }}>{opt.saving}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginLeft: 6 }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.success, animation: 'livePulse 2s ease-in-out infinite' }} />
+          <span style={{ fontSize: 9, color: C.dim, fontWeight: 700, letterSpacing: '0.08em' }}>LIVE</span>
         </div>
+      </div>
 
-        {/* ⑤ Optimizations list */}
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
-          <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <p style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>Optimization Suggestions</p>
-            <span style={{ fontSize: '12px', color: 'var(--success)', fontWeight: 600 }}>
-              Total potential: ${OPTIMIZATIONS.reduce((s, o) => s + parseInt(o.saving), 0)}/mo
-            </span>
-          </div>
-          <div>
-            {OPTIMIZATIONS.map((opt, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '12px 20px', borderBottom: i < OPTIMIZATIONS.length - 1 ? '1px solid var(--border)' : 'none', gap: '16px' }}>
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>{opt.title}</p>
-                  <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{opt.desc}</p>
-                </div>
-                <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--success)', whiteSpace: 'nowrap' }}>{opt.saving}</span>
-                <button type="button" style={{ padding: '5px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: '5px', color: 'var(--text-secondary)', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>Apply</button>
-              </div>
-            ))}
-          </div>
+      {/* Tab bar — 32px */}
+      <div style={{ height: 32, minHeight: 32, background: C.surface, borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'flex-end', padding: '0 18px', flexShrink: 0 }}>
+        {tabs.map((tab) => (
+          <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} style={{ height: 32, padding: '0 14px', background: 'none', border: 'none', borderBottom: `2px solid ${activeTab === tab.id ? C.accent : 'transparent'}`, color: activeTab === tab.id ? C.primary : C.dim, fontSize: 11, fontWeight: activeTab === tab.id ? 600 : 400, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+            {tab.icon}{tab.label}
+            {tab.badge !== undefined && tab.badge > 0 && (
+              <span style={{ background: C.error, color: '#fff', borderRadius: 100, fontSize: 9, fontWeight: 700, padding: '1px 5px', minWidth: 14, textAlign: 'center' }}>{tab.badge}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Scrollable content */}
+      <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px' }}>
+        <div style={{ maxWidth: 1100, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {activeTab === 'health'    && <HealthTab />}
+          {activeTab === 'issues'    && <IssuesPanel incidents={incidents} summary={incidentsData?.summary} />}
+          {activeTab === 'resources' && <ResourceExplorerPanel />}
+          {activeTab === 'metrics'   && <MetricsTab />}
         </div>
+      </div>
 
-        {/* ⑥ Drift detection */}
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
-          <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <p style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>
-              Infrastructure Drift
-              <span style={{ marginLeft: '8px', padding: '2px 8px', background: 'rgba(239,68,68,0.12)', border: '1px solid var(--error)', borderRadius: '4px', color: 'var(--error)', fontSize: '11px', fontWeight: 600 }}>3 drifted</span>
-            </p>
-            <button type="button" style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: '5px', color: 'var(--text-secondary)', fontSize: '12px', cursor: 'pointer' }}>
-              <RefreshCw size={12} /> Scan Now
-            </button>
-          </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: 'var(--bg-base)' }}>
-                {['Resource', 'Type', 'Expected', 'Actual', 'Severity', 'Action'].map((h) => (
-                  <th key={h} style={{ padding: '8px 16px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border)' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {DRIFT_RESOURCES.map((row, i) => (
-                <tr key={i} style={{ borderBottom: i < DRIFT_RESOURCES.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                  <td style={{ padding: '10px 16px', fontSize: '12px', color: 'var(--text-primary)', fontFamily: 'monospace' }}>{row.resource}</td>
-                  <td style={{ padding: '10px 16px', fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{row.type}</td>
-                  <td style={{ padding: '10px 16px', fontSize: '12px', color: 'var(--success)' }}>{row.expected}</td>
-                  <td style={{ padding: '10px 16px', fontSize: '12px', color: 'var(--error)' }}>{row.actual}</td>
-                  <td style={{ padding: '10px 16px' }}>
-                    <span style={{ padding: '2px 8px', background: `${SEV_COLORS[row.severity]}18`, border: `1px solid ${SEV_COLORS[row.severity]}`, borderRadius: '4px', color: SEV_COLORS[row.severity], fontSize: '11px', fontWeight: 600, textTransform: 'uppercase' }}>
-                      {row.severity}
-                    </span>
-                  </td>
-                  <td style={{ padding: '10px 16px' }}>
-                    <button type="button" style={{ padding: '4px 10px', background: 'var(--accent)', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}>Sync</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-              </>
-            </>
-          </>
+      {/* Bottom status bar — 32px */}
+      <div style={{ height: 32, minHeight: 32, background: C.surface, borderTop: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', padding: '0 18px', gap: 16, flexShrink: 0 }}>
+        <span style={{ fontSize: 9, color: C.dim, fontFamily: 'monospace' }}>
+          {activeCluster ? `${activeCluster.name} · ${activeCluster.environment?.toUpperCase()}` : 'no cluster selected'}
+        </span>
+        {activeCluster?.api_url && (
+          <span style={{ fontSize: 9, color: C.dead, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>{activeCluster.api_url}</span>
         )}
-
-        {/* Resources tab */}
-        {activeTab === 'resources' && (
-          <ResourceExplorerPanel />
-        )}
-
-        {/* Metrics tab */}
-        {activeTab === 'metrics' && (
-          <MetricsTab />
-        )}
-
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 9, color: C.dead, fontFamily: 'monospace' }}>updated {fmt(lastUpdate)}</span>
+        <span style={{ fontSize: 9, color: C.dead }}>·</span>
+        <span style={{ fontSize: 9, color: activeIncidentCount > 0 ? C.error : C.dim }}>{activeIncidentCount} active issue{activeIncidentCount !== 1 ? 's' : ''}</span>
       </div>
     </div>
   );
