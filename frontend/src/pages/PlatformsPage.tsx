@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   GitBranch, GitMerge, Server, Shield, Cloud, Database,
-  Activity, BarChart2, CheckCircle2, Loader2,
+  Activity, BarChart2, Loader2,
   Plus, Trash2, Edit2, ChevronDown, ChevronRight,
   Zap,
 } from 'lucide-react';
@@ -38,18 +38,15 @@ interface PlatformCardProps {
   name: string;
   status: PlatformStatus;
   details?: string;
-  lastTested?: string;
-  onTest?: () => void;
   onEdit?: () => void;
   onDisconnect?: () => void;
   onConnect?: () => void;
   onExpand?: () => void;
   expanded?: boolean;
   children?: React.ReactNode;
-  testing?: boolean;
 }
 
-function PlatformCard({ icon, name, status, details, lastTested, onTest, onEdit, onDisconnect, onConnect, onExpand, expanded, children, testing }: PlatformCardProps) {
+function PlatformCard({ icon, name, status, details, onEdit, onDisconnect, onConnect, onExpand, expanded, children }: PlatformCardProps) {
   return (
     <div style={{ background: V.bg, border: `1px solid ${V.border}`, borderRadius: 10, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0.875rem 1rem' }}>
@@ -64,7 +61,6 @@ function PlatformCard({ icon, name, status, details, lastTested, onTest, onEdit,
           <div style={{ fontSize: '0.75rem', color: V.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {details || (status === 'not_connected' ? 'Not connected' : '')}
           </div>
-          {lastTested && <div style={{ fontSize: '0.7rem', color: V.muted, marginTop: 2 }}>Last tested: {lastTested}</div>}
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
           {status === 'not_connected' && onConnect ? (
@@ -74,9 +70,6 @@ function PlatformCard({ icon, name, status, details, lastTested, onTest, onEdit,
             </button>
           ) : status !== 'builtin' ? (
             <>
-              {onTest && <button type="button" onClick={onTest} disabled={testing} style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-                {testing ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle2 size={11} />} Test
-              </button>}
               {onEdit && <button type="button" onClick={onEdit} style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><Edit2 size={12} /></button>}
               {onDisconnect && <button type="button" onClick={onDisconnect} style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${V.border}`, background: 'transparent', color: V.red, fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><Trash2 size={12} /></button>}
             </>
@@ -112,8 +105,7 @@ function GitHubCard() {
   const [username, setUsername] = useState<string | null>(null);
   const [expiry, setExpiry] = useState('');
   const [editing, setEditing] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
@@ -125,29 +117,19 @@ function GitHubCard() {
     }).catch(() => {});
   }, []);
 
-  const connected = !!pat && !pat.includes('***') || pat.includes('***');
-  const status: PlatformStatus = connected ? (testResult?.ok ? 'connected' : 'untested') : 'not_connected';
-
-  async function handleTest() {
-    setTesting(true);
-    try {
-      const r = await fetch('/api/github/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pat }) });
-      const d = await r.json();
-      setTestResult({ ok: d.success, msg: d.success ? `@${d.username}` : d.error || 'Auth failed' });
-    } catch { setTestResult({ ok: false, msg: 'Test failed' }); }
-    finally { setTesting(false); }
-  }
+  const connected = !!pat;
+  const status: PlatformStatus = connected ? 'connected' : 'not_connected';
 
   async function handleSave() {
-    setSaving(true);
+    if (!pat) return;
+    setSaving(true); setSaveErr(null);
     try {
       const vr = await fetch('/api/github/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pat }) });
       const vd = await vr.json();
-      if (!vd.success) { setTestResult({ ok: false, msg: 'Invalid token' }); return; }
+      if (!vd.success) { setSaveErr(vd.error || 'Invalid token'); return; }
       setUsername(vd.username);
       await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.pat', value: pat }) });
       if (vd.username) await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.username', value: vd.username }) });
-      setTestResult({ ok: true, msg: `@${vd.username}` });
       setEditing(false);
     } finally { setSaving(false); }
   }
@@ -158,17 +140,14 @@ function GitHubCard() {
       name="GitHub"
       status={status}
       details={username ? `@${username}${expiry ? ` · expires ${expiry}` : ''}` : undefined}
-      lastTested={testResult?.msg}
-      onTest={connected && !editing ? handleTest : undefined}
       onEdit={connected && !editing ? () => setEditing(true) : undefined}
       onDisconnect={connected && !editing ? async () => {
         await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.pat', value: '' }) });
-        setPat(''); setUsername(null); setTestResult(null);
+        setPat(''); setUsername(null);
       } : undefined}
       onConnect={!connected ? () => setExpanded(true) : undefined}
       onExpand={connected ? () => setExpanded(e => !e) : undefined}
       expanded={expanded}
-      testing={testing}
     >
       {editing || !connected ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
@@ -186,7 +165,7 @@ function GitHubCard() {
             </button>
             {editing && <button type="button" onClick={() => setEditing(false)} style={{ padding: '0.45rem 0.875rem', borderRadius: 7, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.8rem', cursor: 'pointer' }}>Cancel</button>}
           </div>
-          {testResult && <p style={{ margin: 0, fontSize: '0.78rem', color: testResult.ok ? V.green : V.red }}>{testResult.ok ? '✓' : '✗'} {testResult.msg}</p>}
+          {saveErr && <p style={{ margin: 0, fontSize: '0.78rem', color: V.red }}>✗ {saveErr}</p>}
         </div>
       ) : null}
     </PlatformCard>
@@ -201,22 +180,14 @@ function ClustersSection() {
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState({ name: '', environment: 'dev', connection_type: 'token', api_url: '', token: '' });
   const [saving, setSaving] = useState(false);
-  const [testResults, setTestResults] = useState<Record<string, { ok: boolean }>>({});
-  const [testing, setTesting] = useState<string | null>(null);
+  const [editingCluster, setEditingCluster] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ name: '', environment: 'dev', connection_type: 'token', api_url: '', token: '' });
+  const [editSaving, setEditSaving] = useState(false);
 
   const { data: clusters = [], isLoading } = useQuery({
     queryKey: ['platforms-clusters'],
     queryFn: () => fetch('/api/settings/clusters').then(r => r.json()).then(d => d.clusters as ClusterConfig[]),
   });
-
-  async function handleTest(name: string) {
-    setTesting(name);
-    try {
-      const r = await fetch(`/api/settings/clusters/${encodeURIComponent(name)}/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
-      const d = await r.json();
-      setTestResults(prev => ({ ...prev, [name]: { ok: d.healthy } }));
-    } finally { setTesting(null); }
-  }
 
   async function handleAdd() {
     setSaving(true);
@@ -237,6 +208,17 @@ function ClustersSection() {
     qc.invalidateQueries({ queryKey: ['platforms-clusters'] });
   }
 
+  async function handleSaveEdit(originalName: string) {
+    setEditSaving(true);
+    try {
+      await fetch(`/api/settings/clusters/${encodeURIComponent(originalName)}`, { method: 'DELETE' });
+      const r = await fetch('/api/settings/clusters', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editForm) });
+      if (!r.ok) throw new Error((await r.json()).detail);
+      qc.invalidateQueries({ queryKey: ['platforms-clusters'] });
+      setEditingCluster(null);
+    } catch { /* toast */ } finally { setEditSaving(false); }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       {isLoading ? (
@@ -245,16 +227,50 @@ function ClustersSection() {
         </div>
       ) : (
         clusters.map(c => (
-          <PlatformCard
-            key={c.name}
-            icon={<Server size={18} />}
-            name={`${c.name}`}
-            status={testResults[c.name] ? (testResults[c.name].ok ? 'connected' : 'untested') : 'untested'}
-            details={`${c.environment} · ${c.connection_type === 'kubeconfig' ? 'kubeconfig' : c.api_url || 'Bearer Token'}`}
-            onTest={() => handleTest(c.name)}
-            onDisconnect={() => handleDelete(c.name)}
-            testing={testing === c.name}
-          />
+          <div key={c.name}>
+            <PlatformCard
+              icon={<Server size={18} />}
+              name={c.name}
+              status="connected"
+              details={`${c.environment} · ${c.connection_type === 'kubeconfig' ? 'kubeconfig' : c.api_url || 'Bearer Token'}`}
+              onEdit={() => { setEditingCluster(c.name); setEditForm({ name: c.name, environment: c.environment, connection_type: c.connection_type, api_url: c.api_url ?? '', token: '' }); }}
+              onDisconnect={() => handleDelete(c.name)}
+            />
+            {editingCluster === c.name && (
+              <div style={{ background: V.bg, border: `1px solid ${V.accent}40`, borderRadius: 10, padding: '0.875rem 1rem', marginTop: 4 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.625rem', marginBottom: '0.625rem' }}>
+                  <div>
+                    <label style={{ display: 'block', color: V.muted, fontSize: '0.75rem', marginBottom: 3 }}>Name</label>
+                    <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                      style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.4rem 0.625rem', color: V.text, fontSize: '0.82rem', boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', color: V.muted, fontSize: '0.75rem', marginBottom: 3 }}>Environment</label>
+                    <select value={editForm.environment} onChange={e => setEditForm(f => ({ ...f, environment: e.target.value }))} style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.4rem 0.625rem', color: V.text, fontSize: '0.82rem', colorScheme: 'dark' }}>
+                      <option>dev</option><option>staging</option><option>prod</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', color: V.muted, fontSize: '0.75rem', marginBottom: 3 }}>API Server URL</label>
+                    <input value={editForm.api_url} onChange={e => setEditForm(f => ({ ...f, api_url: e.target.value }))} placeholder="https://k8s.example.com:6443"
+                      style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.4rem 0.625rem', color: V.text, fontSize: '0.82rem', boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', color: V.muted, fontSize: '0.75rem', marginBottom: 3 }}>New Bearer Token (leave blank to keep)</label>
+                    <input type="password" value={editForm.token} onChange={e => setEditForm(f => ({ ...f, token: e.target.value }))} placeholder="eyJhbGci…"
+                      style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.4rem 0.625rem', color: V.text, fontSize: '0.82rem', boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" onClick={() => handleSaveEdit(c.name)} disabled={editSaving}
+                    style={{ padding: '0.45rem 1rem', borderRadius: 7, border: 'none', background: V.accent, color: '#fff', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
+                    {editSaving ? 'Saving…' : 'Save Changes'}
+                  </button>
+                  <button type="button" onClick={() => setEditingCluster(null)} style={{ padding: '0.45rem 0.875rem', borderRadius: 7, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.8rem', cursor: 'pointer' }}>Cancel</button>
+                </div>
+              </div>
+            )}
+          </div>
         ))
       )}
       {addOpen ? (

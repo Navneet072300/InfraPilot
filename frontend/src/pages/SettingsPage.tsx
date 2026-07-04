@@ -806,7 +806,6 @@ function SecurityTab() {
         )}
       </SectionCard>
 
-      <SecretsVaultSection />
     </div>
   );
 }

@@ -615,6 +615,16 @@ export function DeployMode() {
     }
   }, [step, detectVaults, fetchVaultSecrets]);
 
+  // Auto-scan branches when entering envs step
+  useEffect(() => {
+    if (step === 'envs' && selectedRepo) {
+      setSelectedEnvOption(null);
+      setChoices(c => ({ ...c, environments: [] }));
+      setBranchIssues([]);
+      checkBranchesForEnvs([], selectedRepo);
+    }
+  }, [step, selectedRepo, checkBranchesForEnvs]);
+
   const goNext = () => {
     if (step === 'repo')       { setStep('scan'); handleScan(); }
     else if (step === 'scan')       { setStep('containers'); fetchContainerFiles(); }
@@ -1044,60 +1054,104 @@ export function DeployMode() {
           {step === 'envs' && (
             <div style={{ maxWidth: 640 }}>
               <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700 }}>Deployment Environments</h3>
-              <p style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--text-muted)' }}>Which environments do you need? CI will deploy to the matching K8s namespace when the corresponding branch is pushed.</p>
-              {/* Detected branches status */}
-              {branches.length > 0 && (
-                <div style={{ marginBottom: 12, padding: '8px 12px', background: 'rgba(52,211,153,0.05)', border: '1px solid rgba(52,211,153,0.2)', borderRadius: 7, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <GitBranch size={11} style={{ color: 'var(--success)', flexShrink: 0 }} />
+              <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--text-muted)' }}>CI deploys to the matching K8s namespace when the branch is pushed. Options shown match branches found in your repo.</p>
+
+              {/* Scanning */}
+              {branchChecking && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 9, marginBottom: 14, fontSize: 12, color: 'var(--text-muted)' }}>
+                  <Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite', color: 'var(--accent)' }} />
+                  Scanning branches in <strong style={{ color: 'var(--text-primary)', marginLeft: 4 }}>{selectedRepo?.name}</strong>…
+                </div>
+              )}
+
+              {/* Protected branch notice */}
+              {!branchChecking && detectedBranches.prod && (
+                <div style={{ marginBottom: 14, padding: '8px 12px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 7, display: 'flex', gap: 7, alignItems: 'center' }}>
+                  <Lock size={11} style={{ color: 'var(--accent)', flexShrink: 0 }} />
                   <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                    Detected:{' '}
-                    {[detectedBranches.prod, detectedBranches.dev, detectedBranches.staging].filter(Boolean).length > 0
-                      ? [detectedBranches.prod, detectedBranches.dev, detectedBranches.staging].filter(Boolean).map((b, i) => (
-                          <span key={b}>{i > 0 && ', '}<code style={{ fontSize: 11 }}>{b}</code></span>
-                        ))
-                      : <em>select an environment to scan</em>
-                    }
+                    <strong>{detectedBranches.prod}</strong> is your production branch — merges here trigger prod deploys.
                   </span>
                 </div>
               )}
-              <div style={{ marginBottom: 12, padding: '8px 12px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 7, display: 'flex', gap: 7, alignItems: 'center' }}>
-                <Lock size={11} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                <span style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  <strong>{detectedBranches.prod ?? 'main'} is protected</strong> — production deploys only happen via merge to <code style={{ fontSize: 11 }}>{detectedBranches.prod ?? 'main'}</code>.
-                </span>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {ENV_OPTIONS.map(opt => <EnvCard key={opt.id} option={opt} selected={selectedEnvOption === opt.id}
-                  branchForEnv={env => {
-                    if (env === 'prod') return detectedBranches.prod ?? 'main';
-                    if (env === 'dev') return detectedBranches.dev ?? 'dev';
-                    if (env === 'staging') return detectedBranches.staging ?? 'staging';
-                    return env;
-                  }}
-                  onClick={() => {
-                    setSelectedEnvOption(opt.id);
-                    setChoices(c => ({ ...c, environments: opt.envs }));
-                    setBranchIssues([]);
-                    if (selectedRepo) checkBranchesForEnvs(opt.envs, selectedRepo);
-                  }} />)}
-              </div>
 
-              {/* Branch status */}
-              {selectedEnvOption && (
+              {/* Dynamic env cards + creation suggestions */}
+              {!branchChecking && (() => {
+                const availableOptions = ENV_OPTIONS.filter(opt =>
+                  opt.envs.every(env => {
+                    if (env === 'prod') return true;
+                    if (env === 'dev') return !!detectedBranches.dev;
+                    if (env === 'staging') return !!detectedBranches.staging;
+                    return false;
+                  })
+                );
+                const needsDev = !detectedBranches.dev;
+                const needsStaging = !detectedBranches.staging;
+                const fromBranch = detectedBranches.prod ?? 'main';
+                const branchForEnv = (env: string) => {
+                  if (env === 'prod') return detectedBranches.prod ?? 'main';
+                  if (env === 'dev') return detectedBranches.dev ?? 'dev';
+                  if (env === 'staging') return detectedBranches.staging ?? 'staging';
+                  return env;
+                };
+                return (
+                  <>
+                    {availableOptions.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: (needsDev || needsStaging) ? 20 : 0 }}>
+                        {availableOptions.map(opt => (
+                          <EnvCard key={opt.id} option={opt} selected={selectedEnvOption === opt.id}
+                            branchForEnv={branchForEnv}
+                            onClick={() => {
+                              setSelectedEnvOption(opt.id);
+                              setChoices(c => ({ ...c, environments: opt.envs }));
+                              setBranchIssues([]);
+                              if (selectedRepo) checkBranchesForEnvs(opt.envs, selectedRepo);
+                            }} />
+                        ))}
+                      </div>
+                    )}
+                    {(needsDev || needsStaging) && (
+                      <div>
+                        {availableOptions.length > 0 && (
+                          <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Create additional branches</p>
+                        )}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {needsDev && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 9 }}>
+                              <GitBranch size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>No <code style={{ fontSize: 11 }}>dev</code> branch found</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Create from <code style={{ fontSize: 11 }}>{fromBranch}</code> to unlock Dev + Production pipeline</div>
+                              </div>
+                              <button type="button" onClick={() => setBranchCreateConfirm('dev')} disabled={branchCreating !== null}
+                                style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.35)', borderRadius: 7, color: 'var(--accent)', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
+                                {branchCreating === 'dev' ? <Loader2 size={11} style={{ animation: 'spin 0.8s linear infinite' }} /> : <Plus size={11} />} Create dev
+                              </button>
+                            </div>
+                          )}
+                          {needsStaging && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 9 }}>
+                              <GitBranch size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>No <code style={{ fontSize: 11 }}>staging</code> branch found</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Create from <code style={{ fontSize: 11 }}>{fromBranch}</code> to unlock Staging pipeline</div>
+                              </div>
+                              <button type="button" onClick={() => setBranchCreateConfirm('staging')} disabled={branchCreating !== null}
+                                style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.35)', borderRadius: 7, color: 'var(--accent)', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
+                                {branchCreating === 'staging' ? <Loader2 size={11} style={{ animation: 'spin 0.8s linear infinite' }} /> : <Plus size={11} />} Create staging
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+
+              {/* Branch issues (edge case: option selected but branch not found) */}
+              {selectedEnvOption && !branchChecking && branchIssues.length > 0 && (
                 <div style={{ marginTop: 16 }}>
-                  {branchChecking && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, color: 'var(--text-muted)' }}>
-                      <Loader2 size={12} style={{ animation: 'spin 0.8s linear infinite', color: 'var(--accent)', flexShrink: 0 }} />
-                      Checking branches in {selectedRepo?.name}…
-                    </div>
-                  )}
-                  {!branchChecking && branchIssues.length === 0 && branches.length > 0 && (
-                    <div style={{ padding: '9px 12px', background: 'rgba(52,211,153,0.07)', border: '1px solid rgba(52,211,153,0.25)', borderRadius: 7, display: 'flex', gap: 7, alignItems: 'center' }}>
-                      <CheckCircle2 size={12} style={{ color: 'var(--success)', flexShrink: 0 }} />
-                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>All required branches exist in <strong>{selectedRepo?.name}</strong>.</span>
-                    </div>
-                  )}
-                  {!branchChecking && branchIssues.length > 0 && (
+                  {(
                     <div style={{ padding: '13px 15px', background: 'rgba(251,191,36,0.05)', border: '1px solid rgba(251,191,36,0.25)', borderRadius: 9 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 12 }}>
                         <AlertCircle size={13} style={{ color: '#fbbf24', flexShrink: 0 }} />
