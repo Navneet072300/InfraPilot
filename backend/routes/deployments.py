@@ -581,3 +581,30 @@ async def apply_fix(
         raise HTTPException(500, result.get("error", "Commit failed"))
 
     return {"committed": True, "files": len(files), "branch": branch}
+
+
+# ── Deployment Verification ───────────────────────────────────────────────────
+
+@router.get("/deployments/{dep_id}/verification")
+async def get_verification_status(
+    dep_id: int,
+    ip_session: str = Cookie(default=""),
+    authorization: str = Header(default=""),
+):
+    uid = await _user_id(ip_session, authorization)
+    dep = await _get_dep(dep_id, uid)
+
+    from services.deployment_verifier import get_verification
+    live = get_verification(dep_id)
+    if live:
+        return live
+
+    # Fallback: read last persisted state from DB columns
+    return {
+        "dep_id": dep_id,
+        "status": getattr(dep, "last_verification_status", None) or "none",
+        "started_at": getattr(dep, "last_verification_started_at", None),
+        "ended_at": getattr(dep, "last_verification_ended_at", None),
+        "detail": getattr(dep, "last_verification_detail", None) or "",
+        "progress_pct": 100 if getattr(dep, "last_verification_status", None) in ("healthy", "degraded", "critical") else 0,
+    }

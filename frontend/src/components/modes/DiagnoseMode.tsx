@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Stethoscope, AlertCircle, CheckCircle, ChevronDown, ChevronRight,
   Loader2, RefreshCw, Copy, Check, Terminal, FileText, Clock,
-  X, Download, Send, BookOpen, Shield, Zap,
+  X, Download, Send, BookOpen, Shield, Zap, GitBranch, ExternalLink,
+  Plus, Trash2,
 } from 'lucide-react';
 import { useClusterStore } from '../../store/clusterStore';
 import { useStream } from '../../hooks/useStream';
@@ -565,6 +566,196 @@ function SREChatPanel({ sessionId, headerData, causes, causeStatuses }: {
   );
 }
 
+// ── PR Modal ──────────────────────────────────────────────────────────────────
+
+interface PRFile { path: string; content: string }
+
+function PRModal({
+  sessionId,
+  fixSteps,
+  onClose,
+  onCreated,
+}: {
+  sessionId: string;
+  fixSteps: { title: string; command: string }[];
+  onClose: () => void;
+  onCreated: (pr: Record<string, unknown>) => void;
+}) {
+  const [repo, setRepo] = useState('');
+  const [base, setBase] = useState('main');
+  const [files, setFiles] = useState<PRFile[]>([{ path: '', content: '' }]);
+  const [creating, setCreating] = useState(false);
+  const [err, setErr] = useState('');
+
+  const addFile = () => setFiles(prev => [...prev, { path: '', content: '' }]);
+  const removeFile = (i: number) => setFiles(prev => prev.filter((_, idx) => idx !== i));
+  const updateFile = (i: number, field: keyof PRFile, val: string) =>
+    setFiles(prev => prev.map((f, idx) => idx === i ? { ...f, [field]: val } : f));
+
+  const valid = repo.includes('/') && files.every(f => f.path.trim() && f.content.trim());
+
+  const handleCreate = async () => {
+    if (!valid || creating) return;
+    setCreating(true);
+    setErr('');
+    try {
+      const res = await fetch(`/api/diagnose/${sessionId}/create-pr`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repo_full_name: repo.trim(),
+          base_branch: base.trim() || 'main',
+          files: files.filter(f => f.path.trim()),
+        }),
+      });
+      const d = await res.json() as Record<string, unknown>;
+      if (!res.ok) throw new Error(String(d.detail || 'PR creation failed'));
+      onCreated(d);
+      onClose();
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, width: 560, maxHeight: '85vh', overflow: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <GitBranch size={15} style={{ color: 'var(--accent)' }} />
+          <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Create Pull Request</span>
+          <button type="button" onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16 }}>×</button>
+        </div>
+
+        {/* Fix steps summary */}
+        {fixSteps.length > 0 && (
+          <div style={{ background: 'var(--bg-base)', borderRadius: 6, padding: 10, fontSize: 11, color: 'var(--text-muted)' }}>
+            <p style={{ fontWeight: 600, marginBottom: 4, color: 'var(--text-secondary)' }}>Fix steps from diagnosis:</p>
+            {fixSteps.slice(0, 3).map((s, i) => (
+              <p key={i} style={{ marginBottom: 2 }}>• {s.title}</p>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ flex: 2 }}>
+            <label style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Repository (owner/repo)</label>
+            <input value={repo} onChange={e => setRepo(e.target.value)} placeholder="acme/my-app"
+              style={{ display: 'block', width: '100%', marginTop: 4, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-primary)', fontSize: 12, padding: '6px 8px', outline: 'none', boxSizing: 'border-box' }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Base Branch</label>
+            <input value={base} onChange={e => setBase(e.target.value)} placeholder="main"
+              style={{ display: 'block', width: '100%', marginTop: 4, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-primary)', fontSize: 12, padding: '6px 8px', outline: 'none', boxSizing: 'border-box' }} />
+          </div>
+        </div>
+
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+            <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Files to Change</span>
+            <button type="button" onClick={addFile} style={{ marginLeft: 'auto', background: 'none', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text-muted)', cursor: 'pointer', padding: '1px 6px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 3 }}>
+              <Plus size={9} /> Add file
+            </button>
+          </div>
+          {files.map((f, i) => (
+            <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: 8, marginBottom: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                <input value={f.path} onChange={e => updateFile(i, 'path', e.target.value)} placeholder="e.g. k8s/deployment.yaml"
+                  style={{ flex: 1, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text-primary)', fontSize: 11, padding: '4px 7px', outline: 'none', fontFamily: 'JetBrains Mono, monospace' }} />
+                {files.length > 1 && (
+                  <button type="button" onClick={() => removeFile(i)} style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', padding: 2 }}>
+                    <Trash2 size={11} />
+                  </button>
+                )}
+              </div>
+              <textarea value={f.content} onChange={e => updateFile(i, 'content', e.target.value)} placeholder="Paste file content here…" rows={4}
+                style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text-primary)', fontSize: 11, padding: '5px 8px', resize: 'vertical', outline: 'none', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1.5, boxSizing: 'border-box' }} />
+            </div>
+          ))}
+        </div>
+
+        {err && <p style={{ fontSize: 11, color: 'var(--error)', padding: '6px 10px', background: 'rgba(248,81,73,0.1)', borderRadius: 5 }}>{err}</p>}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+          <button type="button" onClick={onClose} style={{ padding: '7px 14px', background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer' }}>
+            Cancel
+          </button>
+          <button type="button" onClick={handleCreate} disabled={!valid || creating}
+            style={{ padding: '7px 14px', background: valid && !creating ? 'var(--accent)' : 'var(--bg-hover)', border: 'none', borderRadius: 6, color: valid && !creating ? '#fff' : 'var(--text-muted)', fontSize: 12, fontWeight: 600, cursor: valid && !creating ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {creating ? <><Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> Creating…</> : <><GitBranch size={12} /> Open PR</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── PR Status Card ─────────────────────────────────────────────────────────────
+
+function PRStatusCard({ sessionId }: { sessionId: string }) {
+  const [status, setStatus] = useState<Record<string, unknown> | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/diagnose/${sessionId}/pr-status`);
+      const d = await r.json() as Record<string, unknown>;
+      setStatus(d);
+      // Stop polling when terminal
+      const st = d.pr_state as string;
+      if (st === 'merged' || st === 'closed') {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+      }
+    } catch { /* ignore */ }
+  }, [sessionId]);
+
+  useEffect(() => {
+    fetchStatus();
+    intervalRef.current = setInterval(fetchStatus, 30000);
+    const timeout = setTimeout(() => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    }, 24 * 3600 * 1000);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      clearTimeout(timeout);
+    };
+  }, [fetchStatus]);
+
+  if (!status?.has_pr) return null;
+
+  const prState = status.pr_state as string;
+  const ciStatus = status.ci_status as string;
+
+  const stateColor = prState === 'merged' ? 'var(--accent)' : prState === 'closed' ? 'var(--error)' : 'var(--success)';
+  const stateLabel = prState === 'merged' ? 'Merged' : prState === 'closed' ? 'Closed' : 'Open';
+  const ciColor = ciStatus === 'success' ? 'var(--success)' : ciStatus === 'failure' ? 'var(--error)' : 'var(--warning)';
+  const ciLabel = ciStatus === 'success' ? '✓ CI passing' : ciStatus === 'failure' ? '✗ CI failing' : '⊙ CI pending';
+
+  return (
+    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <GitBranch size={12} style={{ color: 'var(--accent)' }} />
+        <span style={{ fontWeight: 600, fontSize: 12, color: 'var(--text-primary)' }}>Pull Request #{String(status.pr_number)}</span>
+        <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 100, background: `${stateColor}20`, border: `1px solid ${stateColor}`, color: stateColor, fontWeight: 700 }}>{stateLabel}</span>
+        {ciStatus !== 'unknown' && (
+          <span style={{ fontSize: 10, color: ciColor, fontWeight: 600 }}>{ciLabel}</span>
+        )}
+        {prState === 'closed' && !status.pr_merged && (
+          <span style={{ fontSize: 10, color: 'var(--warning)' }}>PR closed without merging</span>
+        )}
+        <a href={status.pr_url as string} target="_blank" rel="noreferrer"
+          style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
+          View on GitHub <ExternalLink size={9} />
+        </a>
+      </div>
+      {Boolean(status.pr_branch) && (
+        <p style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 5, fontFamily: 'JetBrains Mono, monospace' }}>{String(status.pr_branch)}</p>
+      )}
+    </div>
+  );
+}
+
 // ── Main DiagnoseMode ─────────────────────────────────────────────────────────
 
 export function DiagnoseMode() {
@@ -599,6 +790,13 @@ export function DiagnoseMode() {
 
   // Command execution
   const [cmdToConfirm, setCmdToConfirm] = useState<string | null>(null);
+
+  // PR state
+  const [showPRModal, setShowPRModal] = useState(false);
+  const [prCreated, setPrCreated] = useState(false);
+
+  // Pixie badge
+  const [pixieUsed, setPixieUsed] = useState(false);
 
   // UI
   const [showRCA, setShowRCA] = useState(false);
@@ -641,6 +839,8 @@ export function DiagnoseMode() {
         fix_steps: event.fix_steps as DiagnosisFixStep[],
         prevention: event.prevention as DiagnosisPreventionItem[],
       });
+    } else if (t === 'pixie_enriched') {
+      setPixieUsed(true);
     }
   }, []);
 
@@ -672,6 +872,8 @@ export function DiagnoseMode() {
     setCauseStatuses({});
     setSessionId(null);
     setIsResolved(false);
+    setPrCreated(false);
+    setPixieUsed(false);
 
     await startAnalyze({
       logs,
@@ -922,7 +1124,7 @@ export function DiagnoseMode() {
                   {headerData.namespace && <span>{isBuilder ? 'Section' : 'Namespace'}: <strong style={{ color: 'var(--text-primary)' }}>{headerData.namespace}</strong></span>}
                   {headerData.cluster && <span>{isBuilder ? 'Server' : 'Cluster'}: <strong style={{ color: 'var(--text-primary)' }}>{headerData.cluster}</strong></span>}
                 </div>
-                <div style={{ marginTop: 12, display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                <div style={{ marginTop: 12, display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button type="button" onClick={handleResolve} disabled={isResolved}
                     style={{ padding: '5px 12px', background: isResolved ? 'rgba(87,171,90,0.15)' : 'var(--success)', border: isResolved ? '1px solid var(--success)' : 'none', borderRadius: 5, color: isResolved ? 'var(--success)' : '#fff', fontSize: 11, fontWeight: 600, cursor: isResolved ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
                     <CheckCircle size={11} /> {isResolved ? '✓ Resolved' : 'Mark Resolved'}
@@ -931,13 +1133,25 @@ export function DiagnoseMode() {
                     style={{ padding: '5px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-secondary)', fontSize: 11, cursor: sessionId ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 5 }}>
                     <FileText size={11} /> Generate RCA
                   </button>
+                  <button type="button" onClick={() => setShowPRModal(true)} disabled={!sessionId || prCreated}
+                    style={{ padding: '5px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: prCreated ? 'var(--success)' : 'var(--text-secondary)', fontSize: 11, cursor: sessionId && !prCreated ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <GitBranch size={11} /> {prCreated ? '✓ PR Created' : 'Create PR'}
+                  </button>
                   <button type="button" onClick={() => navigator.clipboard.writeText(`${headerData.severity.toUpperCase()} | ${headerData.pod_name} | ${headerData.namespace}`)}
                     style={{ padding: '5px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-secondary)', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
                     <Copy size={11} /> Copy Summary
                   </button>
+                  {pixieUsed && (
+                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 100, background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.4)', color: '#fbbf24', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Zap size={9} /> Enhanced with eBPF telemetry
+                    </span>
+                  )}
                 </div>
               </div>
             )}
+
+            {/* PR Status */}
+            {sessionId && prCreated && <PRStatusCard sessionId={sessionId} />}
 
             {/* What's Happening */}
             {headerData?.what_is_happening && (
@@ -1052,6 +1266,14 @@ export function DiagnoseMode() {
         />
       )}
       {showRCA && sessionId && <RCAModal sessionId={sessionId} onClose={() => setShowRCA(false)} />}
+      {showPRModal && sessionId && (
+        <PRModal
+          sessionId={sessionId}
+          fixSteps={(analysisData?.fix_steps ?? []).map(s => ({ title: s.title, command: s.command }))}
+          onClose={() => setShowPRModal(false)}
+          onCreated={() => { setPrCreated(true); setShowPRModal(false); }}
+        />
+      )}
     </div>
   );
 }

@@ -351,3 +351,146 @@ class GitHubService:
         except Exception as e:
             logger.error("GitHub push error: %s", e)
             return {"success": False, "error": str(e)}
+
+    async def create_pull_request(
+        self,
+        repo_full_name: str,
+        title: str,
+        body: str,
+        branch_name: str,
+        base_branch: str,
+        files: list[dict],
+    ) -> dict:
+        """Create a branch, push files, then open a PR. All async via httpx."""
+        if not self._pat:
+            return {"success": False, "error": "No GitHub token configured"}
+        import httpx
+        headers = {
+            "Authorization": f"Bearer {self._pat}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        GH = "https://api.github.com"
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # 1. Get base branch SHA
+                ref_resp = await client.get(
+                    f"{GH}/repos/{repo_full_name}/git/ref/heads/{base_branch}",
+                    headers=headers,
+                )
+                if ref_resp.status_code != 200:
+                    return {"success": False, "error": f"Base branch '{base_branch}' not found"}
+                base_sha = ref_resp.json()["object"]["sha"]
+
+                # 2. Create branch (ok if already exists)
+                br_resp = await client.post(
+                    f"{GH}/repos/{repo_full_name}/git/refs",
+                    headers=headers,
+                    json={"ref": f"refs/heads/{branch_name}", "sha": base_sha},
+                )
+                if br_resp.status_code not in (201, 422):
+                    return {"success": False, "error": f"Cannot create branch: {br_resp.status_code}"}
+
+                # 3. Commit each file
+                for f in files:
+                    # Check for existing blob SHA (needed for updates)
+                    contents_resp = await client.get(
+                        f"{GH}/repos/{repo_full_name}/contents/{f['path']}",
+                        headers=headers,
+                        params={"ref": branch_name},
+                    )
+                    payload: dict = {
+                        "message": f"fix: update {f['path']}",
+                        "content": base64.b64encode(f["content"].encode()).decode(),
+                        "branch": branch_name,
+                    }
+                    if contents_resp.status_code == 200:
+                        payload["sha"] = contents_resp.json().get("sha", "")
+                    put_resp = await client.put(
+                        f"{GH}/repos/{repo_full_name}/contents/{f['path']}",
+                        headers=headers,
+                        json=payload,
+                    )
+                    if put_resp.status_code not in (200, 201):
+                        return {"success": False, "error": f"Failed to push {f['path']}: {put_resp.status_code}"}
+
+                # 4. Open the PR
+                pr_resp = await client.post(
+                    f"{GH}/repos/{repo_full_name}/pulls",
+                    headers=headers,
+                    json={
+                        "title": title,
+                        "body": body,
+                        "head": branch_name,
+                        "base": base_branch,
+                        "draft": False,
+                    },
+                )
+                if pr_resp.status_code not in (200, 201):
+                    err = pr_resp.json().get("errors", [{}])
+                    msg = err[0].get("message", pr_resp.text[:200]) if err else pr_resp.text[:200]
+                    return {"success": False, "error": f"PR creation failed: {msg}"}
+
+                pr = pr_resp.json()
+                return {
+                    "success": True,
+                    "pr_number": pr["number"],
+                    "pr_url": pr["html_url"],
+                    "pr_branch": branch_name,
+                    "pr_state": pr["state"],
+                }
+        except Exception as e:
+            logger.error("create_pull_request error: %s", e)
+            return {"success": False, "error": str(e)}
+
+    async def get_pr_status(self, repo_full_name: str, pr_number: int) -> dict:
+        """Fetch current PR state + CI check status."""
+        if not self._pat:
+            return {"success": False, "error": "No GitHub token"}
+        import httpx
+        headers = {
+            "Authorization": f"Bearer {self._pat}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        GH = "https://api.github.com"
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                pr_resp = await client.get(
+                    f"{GH}/repos/{repo_full_name}/pulls/{pr_number}",
+                    headers=headers,
+                )
+                if pr_resp.status_code != 200:
+                    return {"success": False, "error": f"PR not found: {pr_resp.status_code}"}
+                pr = pr_resp.json()
+
+                # Get combined CI status
+                sha = pr["head"]["sha"]
+                checks_resp = await client.get(
+                    f"{GH}/repos/{repo_full_name}/commits/{sha}/check-runs",
+                    headers=headers,
+                )
+                checks = checks_resp.json().get("check_runs", []) if checks_resp.status_code == 200 else []
+                ci_status = "pending"
+                if checks:
+                    statuses = {c["conclusion"] for c in checks if c.get("conclusion")}
+                    if "failure" in statuses or "cancelled" in statuses:
+                        ci_status = "failure"
+                    elif all(c.get("conclusion") == "success" for c in checks):
+                        ci_status = "success"
+                    else:
+                        ci_status = "pending"
+
+                return {
+                    "success": True,
+                    "pr_number": pr["number"],
+                    "pr_url": pr["html_url"],
+                    "pr_state": pr["state"],
+                    "pr_merged": pr.get("merged", False),
+                    "pr_mergeable": pr.get("mergeable"),
+                    "ci_status": ci_status,
+                    "checks": [{"name": c["name"], "status": c["status"], "conclusion": c.get("conclusion")} for c in checks],
+                }
+        except Exception as e:
+            logger.error("get_pr_status error: %s", e)
+            return {"success": False, "error": str(e)}

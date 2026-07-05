@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Rocket, RefreshCw, Trash2, ChevronRight, CheckCircle2, XCircle,
   Clock, Loader2, GitBranch, AlertCircle, Zap, Copy, Check,
-  ExternalLink, ChevronDown, ChevronUp, FileCode2, Play,
+  ExternalLink, ChevronDown, ChevronUp, FileCode2, Play, ShieldCheck,
 } from 'lucide-react';
 import { toast } from '../../store/toastStore';
 
@@ -151,6 +151,10 @@ export function DeploymentsMode() {
   const [applyConfirm, setApplyConfirm] = useState(false);
   const [expandedFix, setExpandedFix] = useState<Set<string>>(new Set());
 
+  // Deployment verification
+  const [verification, setVerification] = useState<Record<string, unknown> | null>(null);
+  const verifIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // ── Data loading ────────────────────────────────────────────────────────────
 
   const loadDeployments = useCallback(async () => {
@@ -236,10 +240,32 @@ export function DeploymentsMode() {
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
+  const loadVerification = useCallback(async (dep: Deployment) => {
+    try {
+      const r = await fetch(`/api/deployments/${dep.id}/verification`, { credentials: 'include' });
+      if (r.ok) {
+        const d = await r.json() as Record<string, unknown>;
+        setVerification(d);
+        // Stop polling when terminal
+        if (d.status !== 'watching' && verifIntervalRef.current) {
+          clearInterval(verifIntervalRef.current);
+          verifIntervalRef.current = null;
+        }
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   const selectDeployment = (dep: Deployment) => {
     setSelected(dep); setTab('runs'); setAnalysis(null); setApplyConfirm(false);
+    setVerification(null);
+    if (verifIntervalRef.current) clearInterval(verifIntervalRef.current);
     loadRuns(dep);
+    loadVerification(dep);
+    // Poll every 15s while watching
+    verifIntervalRef.current = setInterval(() => loadVerification(dep), 15000);
   };
+
+  useEffect(() => () => { if (verifIntervalRef.current) clearInterval(verifIntervalRef.current); }, []);
 
   const selectRun = (run: Run) => {
     setSelectedRun(run);
@@ -256,6 +282,23 @@ export function DeploymentsMode() {
     setDeployments(prev => prev.filter(d => d.id !== dep.id));
     if (selected?.id === dep.id) { setSelected(null); setRuns([]); }
     toast.success('Deployment removed');
+  };
+
+  const handleRollback = async () => {
+    if (!selected) return;
+    const appName = selected.repo_full_name.split('/')[1] ?? '';
+    const ns = 'default';
+    const confirmed = window.confirm(`Roll back deployment/${appName} in namespace ${ns}? This runs:\nkubectl rollout undo deployment/${appName} -n ${ns}`);
+    if (!confirmed) return;
+    try {
+      const r = await fetch('/api/k8s/kubectl', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: `kubectl rollout undo deployment/${appName} -n ${ns}`, confirmed: true }),
+      });
+      if (r.ok) toast.success('Rollback triggered', `kubectl rollout undo deployment/${appName} -n ${ns}`);
+      else toast.error('Rollback failed', (await r.json()).detail ?? 'Unknown error');
+    } catch (e) { toast.error('Rollback failed', String(e)); }
   };
 
   const handleAnalyze = async () => {
@@ -419,6 +462,38 @@ export function DeploymentsMode() {
             {/* ── Runs tab ── */}
             {tab === 'runs' && (
               <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px' }}>
+
+                {/* Deployment Verification Card */}
+                {verification && (verification.status as string) !== 'none' && (() => {
+                  const vstatus = verification.status as string;
+                  const colors: Record<string, string> = { watching: 'var(--accent)', healthy: 'var(--success)', degraded: 'var(--warning)', critical: 'var(--error)' };
+                  const icons: Record<string, string> = { watching: '⊙', healthy: '✓', degraded: '⚠', critical: '✗' };
+                  const labels: Record<string, string> = { watching: 'Watching rollout…', healthy: 'Deployment healthy', degraded: 'Deployment degraded', critical: 'Deployment critical' };
+                  const c = colors[vstatus] || 'var(--text-muted)';
+                  return (
+                    <div style={{ marginBottom: 12, padding: 12, border: `1px solid ${c}44`, borderRadius: 8, background: `${c}0d` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <ShieldCheck size={13} style={{ color: c }} />
+                        <span style={{ fontWeight: 700, fontSize: 12, color: c }}>{icons[vstatus]} {labels[vstatus] || vstatus}</span>
+                        {vstatus === 'watching' && (
+                          <div style={{ flex: 1, height: 4, background: 'var(--bg-hover)', borderRadius: 2, overflow: 'hidden', marginLeft: 4 }}>
+                            <div style={{ width: `${verification.progress_pct as number}%`, height: '100%', background: c, borderRadius: 2, transition: 'width 0.5s' }} />
+                          </div>
+                        )}
+                        {(vstatus === 'degraded' || vstatus === 'critical') && (
+                          <button type="button" onClick={handleRollback}
+                            style={{ marginLeft: 'auto', padding: '3px 10px', background: 'var(--error)', border: 'none', borderRadius: 5, color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                            Rollback
+                          </button>
+                        )}
+                      </div>
+                      {Boolean(verification.detail) && (
+                        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 5 }}>{String(verification.detail)}</p>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {runsLoading && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 13 }}>
                     <Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite' }} /> Loading runs…

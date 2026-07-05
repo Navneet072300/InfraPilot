@@ -384,6 +384,17 @@ Include automated sync policy with self-heal and pruning enabled.
                 yield _ev({"task": 8, "status": "chunk", "content": line + "\n"})
             if result["exit_code"] == 0:
                 yield _ev({"task": 8, "status": "done", "files": []})
+                # Start background verification — never blocks SSE stream
+                try:
+                    from services.deployment_verifier import start_verification
+                    from config import unified_store as _us
+                    dep_rows = await _us.get_platform_setting("last_deploy_config_id")
+                    dep_id = int(dep_rows) if dep_rows else 0
+                    if dep_id:
+                        await start_verification(dep_id, app, ns, req.cluster or None)
+                        yield _ev({"task": 8, "status": "chunk", "content": "⬡ Deployment verification started (5-min watch)\n"})
+                except Exception as _ve:
+                    logger.debug("Verifier start skipped: %s", _ve)
             else:
                 yield _ev({"task": 8, "status": "failed", "error": f"Rollout failed: {result['stderr'][:200]}"})
         except asyncio.TimeoutError:
@@ -443,6 +454,24 @@ Include automated sync policy with self-heal and pruning enabled.
         yield _ev({"task": 11, "status": "skipped"})
 
     yield _ev({"pipeline": "complete"})
+
+
+@router.get("/agent/pixie-status")
+async def pixie_status():
+    """Returns whether Pixie is configured and reachable. Never errors."""
+    try:
+        from config import unified_store
+        api_key = await unified_store.get_platform_setting("pixie.api_key")
+        cluster_id = await unified_store.get_platform_setting("pixie.cluster_id")
+        if not api_key or not cluster_id:
+            return {"installed": False, "reason": "not_configured"}
+        from services.pixie_service import PixieService, _pxapi_available
+        if not _pxapi_available():
+            return {"installed": False, "reason": "pxapi_not_installed"}
+        svc = PixieService(api_key=api_key, cluster_id=cluster_id)
+        return {"installed": svc.is_available, "cluster_id": cluster_id}
+    except Exception:
+        return {"installed": False, "reason": "error"}
 
 
 @router.post("/agent/pipeline/{run_id}/abort")

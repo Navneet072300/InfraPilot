@@ -407,7 +407,7 @@ def build_deploy_prompt(
     for svc in services:
         name = svc["name"].lower().replace("_", "-")
         if registry == "ghcr":
-            img = f"ghcr.io/{repo_full_name}/{name}"
+            img = f"ghcr.io/{repo_full_name.lower()}/{name}"
         elif registry == "docker-hub":
             img = f"{{DOCKERHUB_USERNAME}}/{name}"
         elif registry == "ecr":
@@ -685,6 +685,7 @@ CRITICAL RULES:
 - SecretProviderClass ONLY in overlays (vaultKubernetesMountPath differs per env)
 - Branch conditions exact: {', '.join(f'{b}→{e}' for e, b in env_branches.items())}
 - Image tags: git SHA (e.g. ${{{{ github.sha }}}} for GitHub Actions)
+- GHCR image names MUST be all-lowercase. ghcr.io does NOT accept uppercase letters. Use the exact image names from DOCKER IMAGES above. Never use ${{{{ github.repository }}}} directly as the image name — always lowercase it first using a step: echo "IMAGE=$(echo ${{{{ github.repository }}}} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 - No markdown fences inside file content
 - Use --- FILE: path --- separator for every file without exception
 """

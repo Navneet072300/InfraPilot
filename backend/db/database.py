@@ -113,6 +113,42 @@ async def _apply_schema_migrations(conn) -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_alert_history_incident ON alert_history(incident_id)",
+        # diagnose_prs — PR records created from DiagnoseMode (persists across restarts)
+        """
+        CREATE TABLE IF NOT EXISTS diagnose_prs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            session_id TEXT NOT NULL,
+            repo_full_name TEXT NOT NULL,
+            pr_number INTEGER,
+            pr_url TEXT,
+            pr_branch TEXT,
+            base_branch TEXT DEFAULT 'main',
+            pr_state TEXT DEFAULT 'open',
+            pr_created_at TIMESTAMPTZ DEFAULT NOW(),
+            pr_merged_at TIMESTAMPTZ,
+            pr_closed_at TIMESTAMPTZ,
+            last_checked_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_diagnose_prs_session ON diagnose_prs(session_id)",
+        # deploy_configs — verification state for the last rollout
+        "ALTER TABLE deploy_configs ADD COLUMN IF NOT EXISTS last_verification_status TEXT DEFAULT 'none'",
+        "ALTER TABLE deploy_configs ADD COLUMN IF NOT EXISTS last_verification_started_at TIMESTAMPTZ",
+        "ALTER TABLE deploy_configs ADD COLUMN IF NOT EXISTS last_verification_ended_at TIMESTAMPTZ",
+        "ALTER TABLE deploy_configs ADD COLUMN IF NOT EXISTS last_verification_detail TEXT",
+        # metric_history — rolling 7-day window for z-score anomaly detection
+        """
+        CREATE TABLE IF NOT EXISTS metric_history (
+            id BIGSERIAL PRIMARY KEY,
+            cluster_name TEXT NOT NULL,
+            resource_name TEXT NOT NULL,
+            namespace TEXT NOT NULL DEFAULT 'default',
+            metric_name TEXT NOT NULL,
+            value DOUBLE PRECISION NOT NULL,
+            recorded_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_metric_history_lookup ON metric_history(cluster_name, resource_name, metric_name, recorded_at)",
     ]
     for sql in migrations:
         try:

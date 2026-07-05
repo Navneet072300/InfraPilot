@@ -80,3 +80,13 @@ imagePullSecrets: []
 
 # Extra labels applied to all resources
 extraLabels: {}
+
+# Optional Pixie eBPF integration
+# Set pixie.enabled=true and supply a deployKey to auto-install Pixie alongside the agent.
+# If disabled (default), no Pixie resources are created and everything works as before.
+pixie:
+  enabled: false
+  deployKey: ""          # px:deploy:<your-key-here>
+  cloudAddr: "withpixie.ai:443"
+  clusterName: ""        # Defaults to the Helm release name if empty
+  dataAccess: "Full"     # Full | Restricted

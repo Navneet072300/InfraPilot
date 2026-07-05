@@ -431,9 +431,15 @@ function IssuesPanel({ incidents, summary }: { incidents: Incident[]; summary?: 
           <div key={inc.id} style={{ background: C.surface, border: `1px solid ${col}44`, borderRadius: 8, padding: 14, borderLeft: `3px solid ${col}` }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, color: col, background: `${col}15`, padding: '2px 7px', borderRadius: 100, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  {SEV_ICON_MAP[inc.severity]} {inc.severity}
-                </span>
+                {inc.issue_type?.startsWith('Anomaly:') ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.12)', padding: '2px 7px', borderRadius: 100, border: '1px solid rgba(245,158,11,0.35)', letterSpacing: '0.04em' }}>
+                    ~ Anomaly
+                  </span>
+                ) : (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, color: col, background: `${col}15`, padding: '2px 7px', borderRadius: 100, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    {SEV_ICON_MAP[inc.severity]} {inc.severity}
+                  </span>
+                )}
                 {inc.status === 'acknowledged' && <span style={{ fontSize: 9, color: C.warning, fontWeight: 700 }}>ACK</span>}
                 {inc.status === 'fixing' && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 9, color: C.accent, fontWeight: 700 }}><Wrench size={9} /> FIXING</span>}
                 <span style={{ fontSize: 10, color: C.dim }}>{timeAgo(inc.detected_at)}</span>
@@ -465,9 +471,15 @@ function IssuesPanel({ incidents, summary }: { incidents: Incident[]; summary?: 
                   </div>
                 )}
               </div>
-              <button type="button" onClick={() => handleResolve(inc.id, inc.title)} style={{ padding: '4px 10px', background: `${C.success}12`, border: `1px solid ${C.success}`, borderRadius: 4, color: C.success, fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, marginLeft: 'auto' }}>
-                <CheckCircle2 size={10} /> Mark Resolved
-              </button>
+              {inc.issue_type?.startsWith('Anomaly:') ? (
+                <button type="button" onClick={() => handleSnooze(inc.id, 120)} style={{ padding: '4px 10px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 4, color: '#f59e0b', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, marginLeft: 'auto' }}>
+                  <BellOff size={10} /> Dismiss (2h)
+                </button>
+              ) : (
+                <button type="button" onClick={() => handleResolve(inc.id, inc.title)} style={{ padding: '4px 10px', background: `${C.success}12`, border: `1px solid ${C.success}`, borderRadius: 4, color: C.success, fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, marginLeft: 'auto' }}>
+                  <CheckCircle2 size={10} /> Mark Resolved
+                </button>
+              )}
             </div>
           </div>
         );
@@ -1539,6 +1551,55 @@ function AgentTab() {
             If you need a new command, click <strong>Reinstall</strong> above to regenerate the token.
           </div>
         </div>
+      )}
+
+      {/* Pixie eBPF section */}
+      <PixieSection clusterName={clusterName} />
+    </div>
+  );
+}
+
+function PixieSection({ clusterName }: { clusterName: string }) {
+  const [deployKey, setDeployKey] = useState('');
+  const [pixieStatus, setPixieStatus] = useState<{ installed: boolean; reason?: string; cluster_id?: string } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/agent/pixie-status')
+      .then(r => r.json()).then(d => setPixieStatus(d as { installed: boolean; reason?: string }))
+      .catch(() => {});
+  }, []);
+
+  const helmCmd = deployKey.trim()
+    ? `helm upgrade --install infrapilot-agent infrapilot/infrapilot-agent \\\n  --namespace infrapilot-system \\\n  --reuse-values \\\n  --set pixie.enabled=true \\\n  --set "pixie.deployKey=${deployKey.trim()}" \\\n  --set "pixie.clusterName=${clusterName}"`
+    : '';
+
+  return (
+    <div style={{ border: `1px solid rgba(251,191,36,0.2)`, borderRadius: 8, padding: 14, background: 'rgba(251,191,36,0.04)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: C.primary }}>Pixie eBPF Telemetry</span>
+        <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 100, background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.3)', color: '#f59e0b', fontWeight: 600 }}>Optional</span>
+        {pixieStatus?.installed && (
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: '#34d399', fontWeight: 700 }}>● Installed</span>
+        )}
+      </div>
+      <p style={{ fontSize: 11, color: C.muted, lineHeight: 1.6, marginBottom: 10 }}>
+        Add eBPF-level HTTP traces and TCP stats to AI diagnosis. When active, DiagnoseMode shows an "Enhanced with eBPF telemetry" badge.
+        {!pixieStatus?.installed && <> Get a free deploy key at <a href="https://app.px.dev" target="_blank" rel="noreferrer" style={{ color: C.accent }}>app.px.dev</a>.</>}
+      </p>
+      {!pixieStatus?.installed && (
+        <>
+          <input
+            value={deployKey}
+            onChange={e => setDeployKey(e.target.value)}
+            placeholder="px:deploy:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5, color: C.primary, fontSize: 11, padding: '6px 9px', outline: 'none', fontFamily: 'JetBrains Mono, monospace', boxSizing: 'border-box', marginBottom: 8 }}
+          />
+          {helmCmd && (
+            <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 12px', position: 'relative' }}>
+              <pre style={{ margin: 0, fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: C.primary, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{helmCmd}</pre>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

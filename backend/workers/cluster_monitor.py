@@ -106,13 +106,24 @@ def delete_alert_channel(user_id: str, channel_id: str) -> bool:
 
 # ─── Worker loop ─────────────────────────────────────────────────────────────
 
+_cleanup_counter = 0
+
+
 async def run():
+    global _cleanup_counter
     logger.info("Cluster monitor worker started (interval=%ds)", POLL_INTERVAL)
     while True:
         try:
             await poll_all_clusters()
         except Exception as e:
             logger.error("Monitor poll error: %s", e)
+        _cleanup_counter += 1
+        if _cleanup_counter % 60 == 0:  # hourly cleanup of old metric rows
+            try:
+                from services.anomaly_detector import cleanup_old_metrics
+                await cleanup_old_metrics()
+            except Exception:
+                pass
         await asyncio.sleep(POLL_INTERVAL)
 
 
@@ -203,11 +214,64 @@ def _detect_pod_issue(pod: dict) -> dict | None:
     return None
 
 
+_anomaly_last_fired: dict[str, str] = {}  # key → last_fired ISO timestamp
+
+
 async def check_pods(cluster: dict, pods: list[dict]):
+    from services.anomaly_detector import record_metric, check_anomaly
+    cluster_name = cluster.get("name", "unknown")
+
     for pod in pods:
         issue = _detect_pod_issue(pod)
         if issue:
             await handle_new_issue(cluster, issue)
+
+        # Record metrics for anomaly detection (cpu_percent, memory_mb, restarts)
+        pod_name = pod.get("name", "")
+        namespace = pod.get("namespace", "default")
+        if not pod_name:
+            continue
+
+        for metric, raw_val in [
+            ("restarts", pod.get("restarts", 0)),
+            ("cpu_percent", pod.get("cpu", 0)),
+            ("memory_mb", pod.get("memory", 0)),
+        ]:
+            val = float(raw_val or 0)
+            await record_metric(cluster_name, pod_name, namespace, metric, val)
+
+            # Only check anomaly for restarts and cpu (memory less reliable without calibration)
+            if metric not in ("restarts", "cpu_percent"):
+                continue
+
+            anomaly = await check_anomaly(cluster_name, pod_name, namespace, metric, val)
+            if not anomaly:
+                continue
+
+            # Deduplication: max 1 anomaly per resource+metric per 4 hours
+            dedup_key = f"anomaly:{cluster_name}:{pod_name}:{metric}"
+            last_fired = _anomaly_last_fired.get(dedup_key)
+            if last_fired:
+                from datetime import timedelta
+                age = datetime.now(timezone.utc) - datetime.fromisoformat(last_fired)
+                if age.total_seconds() < 4 * 3600:
+                    continue
+
+            _anomaly_last_fired[dedup_key] = datetime.now(timezone.utc).isoformat()
+
+            # Create anomaly incident
+            incident_key = f"anomaly:{cluster_name}:{namespace}:{pod_name}:{metric}"
+            anomaly_title = f"Anomaly: {metric.replace('_', ' ')} spike on {pod_name}"
+            await handle_new_issue(cluster, {
+                "issue_type": f"Anomaly:{metric}",
+                "severity": "medium",
+                "title": anomaly_title,
+                "resource_type": "pod",
+                "resource_name": pod_name,
+                "namespace": namespace,
+                "anomaly": anomaly,
+                "_anomaly": True,
+            })
 
 
 async def check_nodes(cluster: dict, nodes: list[dict]):
