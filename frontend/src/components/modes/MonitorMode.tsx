@@ -1203,6 +1203,53 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+function NoHelmSteps({ token }: { token: string }) {
+  const [os, setOs] = useState<'linux' | 'windows'>('linux');
+  const isLinux = os === 'linux';
+  const step1 = isLinux
+    ? `curl -o infrapilot-agent.yaml \\\n  https://charts.infrapilot.dev/manifest/latest.yaml`
+    : `Invoke-WebRequest -Uri \`\n  https://charts.infrapilot.dev/manifest/latest.yaml \`\n  -OutFile infrapilot-agent.yaml`;
+  const step2 = isLinux
+    ? `sed -i 's/INFRAPILOT_TOKEN/${token}/g' \\\n  infrapilot-agent.yaml`
+    : `(Get-Content infrapilot-agent.yaml) \`\n  -replace 'INFRAPILOT_TOKEN','${token}' \`\n  | Set-Content infrapilot-agent.yaml`;
+  const step3 = 'kubectl apply -f infrapilot-agent.yaml';
+
+  const Cb = ({ text }: { text: string }) => (
+    <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5, padding: '10px 12px', marginBottom: 4 }}>
+      <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 10, color: C.muted, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{text}</pre>
+    </div>
+  );
+  const Sh = ({ n, title }: { n: number; title: string }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 14, marginBottom: 6 }}>
+      <span style={{ width: 16, height: 16, borderRadius: '50%', background: `${C.accent}22`, border: `1px solid ${C.accent}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, color: C.accent, flexShrink: 0 }}>{n}</span>
+      <span style={{ fontSize: 11, color: C.primary, fontWeight: 600 }}>{title}</span>
+    </div>
+  );
+
+  return (
+    <div>
+      {/* OS toggle */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+        {(['linux', 'windows'] as const).map((o) => (
+          <button key={o} type="button" onClick={() => setOs(o)}
+            style={{ padding: '3px 12px', borderRadius: 100, border: `1px solid ${os === o ? C.accent : C.border}`, background: os === o ? `${C.accent}18` : 'transparent', color: os === o ? C.accent : C.dim, fontSize: 10, fontWeight: os === o ? 700 : 400, cursor: 'pointer' }}>
+            {o === 'linux' ? 'Linux / macOS' : 'Windows (PowerShell)'}
+          </button>
+        ))}
+      </div>
+      <Sh n={1} title="Download manifest" />
+      <Cb text={step1} />
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}><CopyButton text={step1} /></div>
+      <Sh n={2} title="Set your token" />
+      <Cb text={step2} />
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}><CopyButton text={step2} /></div>
+      <Sh n={3} title="Apply to cluster" />
+      <Cb text={step3} />
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}><CopyButton text={step3} /></div>
+    </div>
+  );
+}
+
 function AgentTab() {
   const { clusters } = useClusterStore();
   const activeCluster = clusters.find((c) => c.active) ?? clusters[0];
@@ -1290,10 +1337,11 @@ function AgentTab() {
 
           <div style={{ fontSize: 13, color: C.primary, fontWeight: 600, margin: '20px 0 10px' }}>Step 2 — Install the agent</div>
 
-          {/* Helm not installed banner */}
-          <div style={{ background: `${C.dim}18`, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 10, color: C.muted }}>Helm must be installed to use tabs 1–3. If you don't have Helm, use the "Without Helm" tab.</span>
-            <a href="https://helm.sh/docs/intro/install/" target="_blank" rel="noreferrer" style={{ fontSize: 10, color: C.accent, textDecoration: 'none', whiteSpace: 'nowrap' }}>Install Helm →</a>
+          {/* Helm note */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+            <span style={{ fontSize: 10, color: C.dim }}>Requires Helm ·</span>
+            <a href="https://helm.sh/docs/intro/install/" target="_blank" rel="noreferrer" style={{ fontSize: 10, color: C.accent, textDecoration: 'none' }}>Install Helm ↗</a>
+            <span style={{ fontSize: 10, color: C.dim, marginLeft: 4 }}>· No Helm? Use the last tab</span>
           </div>
 
           {/* Tab strip */}
@@ -1332,10 +1380,7 @@ function AgentTab() {
                 <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '12px 14px', marginBottom: 6 }}>
                   <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 11, color: C.muted, whiteSpace: 'pre-wrap' }}>{cmd}</pre>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 10, color: C.dim }}>PowerShell uses backtick ` for line continuation</span>
-                  <CopyButton text={cmd} />
-                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}><CopyButton text={cmd} /></div>
               </div>
             );
           })()}
@@ -1348,8 +1393,8 @@ function AgentTab() {
                 <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '12px 14px', marginBottom: 6 }}>
                   <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 11, color: C.muted, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{cmd}</pre>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 10, color: C.dim }}>CMD does not support line continuation. This is one single command — copy it all.</span>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 10, color: C.dim }}>One single command</span>
                   <CopyButton text={cmd} />
                 </div>
               </div>
@@ -1357,54 +1402,15 @@ function AgentTab() {
           })()}
 
           {/* Tab: Without Helm */}
-          {installTab === 'nohelm' && (() => {
-            const step1Linux  = `curl -o infrapilot-agent.yaml \\\n  https://charts.infrapilot.dev/manifest/latest.yaml`;
-            const step1PS     = `Invoke-WebRequest -Uri \`\n  https://charts.infrapilot.dev/manifest/latest.yaml \`\n  -OutFile infrapilot-agent.yaml`;
-            const step1Cmd    = `curl -o infrapilot-agent.yaml https://charts.infrapilot.dev/manifest/latest.yaml`;
-            const step2Linux  = `sed -i 's/INFRAPILOT_TOKEN/${newToken.token}/g' \\\n  infrapilot-agent.yaml`;
-            const step2PS     = `(Get-Content infrapilot-agent.yaml) \`\n  -replace 'INFRAPILOT_TOKEN','${newToken.token}' \`\n  | Set-Content infrapilot-agent.yaml`;
-            const step3       = `kubectl apply -f infrapilot-agent.yaml`;
-            const codeBlock = (text: string) => (
-              <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5, padding: '10px 12px', marginBottom: 4 }}>
-                <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 10, color: C.muted, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{text}</pre>
+          {installTab === 'nohelm' && <NoHelmSteps token={newToken.token} />}
+
+          <div style={{ marginTop: 16, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            {[['infrapilot-system', 'namespace'], ['read-only', 'ClusterRole'], ['~60 s', 'to connect']].map(([v, l]) => (
+              <div key={l} style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: 11, color: C.primary, fontWeight: 600, fontFamily: 'monospace' }}>{v}</span>
+                <span style={{ fontSize: 9, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{l}</span>
               </div>
-            );
-            const osLabel = (label: string) => (
-              <div style={{ fontSize: 9, color: C.dim, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4, marginTop: 8 }}>{label}</div>
-            );
-            const stepHeader = (n: number, title: string) => (
-              <div style={{ fontSize: 11, color: C.primary, fontWeight: 600, marginTop: 16, marginBottom: 8 }}>Step {n} — {title}</div>
-            );
-            return (
-              <div>
-                {stepHeader(1, 'Download the manifest')}
-                {osLabel('Linux / macOS')}
-                {codeBlock(step1Linux)}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}><CopyButton text={step1Linux} /></div>
-                {osLabel('Windows — PowerShell')}
-                {codeBlock(step1PS)}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}><CopyButton text={step1PS} /></div>
-                {osLabel('Windows — CMD')}
-                {codeBlock(step1Cmd)}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}><CopyButton text={step1Cmd} /></div>
-
-                {stepHeader(2, 'Set your token')}
-                {osLabel('Linux / macOS')}
-                {codeBlock(step2Linux)}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}><CopyButton text={step2Linux} /></div>
-                {osLabel('Windows — PowerShell')}
-                {codeBlock(step2PS)}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}><CopyButton text={step2PS} /></div>
-
-                {stepHeader(3, 'Apply to your cluster')}
-                {codeBlock(step3)}
-                <div style={{ display: 'flex', justifyContent: 'flex-end' }}><CopyButton text={step3} /></div>
-              </div>
-            );
-          })()}
-
-          <div style={{ marginTop: 20, fontSize: 11, color: C.dim }}>
-            The agent runs in the <code style={{ background: C.bg, padding: '1px 4px', borderRadius: 3 }}>infrapilot-system</code> namespace with a read-only ClusterRole. Once installed, it appears as <strong style={{ color: C.success }}>Connected</strong> within about 60 seconds.
+            ))}
           </div>
 
           <button type="button" onClick={() => { setNewToken(null); queryClient.invalidateQueries({ queryKey: ['agent-status', clusterName] }); }}

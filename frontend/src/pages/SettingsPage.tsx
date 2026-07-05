@@ -424,9 +424,6 @@ function GeneralTab() {
       {/* Experience level */}
       <SectionCard>
         <SectionTitle>Experience Level</SectionTitle>
-        <p style={{ fontSize: '0.8rem', color: V.muted, marginBottom: '0.875rem', lineHeight: 1.5 }}>
-          Changes how InfraPilot describes things. <strong style={{ color: V.text }}>I build apps</strong> uses plain English. <strong style={{ color: V.text }}>I manage infrastructure</strong> uses technical terms.
-        </p>
         <div style={{ display: 'flex', gap: 8 }}>
           {([
             { val: 'builder', icon: '👨‍💻', label: 'I build apps' },
@@ -462,7 +459,7 @@ function GeneralTab() {
           <div>
             <SectionTitle>Connected Platforms</SectionTitle>
             <p style={{ margin: 0, color: V.muted, fontSize: '0.8rem' }}>
-              Manage GitHub, clusters, secrets vaults, and monitoring integrations.
+              GitHub, Kubernetes clusters, cloud platforms, and monitoring.
             </p>
           </div>
           <button type="button" onClick={() => navigate('/app/platforms')}
@@ -1077,13 +1074,15 @@ export function ConnectedPlatformsTab() {
           </div>
         ) : (
           <>
-            <p style={{ color: V.muted, fontSize: '0.78rem', margin: '0 0 0.875rem', lineHeight: 1.6 }}>
-              Click <strong style={{ color: V.text }}>Generate PAT</strong> → GitHub opens with{' '}
-              <code style={{ background: V.surface, padding: '1px 4px', borderRadius: 4, fontSize: '0.75rem' }}>repo</code>,{' '}
-              <code style={{ background: V.surface, padding: '1px 4px', borderRadius: 4, fontSize: '0.75rem' }}>workflow</code> and{' '}
-              <code style={{ background: V.surface, padding: '1px 4px', borderRadius: 4, fontSize: '0.75rem' }}>write:packages</code>{' '}
-              pre-selected → generate → paste below. Token is validated and saved automatically.
-            </p>
+            <div style={{ display: 'flex', gap: 8, marginBottom: '0.875rem', flexWrap: 'wrap' }}>
+              {[['1', 'Click Generate PAT'], ['2', 'GitHub opens pre-configured'], ['3', 'Paste token below']].map(([n, label]) => (
+                <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ width: 16, height: 16, borderRadius: '50%', background: `${V.accent}22`, border: `1px solid ${V.accent}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 700, color: V.accent, flexShrink: 0 }}>{n}</span>
+                  <span style={{ fontSize: '0.78rem', color: V.muted }}>{label}</span>
+                  {n !== '3' && <span style={{ color: V.border, fontSize: '0.7rem' }}>›</span>}
+                </div>
+              ))}
+            </div>
 
             <div style={{ display: 'flex', gap: 8, marginBottom: '0.75rem' }}>
               <div style={{ position: 'relative', flex: 1 }}>
