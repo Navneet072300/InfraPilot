@@ -18,6 +18,7 @@ import SubscriptionPage from './pages/SubscriptionPage';
 import { ReposPage } from './pages/ReposPage';
 import { HistoryPage } from './pages/HistoryPage';
 import PlatformsPage from './pages/PlatformsPage';
+import VaultPage from './pages/VaultPage';
 import { LoginPage } from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
 import { AuthCallback } from './components/auth/AuthCallback';
@@ -127,6 +128,7 @@ function AppShell() {
         <Route path="deploy"       element={<DeployMode />} />
         <Route path="deployments"  element={<DeploymentsMode />} />
         <Route path="platforms"    element={<PlatformsPage />} />
+        <Route path="vault"        element={<VaultPage />} />
         <Route path="history"      element={<HistoryPage />} />
         <Route path="resources"    element={<ResourcesPage />} />
         <Route path="settings"     element={<SettingsPage />} />

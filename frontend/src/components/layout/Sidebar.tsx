@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import {
   Wand2, Stethoscope, Compass, Activity,
   Database, Clock, HelpCircle, Zap, Rocket,
-  ChevronLeft, Menu, CreditCard, Camera, Lock, Home, Plug,
+  ChevronLeft, Menu, CreditCard, Camera, Lock, Home, Plug, KeyRound,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useProfileStore, type Plan } from '../../store/profileStore';
@@ -29,6 +29,7 @@ const PRIMARY: NavItem[] = [
 
 const RESOURCES: NavItem[] = [
   { icon: <Plug size={15} />,     label: 'Platforms', path: '/app/platforms' },
+  { icon: <KeyRound size={15} />, label: 'Vault',     path: '/app/vault' },
   { icon: <Database size={15} />, label: 'Resources', path: '/app/resources' },
   { icon: <Clock size={15} />,    label: 'History',   path: '/app/history' },
 ];
