@@ -56,8 +56,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(health_router)  # /health — no prefix, polled by load balancers / Docker healthcheck
+
 for r in (
-    health_router,
     auth_router,
     platform_router,
     k8s_router,

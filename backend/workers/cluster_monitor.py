@@ -276,6 +276,17 @@ async def handle_new_issue(cluster: dict, issue: dict):
         if existing.get("status") in ("active", "acknowledged", "fixing"):
             await _maybe_re_alert(existing)
             return
+        # Same resource crashed again after auto-resolving (e.g. CrashLoopBackOff
+        # oscillation). Re-activate instead of opening a duplicate incident.
+        if existing.get("status") == "auto_resolved":
+            existing["status"] = "active"
+            existing["detected_at"] = datetime.now(timezone.utc).isoformat()
+            existing["resolved_at"] = None
+            existing["alert_count"] = 0
+            existing["last_alerted_at"] = None
+            logger.info("Monitor: re-activated incident %s (%s)", existing["id"], issue["resource_name"])
+            await _send_incident_alert(existing, cluster)
+            return
 
     # New incident
     incident_id = str(uuid4())
