@@ -94,8 +94,8 @@ const CATALOG: CatalogEntry[] = [
     ],
   },
   {
-    id: 'aws_secrets', name: 'AWS Secrets Manager', category: 'secrets',
-    description: 'Pull secrets from AWS Secrets Manager.',
+    id: 'aws_secrets', name: 'AWS', category: 'secrets',
+    description: 'Connect to AWS — Secrets Manager, IAM, and cloud services.',
     icon: <Cloud size={18} />, color: '#ff9900', settingKey: 'aws_secrets',
     fields: [
       { key: 'access_key_id', label: 'Access Key ID', placeholder: 'AKIA…' },
@@ -104,8 +104,8 @@ const CATALOG: CatalogEntry[] = [
     ],
   },
   {
-    id: 'azure_keyvault', name: 'Azure Key Vault', category: 'secrets',
-    description: 'Pull secrets from Azure Key Vault.',
+    id: 'azure_keyvault', name: 'Azure', category: 'secrets',
+    description: 'Connect to Azure — Key Vault, AD, and cloud services.',
     icon: <Cloud size={18} />, color: '#0089d6', settingKey: 'azure_keyvault',
     fields: [
       { key: 'vault_url', label: 'Vault URL', placeholder: 'https://myvault.vault.azure.net' },
@@ -115,8 +115,8 @@ const CATALOG: CatalogEntry[] = [
     ],
   },
   {
-    id: 'gcp_secrets', name: 'GCP Secret Manager', category: 'secrets',
-    description: 'Pull secrets from Google Cloud Secret Manager.',
+    id: 'gcp_secrets', name: 'GCP', category: 'secrets',
+    description: 'Connect to GCP — Secret Manager, service accounts, and cloud services.',
     icon: <Cloud size={18} />, color: '#4285f4', settingKey: 'gcp_secrets',
     fields: [
       { key: 'project_id', label: 'Project ID', placeholder: 'my-gcp-project' },
