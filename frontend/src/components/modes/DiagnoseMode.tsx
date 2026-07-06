@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   CheckCircle, RefreshCw, Loader2, Copy, Check,
   ChevronDown, FileText, GitBranch, ExternalLink, Zap, X,
@@ -66,10 +67,12 @@ function CopyBtn({ text }: { text: string }) {
 
 export function DiagnoseMode() {
   const { clusters, activeCluster, setActiveCluster } = useClusterStore();
+  const location = useLocation();
+  const navState = (location.state ?? {}) as { namespace?: string; resourceName?: string; resourceType?: string };
   const [activeTab, setActiveTab] = useState<Tab>('errors');
 
-  // Shared selectors
-  const [selectedNs, setSelectedNs] = useState('default');
+  // Shared selectors — pre-fill namespace if navigated from Monitor Issues
+  const [selectedNs, setSelectedNs] = useState(navState.namespace ?? 'default');
 
   // Resource data
   const [allPods, setAllPods] = useState<PodInfo[]>([]);

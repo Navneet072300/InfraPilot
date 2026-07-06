@@ -364,6 +364,7 @@ function timeAgo(iso: string): string {
 
 function IssuesPanel({ incidents, summary }: { incidents: Incident[]; summary?: { active: number; snoozed: number; resolved_today: number } }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [sevFilter, setSevFilter] = useState<string>('all');
   const [showSnooze, setShowSnooze] = useState<string | null>(null);
 
@@ -380,10 +381,6 @@ function IssuesPanel({ incidents, summary }: { incidents: Incident[]; summary?: 
   async function handleSnooze(id: string, mins: number) {
     await fetch(`/api/incidents/${id}/snooze`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minutes: mins }) });
     setShowSnooze(null);
-    qc.invalidateQueries({ queryKey: ['incidents'] });
-  }
-  async function handleFixAuto(id: string) {
-    await fetch(`/api/incidents/${id}/fix-auto`, { method: 'POST' });
     qc.invalidateQueries({ queryKey: ['incidents'] });
   }
   async function handleResolve(id: string, what: string) {
@@ -450,7 +447,7 @@ function IssuesPanel({ incidents, summary }: { incidents: Incident[]; summary?: 
             <p style={{ fontSize: 13, fontWeight: 700, color: C.primary, marginBottom: 2 }}>{inc.title}</p>
             <p style={{ fontSize: 11, color: C.muted, marginBottom: 10, fontFamily: 'monospace' }}>{inc.namespace && `${inc.namespace} / `}{inc.resource_name}</p>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <button type="button" onClick={() => handleFixAuto(inc.id)} style={{ padding: '4px 10px', background: C.accent, border: 'none', borderRadius: 4, color: '#fff', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
+              <button type="button" onClick={() => navigate('/app/diagnose', { state: { namespace: inc.namespace ?? 'default', resourceName: inc.resource_name, resourceType: inc.resource_type } })} style={{ padding: '4px 10px', background: C.accent, border: 'none', borderRadius: 4, color: '#fff', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
                 <Wrench size={10} /> Fix Now
               </button>
               {inc.status !== 'acknowledged' && (
