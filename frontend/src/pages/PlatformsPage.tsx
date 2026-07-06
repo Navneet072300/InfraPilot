@@ -542,8 +542,7 @@ export default function PlatformsPage() {
     if (!gh?.pat_expires_at) return undefined;
     const days = Math.ceil((new Date(gh.pat_expires_at).getTime() - Date.now()) / 86400000);
     if (days < 0) return 'Token expired';
-    if (days <= 7) return `Expires in ${days}d`;
-    if (days <= 30) return `Expiring soon`;
+    if (days <= 10) return 'Expiring soon';
     return undefined;
   }
 
