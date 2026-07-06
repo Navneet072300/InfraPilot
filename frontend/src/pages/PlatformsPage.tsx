@@ -45,7 +45,7 @@ const CATALOG: CatalogEntry[] = [
     id: 'github', name: 'GitHub', category: 'source-control',
     description: 'Connect repositories, trigger workflows, and pull code.',
     icon: <GitBranch size={18} />, color: '#f0f0f5', settingKey: 'github', special: 'github',
-    fields: [{ key: 'pat', label: 'Personal Access Token', placeholder: 'ghp_xxxxxxxxxxxx', secret: true, hint: 'Needs repo, workflow scopes.' }],
+    fields: [{ key: 'pat', label: 'Personal Access Token', placeholder: 'ghp_xxxxxxxxxxxx', secret: true, hint: 'Needs repo, workflow, write:packages scopes.' }],
   },
   {
     id: 'gitlab', name: 'GitLab', category: 'source-control',
@@ -281,7 +281,7 @@ function AddModal({ entry, onClose, onSaved }: { entry: CatalogEntry; onClose: (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: V.bg, border: `1px solid ${V.border}`, borderRadius: 8, padding: '8px 12px' }}>
                   <span style={{ fontSize: '0.75rem', color: V.muted }}>Need to create a token first?</span>
                   <a
-                    href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=InfraPilot"
+                    href="https://github.com/settings/tokens/new?scopes=repo,workflow,write:packages&description=InfraPilot"
                     target="_blank" rel="noreferrer"
                     style={{ padding: '4px 12px', background: '#24292f', borderRadius: 6, color: '#fff', fontSize: '0.75rem', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
                     <GitBranch size={11} /> Create PAT →
