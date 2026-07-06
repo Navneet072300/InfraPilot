@@ -1559,67 +1559,6 @@ function AgentTab() {
         </div>
       </div>
 
-      {/* Install hint if no agent seen yet */}
-      {!status.last_seen && (
-        <div style={{ ...cardStyle, background: '#0d0d12' }}>
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>Token generated — run the Helm command to install the agent:</div>
-          <div style={{ fontSize: 11, color: C.dim }}>
-            <code style={{ background: C.bg, padding: '2px 6px', borderRadius: 3 }}>helm repo add infrapilot https://charts.infrapilot.dev</code>
-            <br /><br />
-            Then install with your token using the command shown when the token was first generated.
-            If you need a new command, click <strong>Reinstall</strong> above to regenerate the token.
-          </div>
-        </div>
-      )}
-
-      {/* Pixie eBPF section */}
-      <PixieSection clusterName={clusterName} />
-    </div>
-  );
-}
-
-function PixieSection({ clusterName }: { clusterName: string }) {
-  const [deployKey, setDeployKey] = useState('');
-  const [pixieStatus, setPixieStatus] = useState<{ installed: boolean; reason?: string; cluster_id?: string } | null>(null);
-
-  useEffect(() => {
-    fetch('/api/agent/pixie-status')
-      .then(r => r.json()).then(d => setPixieStatus(d as { installed: boolean; reason?: string }))
-      .catch(() => {});
-  }, []);
-
-  const helmCmd = deployKey.trim()
-    ? `helm upgrade --install infrapilot-agent infrapilot/infrapilot-agent \\\n  --namespace infrapilot-system \\\n  --reuse-values \\\n  --set pixie.enabled=true \\\n  --set "pixie.deployKey=${deployKey.trim()}" \\\n  --set "pixie.clusterName=${clusterName}"`
-    : '';
-
-  return (
-    <div style={{ border: `1px solid rgba(251,191,36,0.2)`, borderRadius: 8, padding: 14, background: 'rgba(251,191,36,0.04)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: C.primary }}>Pixie eBPF Telemetry</span>
-        <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 100, background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.3)', color: '#f59e0b', fontWeight: 600 }}>Optional</span>
-        {pixieStatus?.installed && (
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: '#34d399', fontWeight: 700 }}>● Installed</span>
-        )}
-      </div>
-      <p style={{ fontSize: 11, color: C.muted, lineHeight: 1.6, marginBottom: 10 }}>
-        Add eBPF-level HTTP traces and TCP stats to AI diagnosis. When active, DiagnoseMode shows an "Enhanced with eBPF telemetry" badge.
-        {!pixieStatus?.installed && <> Get a free deploy key at <a href="https://app.px.dev" target="_blank" rel="noreferrer" style={{ color: C.accent }}>app.px.dev</a>.</>}
-      </p>
-      {!pixieStatus?.installed && (
-        <>
-          <input
-            value={deployKey}
-            onChange={e => setDeployKey(e.target.value)}
-            placeholder="px:deploy:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-            style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5, color: C.primary, fontSize: 11, padding: '6px 9px', outline: 'none', fontFamily: 'JetBrains Mono, monospace', boxSizing: 'border-box', marginBottom: 8 }}
-          />
-          {helmCmd && (
-            <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 12px', position: 'relative' }}>
-              <pre style={{ margin: 0, fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: C.primary, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{helmCmd}</pre>
-            </div>
-          )}
-        </>
-      )}
     </div>
   );
 }
