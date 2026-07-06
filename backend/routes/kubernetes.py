@@ -176,6 +176,23 @@ async def cluster_overview(cluster: str | None = Query(None)):
         }
 
 
+@router.get("/k8s/describe")
+async def describe_resource(
+    kind: str = Query("pod"),
+    name: str = Query(...),
+    namespace: str = Query("default"),
+    cluster: str | None = Query(None),
+):
+    try:
+        svc = await _get_service(cluster)
+        result = await svc.run_kubectl_safe(["describe", f"{kind}/{name}", "-n", namespace])
+        stdout = result.get("stdout", "") or ""
+        stderr = result.get("stderr", "") or ""
+        return {"output": stdout or stderr}
+    except Exception as e:
+        return {"output": "", "error": str(e)}
+
+
 @router.get("/k8s/resources")
 async def all_resources(
     cluster: str | None = Query(None),
