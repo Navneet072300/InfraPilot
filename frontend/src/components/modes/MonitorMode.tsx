@@ -1,11 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp, TrendingDown, AlertTriangle, RefreshCw, DollarSign,
   BarChart2, Loader2, CheckCircle2, Edit2, X, Eye, EyeOff,
   ShieldAlert, Activity, Trash2, Server, Layers, BellOff, Wrench,
   AlertOctagon, AlertCircle, Info, BarChart3, ThumbsUp, LineChart,
-  Bot, Copy, Check, RefreshCcw, Wifi, WifiOff, Clock,
+  Bot, Copy, Check, RefreshCcw, Wifi, WifiOff, Clock, ExternalLink, Plug,
 } from 'lucide-react';
 import { useClusterStore } from '../../store/clusterStore';
 import { useClusterOverview, useNamespaces, useResources, useNodeMetrics } from '../../hooks/useKubernetes';
@@ -800,33 +801,33 @@ function MetricCard({ title, unit, series, color, empty }: { title: string; unit
 }
 
 function MetricsTab() {
-  const clusters = useClusterStore(s => s.clusters);
+  const clusters   = useClusterStore(s => s.clusters);
   const activeCluster = clusters.find(c => c.active) ?? clusters[0];
+  const navigate   = useNavigate();
 
   const [subTab,        setSubTab]        = useState<MetricsSubTab>('dashboard');
   const [timeRange,     setTimeRange]     = useState<TimeRange>('1h');
-  const [embedUrl,      setEmbedUrl]      = useState<string | null>(null);
-  const [embedError,    setEmbedError]    = useState<string | null>(null);
-  const [embedLoading,  setEmbedLoading]  = useState(false);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [grafanaEmbed,  setGrafanaEmbed]  = useState(false);
 
-  const fetchEmbedUrl = async () => {
-    setEmbedLoading(true); setEmbedError(null);
-    try {
-      const r = await fetch('/api/monitoring/embed-url', { credentials: 'include' });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail ?? 'Failed to get embed URL');
-      setEmbedUrl(data.embed_url);
-    } catch (e) { setEmbedError(String(e)); }
-    finally { setEmbedLoading(false); }
-  };
+  // Load which monitoring platforms are connected
+  const { data: platformData = {} } = useQuery<Record<string, Record<string, string> | string>>({
+    queryKey: ['platform-data'],
+    queryFn: () => fetch('/api/settings/platform', { credentials: 'include' }).then(r => r.json()),
+    staleTime: 30_000,
+  });
 
-  useEffect(() => { if (subTab === 'dashboard') fetchEmbedUrl(); }, [subTab]);
-  useEffect(() => {
-    const handler = () => { if (document.visibilityState === 'visible' && subTab === 'dashboard') fetchEmbedUrl(); };
-    document.addEventListener('visibilitychange', handler);
-    return () => document.removeEventListener('visibilitychange', handler);
-  }, [subTab]);
+  const grafana    = platformData.grafana_external    as Record<string, string> | undefined;
+  const datadog    = platformData.datadog             as Record<string, string> | undefined;
+  const prometheus = platformData.prometheus_external as Record<string, string> | undefined;
+  const newrelic   = platformData.newrelic            as Record<string, string> | undefined;
+
+  type MonitoringPlatform = { key: string; name: string; url: string; color: string; icon: React.JSX.Element };
+  const connectedPlatforms: MonitoringPlatform[] = ([
+    grafana?.connected    ? { key: 'grafana',    name: 'Grafana',    url: grafana.url,    color: '#f46800', icon: <BarChart2  size={15} /> } : null,
+    datadog?.connected    ? { key: 'datadog',    name: 'Datadog',    url: `https://app.${datadog.site ?? 'datadoghq.com'}/infrastructure`, color: '#632ca6', icon: <BarChart3  size={15} /> } : null,
+    prometheus?.connected ? { key: 'prometheus', name: 'Prometheus', url: prometheus.url, color: '#e6522c', icon: <Activity  size={15} /> } : null,
+    newrelic?.connected   ? { key: 'newrelic',   name: 'New Relic',  url: 'https://one.newrelic.com', color: '#1ce783', icon: <TrendingUp size={15} /> } : null,
+  ] as (MonitoringPlatform | null)[]).filter((p): p is MonitoringPlatform => p !== null);
 
   const { data: rawMetrics, isLoading: metricsLoading } = useQuery<RawMetrics>({
     queryKey: ['monitoring-metrics', activeCluster?.name, timeRange],
@@ -844,16 +845,20 @@ function MetricsTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+      {/* Sub-tab bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 0, borderBottom: `1px solid ${C.border}` }}>
         {([{ id: 'dashboard' as const, label: 'Live Dashboard' }, { id: 'raw' as const, label: 'Raw Metrics' }]).map(t => (
-          <button key={t.id} type="button" onClick={() => setSubTab(t.id)} style={{ padding: '7px 14px', background: 'none', border: 'none', borderBottom: `2px solid ${subTab === t.id ? C.accent : 'transparent'}`, color: subTab === t.id ? C.primary : C.dim, fontSize: 11, fontWeight: subTab === t.id ? 700 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button key={t.id} type="button" onClick={() => setSubTab(t.id)}
+            style={{ padding: '7px 14px', background: 'none', border: 'none', borderBottom: `2px solid ${subTab === t.id ? C.accent : 'transparent'}`, color: subTab === t.id ? C.primary : C.dim, fontSize: 11, fontWeight: subTab === t.id ? 700 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
             {t.label}
           </button>
         ))}
         {subTab === 'raw' && (
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 3 }}>
             {(['1h', '6h', '24h', '7d'] as TimeRange[]).map(r => (
-              <button key={r} type="button" onClick={() => setTimeRange(r)} style={{ padding: '3px 8px', fontSize: 10, fontWeight: timeRange === r ? 700 : 400, background: timeRange === r ? `${C.accent}18` : C.surface, border: `1px solid ${timeRange === r ? C.accent : C.border}`, borderRadius: 4, color: timeRange === r ? C.accent : C.dim, cursor: 'pointer', fontFamily: 'monospace' }}>
+              <button key={r} type="button" onClick={() => setTimeRange(r)}
+                style={{ padding: '3px 8px', fontSize: 10, fontWeight: timeRange === r ? 700 : 400, background: timeRange === r ? `${C.accent}18` : C.surface, border: `1px solid ${timeRange === r ? C.accent : C.border}`, borderRadius: 4, color: timeRange === r ? C.accent : C.dim, cursor: 'pointer', fontFamily: 'monospace' }}>
                 {r}
               </button>
             ))}
@@ -861,43 +866,59 @@ function MetricsTab() {
         )}
       </div>
 
+      {/* Live Dashboard tab */}
       {subTab === 'dashboard' && (
-        <div>
-          {embedLoading && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: 18, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted, fontSize: 12 }}>
-              <Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite', color: C.accent }} /> Loading Grafana dashboard…
-            </div>
-          )}
-          {embedError && !embedLoading && (
-            <div style={{ padding: '16px 18px', background: `${C.error}0a`, border: `1px solid ${C.error}33`, borderRadius: 8, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <AlertCircle size={14} style={{ color: C.error, flexShrink: 0, marginTop: 1 }} />
-              <div style={{ flex: 1 }}>
-                <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 600, color: C.error }}>Grafana not available</p>
-                <p style={{ margin: '0 0 8px', fontSize: 11, color: C.muted }}>{embedError}</p>
-                <p style={{ margin: 0, fontSize: 11, color: C.dim, lineHeight: 1.6 }}>
-                  Start monitoring: <code style={{ fontSize: 10, background: C.border, padding: '1px 5px', borderRadius: 3 }}>docker-compose --profile monitoring up -d</code>
-                </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {connectedPlatforms.length === 0 ? (
+            <div style={{ padding: '40px 24px', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, textAlign: 'center' }}>
+              <div style={{ width: 44, height: 44, borderRadius: 10, background: `${C.accent}14`, border: `1px solid ${C.accent}28`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+                <Plug size={20} style={{ color: C.accent }} />
               </div>
-              <button type="button" onClick={fetchEmbedUrl} style={{ flexShrink: 0, padding: '4px 10px', background: 'none', border: `1px solid ${C.border}`, borderRadius: 5, color: C.muted, cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', gap: 3 }}>
-                <RefreshCw size={10} /> Retry
+              <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 700, color: C.primary }}>No monitoring platform connected</p>
+              <p style={{ margin: '0 0 20px', fontSize: 11, color: C.muted, lineHeight: 1.7, maxWidth: 340, marginInline: 'auto' }}>
+                Connect Grafana, Datadog, Prometheus, or New Relic in Integrations to view live dashboards here. Raw Metrics below uses your cluster's metrics-server directly.
+              </p>
+              <button type="button" onClick={() => navigate('/platforms')}
+                style={{ padding: '6px 18px', background: C.accent, border: 'none', borderRadius: 6, color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <Plug size={11} /> Go to Integrations
               </button>
             </div>
-          )}
-          {embedUrl && !embedLoading && (
-            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
-              <div style={{ padding: '7px 12px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 7 }}>
-                <Activity size={11} style={{ color: C.accent }} />
-                <span style={{ fontSize: 10, color: C.dim }}>Live Grafana — refreshes every 30s · embed expires in ~1 hour</span>
-                <button type="button" onClick={fetchEmbedUrl} style={{ marginLeft: 'auto', padding: '2px 7px', background: 'none', border: `1px solid ${C.border}`, borderRadius: 4, color: C.dim, cursor: 'pointer', fontSize: 9, display: 'flex', alignItems: 'center', gap: 3 }}>
-                  <RefreshCw size={9} /> Refresh URL
-                </button>
+          ) : (
+            connectedPlatforms.map(p => (
+              <div key={p.key} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
+                  <div style={{ width: 34, height: 34, borderRadius: 7, background: `${p.color}18`, border: `1px solid ${p.color}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: p.color, flexShrink: 0 }}>
+                    {p.icon}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ margin: '0 0 2px', fontSize: 12, fontWeight: 700, color: C.primary }}>{p.name}</p>
+                    <p style={{ margin: 0, fontSize: 10, color: C.dim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.url}</p>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    {p.key === 'grafana' && (
+                      <button type="button" onClick={() => setGrafanaEmbed(e => !e)}
+                        style={{ padding: '4px 10px', background: grafanaEmbed ? `${C.accent}18` : 'none', border: `1px solid ${grafanaEmbed ? C.accent : C.border}`, borderRadius: 5, color: grafanaEmbed ? C.accent : C.dim, fontSize: 10, cursor: 'pointer' }}>
+                        {grafanaEmbed ? 'Hide embed' : 'Embed'}
+                      </button>
+                    )}
+                    <a href={p.url} target="_blank" rel="noreferrer"
+                      style={{ padding: '4px 12px', background: p.color, border: 'none', borderRadius: 5, color: '#fff', fontSize: 10, fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <ExternalLink size={10} /> Open Dashboard
+                    </a>
+                  </div>
+                </div>
+                {p.key === 'grafana' && grafanaEmbed && (
+                  <div style={{ borderTop: `1px solid ${C.border}` }}>
+                    <iframe src={p.url} style={{ width: '100%', height: 520, border: 'none', display: 'block' }} title="Grafana Dashboard" sandbox="allow-same-origin allow-scripts allow-forms" />
+                  </div>
+                )}
               </div>
-              <iframe ref={iframeRef} src={embedUrl} style={{ width: '100%', height: 520, border: 'none', display: 'block' }} title="Grafana Dashboard" sandbox="allow-same-origin allow-scripts allow-forms" />
-            </div>
+            ))
           )}
         </div>
       )}
 
+      {/* Raw Metrics tab */}
       {subTab === 'raw' && (
         <div>
           {!activeCluster && <div style={{ padding: '18px 22px', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, textAlign: 'center', color: C.muted, fontSize: 12 }}>No active cluster.</div>}
@@ -916,6 +937,7 @@ function MetricsTab() {
           )}
         </div>
       )}
+
     </div>
   );
 }
