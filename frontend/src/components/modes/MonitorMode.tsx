@@ -878,7 +878,7 @@ function MetricsTab() {
               <p style={{ margin: '0 0 20px', fontSize: 11, color: C.muted, lineHeight: 1.7, maxWidth: 340, marginInline: 'auto' }}>
                 Connect Grafana, Datadog, Prometheus, or New Relic in Integrations to view live dashboards here. Raw Metrics below uses your cluster's metrics-server directly.
               </p>
-              <button type="button" onClick={() => navigate('/platforms')}
+              <button type="button" onClick={() => navigate('/app/platforms')}
                 style={{ padding: '6px 18px', background: C.accent, border: 'none', borderRadius: 6, color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                 <Plug size={11} /> Go to Integrations
               </button>
