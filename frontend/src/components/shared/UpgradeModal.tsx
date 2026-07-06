@@ -8,11 +8,11 @@ const V = {
   accentLight: 'var(--accent)', green: 'var(--success)', red: 'var(--error)',
 } as const;
 
-const PLAN_PRICE: Record<string, { monthly: number; annual: number }> = {
-  pro: { monthly: 49, annual: 39 },
-  team: { monthly: 199, annual: 169 },
-  enterprise: { monthly: 999, annual: 999 },
-};
+import { PLANS } from '../../pages/SubscriptionPage';
+
+const PLAN_PRICE: Record<string, { monthly: number; annual: number }> = Object.fromEntries(
+  PLANS.filter(p => p.id !== 'free').map(p => [p.id, { monthly: p.monthlyPrice, annual: p.annualPrice }])
+);
 
 interface FeatureContent {
   icon: React.ReactNode;
