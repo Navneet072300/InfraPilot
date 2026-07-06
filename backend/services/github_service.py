@@ -32,13 +32,30 @@ class GitHubService:
 
     def validate(self) -> dict:
         try:
-            user = self._client().get_user()
-            return {
+            import httpx
+            resp = httpx.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {self._pat}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+                timeout=15.0,
+            )
+            if resp.status_code != 200:
+                return {"success": False, "error": f"Invalid token (HTTP {resp.status_code})"}
+            data = resp.json()
+            result: dict = {
                 "success": True,
-                "username": user.login,
-                "name": user.name or user.login,
-                "avatar": user.avatar_url,
+                "username": data.get("login", ""),
+                "name": data.get("name") or data.get("login", ""),
+                "avatar": data.get("avatar_url", ""),
             }
+            # Fine-grained PATs include expiry in this response header
+            expires = resp.headers.get("github-authentication-token-expiration")
+            if expires:
+                result["expires_at"] = expires
+            return result
         except Exception as e:
             return {"success": False, "error": str(e)}
 

@@ -201,6 +201,7 @@ function AddModal({ entry, onClose, onSaved }: { entry: CatalogEntry; onClose: (
         if (!vd.success) throw new Error(vd.error ?? 'Invalid token');
         await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.pat', value: form.pat }) });
         if (vd.username) await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.username', value: vd.username }) });
+        if (vd.expires_at) await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.pat_expires_at', value: vd.expires_at }) });
       } else {
         await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: entry.settingKey, value: JSON.stringify({ ...form, connected: true }) }) });
       }
@@ -262,19 +263,32 @@ function AddModal({ entry, onClose, onSaved }: { entry: CatalogEntry; onClose: (
               </div>
             </>
           ) : (
-            entry.fields.map(f => (
-              <div key={f.key}>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>{f.label}</label>
-                {f.hint && <div style={{ fontSize: '0.73rem', color: V.muted, marginBottom: 6, opacity: 0.8 }}>{f.hint}</div>}
-                <input
-                  type={f.secret ? 'password' : 'text'}
-                  value={form[f.key] ?? ''}
-                  onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
-                  placeholder={f.placeholder}
-                  style={inputStyle}
-                />
-              </div>
-            ))
+            <>
+              {entry.fields.map(f => (
+                <div key={f.key}>
+                  <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>{f.label}</label>
+                  {f.hint && <div style={{ fontSize: '0.73rem', color: V.muted, marginBottom: 6, opacity: 0.8 }}>{f.hint}</div>}
+                  <input
+                    type={f.secret ? 'password' : 'text'}
+                    value={form[f.key] ?? ''}
+                    onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
+                    placeholder={f.placeholder}
+                    style={inputStyle}
+                  />
+                </div>
+              ))}
+              {entry.special === 'github' && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: V.bg, border: `1px solid ${V.border}`, borderRadius: 8, padding: '8px 12px' }}>
+                  <span style={{ fontSize: '0.75rem', color: V.muted }}>Need to create a token first?</span>
+                  <a
+                    href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=InfraPilot"
+                    target="_blank" rel="noreferrer"
+                    style={{ padding: '4px 12px', background: '#24292f', borderRadius: 6, color: '#fff', fontSize: '0.75rem', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <GitBranch size={11} /> Create PAT →
+                  </a>
+                </div>
+              )}
+            </>
           )}
 
           {error && (
@@ -376,9 +390,9 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
 // ─── Connected item row ───────────────────────────────────────────────────────
 
 function ConnectedRow({
-  entry, detail, onEdit, onDisconnect,
+  entry, detail, warning, onEdit, onDisconnect,
 }: {
-  entry: CatalogEntry; detail: string; onEdit: () => void; onDisconnect: () => void;
+  entry: CatalogEntry; detail: string; warning?: string; onEdit: () => void; onDisconnect: () => void;
 }) {
   const catLabel = CATEGORIES.find(c => c.id === entry.category)?.label ?? '';
   return (
@@ -391,6 +405,11 @@ function ConnectedRow({
           <span style={{ fontSize: '0.9rem', fontWeight: 600, color: V.text }}>{entry.name}</span>
           <span style={{ fontSize: '0.68rem', color: V.green, background: 'rgba(63,185,80,0.1)', border: '1px solid rgba(63,185,80,0.2)', padding: '1px 7px', borderRadius: 100, fontWeight: 700 }}>● Connected</span>
           <span style={{ fontSize: '0.68rem', color: V.muted, background: V.bg, border: `1px solid ${V.border}`, padding: '1px 7px', borderRadius: 100 }}>{catLabel}</span>
+          {warning && (
+            <span style={{ fontSize: '0.68rem', color: '#e6a817', background: 'rgba(230,168,23,0.12)', border: '1px solid rgba(230,168,23,0.3)', padding: '1px 7px', borderRadius: 100, fontWeight: 700 }}>
+              ⚠ {warning}
+            </span>
+          )}
         </div>
         <div style={{ fontSize: '0.75rem', color: V.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{detail}</div>
       </div>
@@ -504,9 +523,28 @@ export default function PlatformsPage() {
   function connectedDetail(entry: CatalogEntry): string {
     if (entry.special === 'github') {
       const gh = platformData.github as Record<string, string> | undefined;
-      return gh?.username ? `@${gh.username}` : 'Connected';
+      const parts: string[] = [];
+      if (gh?.username) parts.push(`@${gh.username}`);
+      if (gh?.pat_expires_at) {
+        const exp = new Date(gh.pat_expires_at);
+        const days = Math.ceil((exp.getTime() - Date.now()) / 86400000);
+        if (days < 0) parts.push('Token expired');
+        else if (days === 0) parts.push('Expires today');
+        else parts.push(`Expires ${exp.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`);
+      }
+      return parts.join(' · ') || 'Connected';
     }
     return 'Credentials saved';
+  }
+
+  function githubExpiryWarning(): string | undefined {
+    const gh = platformData.github as Record<string, string> | undefined;
+    if (!gh?.pat_expires_at) return undefined;
+    const days = Math.ceil((new Date(gh.pat_expires_at).getTime() - Date.now()) / 86400000);
+    if (days < 0) return 'Token expired';
+    if (days <= 7) return `Expires in ${days}d`;
+    if (days <= 30) return `Expiring soon`;
+    return undefined;
   }
 
   const showSearch = q.length > 0 || category !== 'all';
@@ -593,6 +631,7 @@ export default function PlatformsPage() {
                     key={entry.id}
                     entry={entry}
                     detail={connectedDetail(entry)}
+                    warning={entry.special === 'github' ? githubExpiryWarning() : undefined}
                     onEdit={() => setEditEntry(entry)}
                     onDisconnect={() => disconnectEntry(entry)}
                   />
