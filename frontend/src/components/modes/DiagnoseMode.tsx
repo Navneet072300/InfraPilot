@@ -123,6 +123,9 @@ export function DiagnoseMode() {
   const [prCreated, setPrCreated] = useState(false);
   const [prData, setPrData] = useState<Record<string, unknown> | null>(null);
 
+  // Right panel tab
+  const [rightTab, setRightTab] = useState<'activity' | 'chat'>('activity');
+
   // Command execution
   const [cmdToConfirm, setCmdToConfirm] = useState<string | null>(null);
   const [runningCmd, setRunningCmd] = useState(false);
@@ -224,6 +227,7 @@ export function DiagnoseMode() {
     setAnalyzing(false);
     if (meta.session_id) setSessionId(meta.session_id as string);
     addActivity({ type: 'ok', text: 'Analysis complete' });
+    setRightTab('chat');
   }, [addActivity]);
 
   const onDiagError = useCallback((e: string) => {
@@ -643,37 +647,82 @@ export function DiagnoseMode() {
         )}
       </div>
 
-      {/* Right: Activity + Chat */}
-      <div style={{ width: 320, minWidth: 320, borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* Activity log */}
-        <div style={{ borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', flexShrink: 0, maxHeight: 220 }}>
-          <div style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Terminal size={11} style={{ color: 'var(--accent)' }} />
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>Activity</span>
-            {runningCmd && <Loader2 size={10} style={{ animation: 'spin 1s linear infinite', color: 'var(--accent)', marginLeft: 'auto' }} />}
-            {activities.length > 0 && <button type="button" onClick={() => setActivities([])}
-              style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}><X size={10} /></button>}
-          </div>
-          <div style={{ overflow: 'auto', padding: '0 12px 8px' }}>
-            {activities.length === 0 && <p style={{ fontSize: 10, color: 'var(--text-muted)' }}>No activity yet.</p>}
-            {activities.map(a => (
-              <div key={a.id} style={{ marginBottom: 4 }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5 }}>
-                  <span style={{ fontSize: 9, marginTop: 1, flexShrink: 0, color: a.type === 'ok' ? 'var(--success)' : a.type === 'err' ? 'var(--error)' : a.type === 'run' ? 'var(--warning)' : a.type === 'ai' ? 'var(--accent)' : 'var(--text-muted)' }}>
-                    {a.type === 'ok' ? '✓' : a.type === 'err' ? '✗' : a.type === 'run' ? '▶' : a.type === 'ai' ? '◆' : '●'}
-                  </span>
-                  <p style={{ fontSize: 10, color: 'var(--text-secondary)', lineHeight: 1.4, wordBreak: 'break-word' }}>{a.text}</p>
-                </div>
-                {a.detail && <p style={{ fontSize: 9, color: 'var(--text-muted)', marginLeft: 14, fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all', marginTop: 2 }}>{a.detail}</p>}
+      {/* Right: tabbed Activity / SRE Chat */}
+      <div style={{ width: 380, minWidth: 380, borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+        {/* Tab bar */}
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+          {(['activity', 'chat'] as const).map(t => (
+            <button key={t} type="button" onClick={() => setRightTab(t)}
+              style={{ flex: 1, padding: '10px 0', background: 'none', border: 'none', borderBottom: `2px solid ${rightTab === t ? 'var(--accent)' : 'transparent'}`, color: rightTab === t ? 'var(--text-primary)' : 'var(--text-muted)', fontSize: 11, fontWeight: rightTab === t ? 700 : 400, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+              {t === 'activity' ? (
+                <>
+                  <Terminal size={11} />
+                  Activity
+                  {activities.length > 0 && (
+                    <span style={{ background: runningCmd ? 'var(--warning)' : 'var(--accent)', color: '#fff', borderRadius: 100, fontSize: 9, fontWeight: 700, padding: '1px 5px', lineHeight: 1.4 }}>
+                      {activities.length}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Zap size={11} />
+                  SRE Assistant
+                </>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Activity tab */}
+        {rightTab === 'activity' && (
+          <div style={{ flex: 1, overflow: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {activities.length === 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 8 }}>
+                <Terminal size={26} style={{ opacity: 0.12 }} />
+                <p style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>No activity yet.</p>
               </div>
-            ))}
-            <div ref={activityEndRef} />
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+                  <button type="button" onClick={() => setActivities([])}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', gap: 3, padding: '2px 4px', borderRadius: 3 }}>
+                    <X size={10} /> Clear
+                  </button>
+                </div>
+                {activities.map(a => (
+                  <div key={a.id} style={{ marginBottom: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                      <span style={{ fontSize: 10, marginTop: 1, flexShrink: 0, fontWeight: 700, color: a.type === 'ok' ? 'var(--success)' : a.type === 'err' ? 'var(--error)' : a.type === 'run' ? 'var(--warning)' : a.type === 'ai' ? 'var(--accent)' : 'var(--text-muted)' }}>
+                        {a.type === 'ok' ? '✓' : a.type === 'err' ? '✗' : a.type === 'run' ? '▶' : a.type === 'ai' ? '◆' : '●'}
+                      </span>
+                      <p style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5, wordBreak: 'break-word', margin: 0 }}>{a.text}</p>
+                    </div>
+                    {a.detail && (
+                      <pre style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 16, fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all', marginTop: 3, padding: '4px 7px', background: 'var(--bg-base)', borderRadius: 4, border: '1px solid var(--border)' }}>
+                        {a.detail}
+                      </pre>
+                    )}
+                  </div>
+                ))}
+                {runningCmd && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--accent)', fontSize: 10, marginTop: 4 }}>
+                    <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> Running command…
+                  </div>
+                )}
+                <div ref={activityEndRef} />
+              </>
+            )}
           </div>
-        </div>
-        {/* SRE Chat */}
-        <div style={{ flex: 1, overflow: 'hidden' }}>
-          <SREChat sessionId={sessionId} headerData={headerData} causes={causes} causeStatuses={causeStatuses} />
-        </div>
+        )}
+
+        {/* SRE Chat tab */}
+        {rightTab === 'chat' && (
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            <SREChat sessionId={sessionId} headerData={headerData} causes={causes} causeStatuses={causeStatuses} />
+          </div>
+        )}
       </div>
     </div>
   );
