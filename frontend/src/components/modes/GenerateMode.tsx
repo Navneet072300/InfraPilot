@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Sparkles, AlertCircle, Rocket, ChevronRight, ChevronDown,
   Folder, FolderOpen, Zap, CheckCircle, Terminal, FileText,
-  Plus, Trash2, Clock, MessageSquare,
+  Plus, Trash2, Clock, MessageSquare, Download,
 } from 'lucide-react';
+import { zipSync, strToU8 } from 'fflate';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/appStore';
 import { useClusterStore } from '../../store/clusterStore';
@@ -670,6 +671,25 @@ export function GenerateMode() {
     }
   };
 
+  const handleDownload = useCallback(() => {
+    if (generatedFiles.length === 0) return;
+    const entries: Record<string, Uint8Array> = {};
+    for (const f of generatedFiles) {
+      entries[f.path] = strToU8(f.content);
+    }
+    const zipped = zipSync(entries, { level: 6 });
+    const blob = new Blob([zipped], { type: 'application/zip' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const slug = generateInput.trim().slice(0, 40).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'generated';
+    a.download = `infrapilot-${slug}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [generatedFiles, generateInput]);
+
   const hasFiles = generatedFiles.length > 0;
   const showActionBar = hasFiles && !isGenerating;
 
@@ -782,6 +802,9 @@ export function GenerateMode() {
               if (guide) setActiveFileTab('guideme.md');
             }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
               <FileText size={13} style={{ color: 'var(--warning)' }} /> Implement Myself
+            </button>
+            <button type="button" onClick={handleDownload} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+              <Download size={13} style={{ color: 'var(--accent)' }} /> Download ZIP
             </button>
             <button type="button" onClick={() => setShowCredModal(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 6, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 0 12px var(--accent-glow)' }}>
               <Zap size={13} /> Auto-Implement
