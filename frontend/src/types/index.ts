@@ -98,6 +98,7 @@ export interface PipelineConfig {
   gitops_path: string;
   namespace: string;
   target_url: string;
+  publish_mode?: string;
   cluster: string;
   iac_tool: 'kustomize' | 'helm';
   registry: string;

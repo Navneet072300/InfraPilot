@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import {
   GitBranch, GitMerge, Server, Shield, Cloud, Database,
   Activity, BarChart2, Loader2, Plus, Trash2, Edit2,
-  Search, X, Zap, CheckCircle2,
+  Search, X, Zap, CheckCircle2, Globe,
 } from 'lucide-react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { useClusterStore } from '../store/clusterStore';
@@ -65,11 +65,45 @@ const CATALOG: CatalogEntry[] = [
   },
   {
     id: 'cloudflare', name: 'Cloudflare', category: 'infrastructure',
-    description: 'Manage DNS records and CDN configuration.',
+    description: 'Manage DNS records and CDN configuration for your own domain.',
     icon: <Cloud size={18} />, color: '#f6821f', settingKey: 'cloudflare',
     fields: [
       { key: 'api_token', label: 'API Token', placeholder: 'Your Cloudflare API token', secret: true },
-      { key: 'zone_id', label: 'Zone ID (optional)', placeholder: 'Zone ID for DNS management' },
+      { key: 'zone_id', label: 'Zone ID (optional)', placeholder: 'Leave blank to auto-detect from domain' },
+    ],
+  },
+  {
+    id: 'route53', name: 'AWS Route 53', category: 'infrastructure',
+    description: 'Automate DNS record creation in your AWS Route 53 hosted zone.',
+    icon: <Globe size={18} />, color: '#ff9900', settingKey: 'route53',
+    fields: [
+      { key: 'access_key_id', label: 'Access Key ID', placeholder: 'AKIA…' },
+      { key: 'secret_access_key', label: 'Secret Access Key', placeholder: 'Your AWS secret', secret: true },
+      { key: 'hosted_zone_id', label: 'Hosted Zone ID', placeholder: 'Z0123456789EXAMPLE' },
+      { key: 'region', label: 'Region', placeholder: 'us-east-1' },
+    ],
+  },
+  {
+    id: 'azure_dns', name: 'Azure DNS', category: 'infrastructure',
+    description: 'Create DNS records in an Azure DNS zone via the ARM REST API.',
+    icon: <Globe size={18} />, color: '#0089d6', settingKey: 'azure_dns',
+    fields: [
+      { key: 'subscription_id', label: 'Subscription ID', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
+      { key: 'resource_group', label: 'Resource Group', placeholder: 'my-dns-rg' },
+      { key: 'zone_name', label: 'DNS Zone Name', placeholder: 'company.com' },
+      { key: 'tenant_id', label: 'Tenant ID', placeholder: 'Azure AD tenant ID' },
+      { key: 'client_id', label: 'Client ID', placeholder: 'Azure AD App (service principal) client ID' },
+      { key: 'client_secret', label: 'Client Secret', placeholder: 'Azure AD client secret', secret: true },
+    ],
+  },
+  {
+    id: 'gcp_dns', name: 'GCP Cloud DNS', category: 'infrastructure',
+    description: 'Create DNS records in a GCP Cloud DNS managed zone.',
+    icon: <Globe size={18} />, color: '#4285f4', settingKey: 'gcp_dns',
+    fields: [
+      { key: 'project_id', label: 'Project ID', placeholder: 'my-gcp-project' },
+      { key: 'managed_zone', label: 'Managed Zone Name', placeholder: 'my-zone' },
+      { key: 'service_account_json', label: 'Service Account JSON', placeholder: '{"type":"service_account"…}', secret: true },
     ],
   },
   // Secrets

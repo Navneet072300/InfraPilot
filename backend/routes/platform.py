@@ -114,6 +114,27 @@ async def test_cloudflare(body: dict):
     return await cf.test_connection()
 
 
+@router.post("/platform/test-route53")
+async def test_route53(body: dict):
+    from services.route53_service import Route53Service
+    svc = Route53Service(body)
+    return await svc.test_connection()
+
+
+@router.post("/platform/test-azure-dns")
+async def test_azure_dns(body: dict):
+    from services.azure_dns_service import AzureDnsService
+    svc = AzureDnsService(body)
+    return await svc.test_connection()
+
+
+@router.post("/platform/test-gcp-dns")
+async def test_gcp_dns(body: dict):
+    from services.gcp_dns_service import GcpDnsService
+    svc = GcpDnsService(body)
+    return await svc.test_connection()
+
+
 @router.delete("/platform/config")
 async def reset_config():
     cfg_file = settings.CONFIG_FILE

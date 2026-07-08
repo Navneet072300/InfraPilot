@@ -12,7 +12,7 @@ export const INITIAL_TASKS: Omit<PipelineTask, 'status' | 'output' | 'files' | '
   { id: 8, title: 'Watch Rollout', description: 'kubectl rollout status until healthy', stubbed: false },
   { id: 9, title: 'Troubleshoot', description: 'Auto-triggered if step 8 fails — reads logs + events', stubbed: false },
   { id: 10, title: 'Get Service URL', description: 'kubectl get svc / ingress → extract public URL', stubbed: false },
-  { id: 11, title: 'Configure Cloudflare DNS', description: 'Point target URL → LoadBalancer IP', stubbed: true },
+  { id: 11, title: 'Publish — Configure DNS', description: 'Point domain → LoadBalancer IP via selected DNS provider', stubbed: false },
 ];
 
 function makeTasks(): PipelineTask[] {

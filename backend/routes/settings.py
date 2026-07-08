@@ -171,6 +171,21 @@ async def get_platform_config():
     github_pat = await get_platform_setting("github.pat")
     github_pat_expires_at = await get_platform_setting("github.pat_expires_at")
     github_username = await get_platform_setting("github.username")
+
+    # Return connected state for all DNS/publish platforms without exposing secrets
+    dns_keys = ("cloudflare", "route53", "azure_dns", "gcp_dns")
+    dns_status: dict[str, dict] = {}
+    for key in dns_keys:
+        raw = await get_platform_setting(key)
+        connected = False
+        if raw:
+            try:
+                data = json.loads(raw) if isinstance(raw, str) else raw
+                connected = bool(isinstance(data, dict) and data.get("connected"))
+            except Exception:
+                pass
+        dns_status[key] = {"connected": connected}
+
     return {
         "github": {
             "pat": _mask(github_pat) if github_pat else "",
@@ -178,7 +193,7 @@ async def get_platform_config():
             "username": github_username or "",
         },
         "vault": {"stub": True},
-        "cloudflare": {"stub": True},
+        **dns_status,
     }
 
 

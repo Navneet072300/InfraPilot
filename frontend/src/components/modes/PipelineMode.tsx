@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Rocket, Search, Play, Pause, RotateCcw, CheckCircle2, AlertCircle, Loader2, Upload, X, KeyRound, ExternalLink } from 'lucide-react';
+import { Rocket, Search, Play, Pause, RotateCcw, CheckCircle2, AlertCircle, Loader2, Upload, X, KeyRound, ExternalLink, Globe } from 'lucide-react';
 import { useAgent } from '../../hooks/useAgent';
 import { useClusterStore } from '../../store/clusterStore';
 import { TaskList } from '../shared/TaskList';
@@ -54,6 +54,9 @@ function IntakeForm({ onAnalyze, initialRepoUrl = '', initialPrivate = false }: 
   const { clusters, activeCluster } = useClusterStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [savedCreds, setSavedCreds] = useState<{ username: string; hasPat: boolean } | null>(null);
+  const [connectedDns, setConnectedDns] = useState({
+    cloudflare: false, route53: false, azure_dns: false, gcp_dns: false,
+  });
   const [form, setForm] = useState({
     app_name: '',
     repo_url: initialRepoUrl,
@@ -63,6 +66,7 @@ function IntakeForm({ onAnalyze, initialRepoUrl = '', initialPrivate = false }: 
     gitops_path: '/deployments',
     namespace: '',
     target_url: '',
+    publish_mode: 'none' as 'none' | 'infrapilot' | 'cloudflare' | 'route53' | 'azure_dns' | 'gcp_dns',
     iac_tool: 'kustomize' as 'kustomize' | 'helm',
     registry: 'ghcr.io',
     selected_clusters: activeCluster ? [activeCluster] : [] as string[],
@@ -74,7 +78,7 @@ function IntakeForm({ onAnalyze, initialRepoUrl = '', initialPrivate = false }: 
     rotate_vault_secret: false,
   });
 
-  // Load saved GitHub credentials once on mount
+  // Load saved GitHub credentials + DNS platform connected states
   useEffect(() => {
     fetch('/api/settings/platform')
       .then((r) => r.json())
@@ -82,6 +86,12 @@ function IntakeForm({ onAnalyze, initialRepoUrl = '', initialPrivate = false }: 
         const pat = data?.github?.pat ?? '';
         const username = data?.github?.username ?? '';
         if (pat) setSavedCreds({ username, hasPat: true });
+        setConnectedDns({
+          cloudflare: data?.cloudflare?.connected ?? false,
+          route53: data?.route53?.connected ?? false,
+          azure_dns: data?.azure_dns?.connected ?? false,
+          gcp_dns: data?.gcp_dns?.connected ?? false,
+        });
       })
       .catch(() => {});
   }, []);
@@ -210,9 +220,57 @@ function IntakeForm({ onAnalyze, initialRepoUrl = '', initialPrivate = false }: 
           )}
         </div>
 
-        <Field label="Target URL (publish on)">
-          <input value={form.target_url} onChange={(e) => setForm((f) => ({ ...f, target_url: e.target.value }))} placeholder="myapp.company.com" style={inputStyle} />
-        </Field>
+        {/* ── Publish section ──────────────────────────────────────────── */}
+        <div>
+          <p style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <Globe size={11} /> Publish
+          </p>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+            {(
+              [
+                { id: 'none', label: 'No Publish', always: true },
+                { id: 'infrapilot', label: '⬡ infrapilot.app', always: true },
+                { id: 'cloudflare', label: '☁ Cloudflare', always: false, key: 'cloudflare' as const },
+                { id: 'route53', label: '⬡ Route 53', always: false, key: 'route53' as const },
+                { id: 'azure_dns', label: '⬡ Azure DNS', always: false, key: 'azure_dns' as const },
+                { id: 'gcp_dns', label: '⬡ GCP DNS', always: false, key: 'gcp_dns' as const },
+              ] as { id: string; label: string; always: boolean; key?: keyof typeof connectedDns }[]
+            )
+              .filter((m) => m.always || (m.key && connectedDns[m.key]))
+              .map((mode) => {
+                const active = form.publish_mode === mode.id;
+                return (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, publish_mode: mode.id as typeof f.publish_mode }))}
+                    style={{ padding: '5px 12px', background: active ? 'var(--accent-glow)' : 'transparent', border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`, borderRadius: '5px', color: active ? 'var(--accent)' : 'var(--text-muted)', fontSize: '12px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: active ? 600 : 400 }}
+                  >
+                    {mode.label}
+                  </button>
+                );
+              })}
+          </div>
+          {form.publish_mode === 'infrapilot' && (
+            <div style={{ padding: '8px 12px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Globe size={12} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Your app will be available at </span>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                {form.app_name
+                  ? `${form.app_name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')}.infrapilot.app`
+                  : '<app-name>.infrapilot.app'}
+              </span>
+            </div>
+          )}
+          {['cloudflare', 'route53', 'azure_dns', 'gcp_dns'].includes(form.publish_mode) && (
+            <input
+              value={form.target_url}
+              onChange={(e) => setForm((f) => ({ ...f, target_url: e.target.value }))}
+              placeholder="myapp.company.com"
+              style={inputStyle}
+            />
+          )}
+        </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
           <div>
@@ -330,6 +388,13 @@ function IntakeForm({ onAnalyze, initialRepoUrl = '', initialPrivate = false }: 
         <button
           onClick={() => {
             if (!canSubmit) return;
+            const appSlug = form.app_name.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+            const resolvedTargetUrl =
+              form.publish_mode === 'infrapilot'
+                ? `${appSlug}.infrapilot.app`
+                : form.publish_mode === 'none'
+                ? ''
+                : form.target_url.trim();
             onAnalyze({
               app_name: form.app_name.trim(),
               repo_url: form.repo_url.trim(),
@@ -337,7 +402,8 @@ function IntakeForm({ onAnalyze, initialRepoUrl = '', initialPrivate = false }: 
               gitops_repo: form.gitops_same ? form.repo_url.trim() : form.gitops_repo.trim(),
               gitops_path: form.gitops_path,
               namespace: form.namespace || form.app_name.trim(),
-              target_url: form.target_url.trim(),
+              target_url: resolvedTargetUrl,
+              publish_mode: form.publish_mode,
               cluster: form.selected_clusters[0] ?? '',
               iac_tool: form.iac_tool,
               registry: form.registry,

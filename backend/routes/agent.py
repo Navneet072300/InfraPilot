@@ -37,6 +37,7 @@ class PipelineRequest(BaseModel):
     gitops_path: str = "/deployments"
     namespace: str = "default"
     target_url: str = ""
+    publish_mode: str = ""  # "none"|"infrapilot"|"cloudflare"|"route53"|"azure_dns"|"gcp_dns"
     cluster: str = ""
     iac_tool: str = "kustomize"
     registry: str = "ghcr.io"
@@ -426,30 +427,141 @@ Include automated sync policy with self-heal and pruning enabled.
     yield _ev({"task": 9, "status": "skipped"})
 
     # ── TASK 10: Get Service URL ────────────────────────────────────────────────
+    lb_ip = ""
     yield _ev({"task": 10, "status": "running", "message": "Fetching service URL..."})
     if cluster_cfg:
         svc_result = await svc.run_kubectl_safe(["get", "svc", app, "-n", ns])
         ingress_result = await svc.run_kubectl_safe(["get", "ingress", "-n", ns])
         output = (svc_result["stdout"] or "") + "\n" + (ingress_result["stdout"] or "")
         yield _ev({"task": 10, "status": "chunk", "content": output})
+        # Extract LoadBalancer IP for Task 11
+        ip_result = await svc.run_kubectl_safe(
+            ["get", "svc", app, "-n", ns, "-o", "jsonpath={.status.loadBalancer.ingress[0].ip}"]
+        )
+        lb_ip = (ip_result.get("stdout") or "").strip()
+        if not lb_ip:
+            host_result = await svc.run_kubectl_safe(
+                ["get", "svc", app, "-n", ns, "-o", "jsonpath={.status.loadBalancer.ingress[0].hostname}"]
+            )
+            lb_ip = (host_result.get("stdout") or "").strip()
+        if lb_ip:
+            yield _ev({"task": 10, "status": "chunk", "content": f"LoadBalancer: {lb_ip}\n"})
         yield _ev({"task": 10, "status": "done", "files": []})
     else:
         await asyncio.sleep(0.3)
         yield _ev({"task": 10, "status": "chunk", "content": f"Service URL: http://{app}.{ns}.svc.cluster.local\n"})
         yield _ev({"task": 10, "status": "done", "files": []})
 
-    # ── TASK 11: Cloudflare DNS (stubbed) ───────────────────────────────────────
-    cf_cfg = cfg.get("cloudflare")
-    if req.target_url and cf_cfg:
-        cf = CloudflareService(cf_cfg)
-        yield _ev({"task": 11, "status": "running", "message": f"Configuring DNS for {req.target_url}..."})
-        dns_result = await cf.create_dns_record(req.target_url, "52.14.88.123", proxied=True)
-        yield _ev({"task": 11, "status": "chunk", "content": dns_result["output"] + "\n"})
-        yield _ev({"task": 11, "status": "done", "files": [], "stubbed": True})
-    elif req.target_url:
-        await asyncio.sleep(0.3)
-        yield _ev({"task": 11, "status": "chunk", "content": "ℹ Cloudflare not configured — skipping DNS\n"})
+    # ── TASK 11: Publish DNS ─────────────────────────────────────────────────────
+    async def _load_dns_cfg(key: str) -> dict | None:
+        """Load a DNS platform config blob from unified_store, fall back to file config."""
+        raw = None
+        try:
+            from config.unified_store import get_platform_setting as _gps
+            raw = await _gps(key)
+        except Exception:
+            pass
+        if raw:
+            try:
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                return parsed if isinstance(parsed, dict) else None
+            except Exception:
+                pass
+        # Fall back to JSON-file config (legacy onboarding wizard)
+        val = cfg.get(key)
+        if isinstance(val, dict):
+            return val
+        return None
+
+    publish_mode = (req.publish_mode or "").strip()
+
+    if not publish_mode or publish_mode == "none":
         yield _ev({"task": 11, "status": "skipped"})
+
+    elif publish_mode == "infrapilot":
+        from services.infrapilot_publish_service import InfraPilotPublishService
+        pub = InfraPilotPublishService()
+        subdomain = InfraPilotPublishService.subdomain_for(req.app_name)
+        yield _ev({"task": 11, "status": "running", "message": f"Claiming {subdomain}..."})
+        result = await pub.publish(req.app_name, lb_ip or None)
+        yield _ev({"task": 11, "status": "chunk", "content": result["output"] + "\n"})
+        yield _ev({"task": 11, "status": "done" if result.get("success") else "failed", "files": []})
+
+    elif publish_mode == "cloudflare":
+        if not req.target_url:
+            yield _ev({"task": 11, "status": "chunk", "content": "⚠ No target URL provided — skipping\n"})
+            yield _ev({"task": 11, "status": "skipped"})
+        else:
+            cf_cfg = await _load_dns_cfg("cloudflare")
+            if not cf_cfg:
+                yield _ev({"task": 11, "status": "chunk", "content": "⚠ Cloudflare not connected in Settings → Platforms\n"})
+                yield _ev({"task": 11, "status": "skipped"})
+            else:
+                yield _ev({"task": 11, "status": "running", "message": f"Configuring Cloudflare DNS for {req.target_url}..."})
+                if not lb_ip:
+                    yield _ev({"task": 11, "status": "chunk", "content": "⚠ No LoadBalancer IP detected — DNS record will use 0.0.0.0 (update after deploy)\n"})
+                cf = CloudflareService(cf_cfg)
+                dns_result = await cf.create_dns_record(req.target_url, lb_ip or "0.0.0.0", proxied=True)
+                yield _ev({"task": 11, "status": "chunk", "content": dns_result["output"] + "\n"})
+                yield _ev({"task": 11, "status": "done" if dns_result.get("success") else "failed", "files": []})
+
+    elif publish_mode == "route53":
+        if not req.target_url:
+            yield _ev({"task": 11, "status": "chunk", "content": "⚠ No target URL provided — skipping\n"})
+            yield _ev({"task": 11, "status": "skipped"})
+        else:
+            r53_cfg = await _load_dns_cfg("route53")
+            if not r53_cfg:
+                yield _ev({"task": 11, "status": "chunk", "content": "⚠ Route 53 not connected in Settings → Platforms\n"})
+                yield _ev({"task": 11, "status": "skipped"})
+            else:
+                from services.route53_service import Route53Service
+                yield _ev({"task": 11, "status": "running", "message": f"Configuring Route 53 DNS for {req.target_url}..."})
+                if not lb_ip:
+                    yield _ev({"task": 11, "status": "chunk", "content": "⚠ No LoadBalancer IP detected — update the record after deploy\n"})
+                r53 = Route53Service(r53_cfg)
+                dns_result = await r53.create_dns_record(req.target_url, lb_ip or "0.0.0.0")
+                yield _ev({"task": 11, "status": "chunk", "content": dns_result["output"] + "\n"})
+                yield _ev({"task": 11, "status": "done" if dns_result.get("success") else "failed", "files": []})
+
+    elif publish_mode == "azure_dns":
+        if not req.target_url:
+            yield _ev({"task": 11, "status": "chunk", "content": "⚠ No target URL provided — skipping\n"})
+            yield _ev({"task": 11, "status": "skipped"})
+        else:
+            az_cfg = await _load_dns_cfg("azure_dns")
+            if not az_cfg:
+                yield _ev({"task": 11, "status": "chunk", "content": "⚠ Azure DNS not connected in Settings → Platforms\n"})
+                yield _ev({"task": 11, "status": "skipped"})
+            else:
+                from services.azure_dns_service import AzureDnsService
+                yield _ev({"task": 11, "status": "running", "message": f"Configuring Azure DNS for {req.target_url}..."})
+                if not lb_ip:
+                    yield _ev({"task": 11, "status": "chunk", "content": "⚠ No LoadBalancer IP detected — update the record after deploy\n"})
+                az = AzureDnsService(az_cfg)
+                dns_result = await az.create_dns_record(req.target_url, lb_ip or "0.0.0.0")
+                yield _ev({"task": 11, "status": "chunk", "content": dns_result["output"] + "\n"})
+                yield _ev({"task": 11, "status": "done" if dns_result.get("success") else "failed", "files": []})
+
+    elif publish_mode == "gcp_dns":
+        if not req.target_url:
+            yield _ev({"task": 11, "status": "chunk", "content": "⚠ No target URL provided — skipping\n"})
+            yield _ev({"task": 11, "status": "skipped"})
+        else:
+            gcp_cfg = await _load_dns_cfg("gcp_dns")
+            if not gcp_cfg:
+                yield _ev({"task": 11, "status": "chunk", "content": "⚠ GCP Cloud DNS not connected in Settings → Platforms\n"})
+                yield _ev({"task": 11, "status": "skipped"})
+            else:
+                from services.gcp_dns_service import GcpDnsService
+                yield _ev({"task": 11, "status": "running", "message": f"Configuring GCP Cloud DNS for {req.target_url}..."})
+                if not lb_ip:
+                    yield _ev({"task": 11, "status": "chunk", "content": "⚠ No LoadBalancer IP detected — update the record after deploy\n"})
+                gcp = GcpDnsService(gcp_cfg)
+                dns_result = await gcp.create_dns_record(req.target_url, lb_ip or "0.0.0.0")
+                yield _ev({"task": 11, "status": "chunk", "content": dns_result["output"] + "\n"})
+                yield _ev({"task": 11, "status": "done" if dns_result.get("success") else "failed", "files": []})
+
     else:
         yield _ev({"task": 11, "status": "skipped"})
 
