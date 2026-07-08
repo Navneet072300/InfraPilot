@@ -904,12 +904,6 @@ export function DeployMode() {
                       );
                     })}
 
-                    <p style={{ margin: '10px 0 0', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                      <strong style={{ color: 'var(--text-secondary)' }}>Public URL</strong> is the full domain where each service will be reachable — e.g.{' '}
-                      <code style={{ background: 'var(--bg-base)', padding: '0 4px', borderRadius: 3, fontSize: 10 }}>https://myapp.com</code> for frontend,{' '}
-                      <code style={{ background: 'var(--bg-base)', padding: '0 4px', borderRadius: 3, fontSize: 10 }}>https://api.myapp.com</code> for backend.
-                      Used for Ingress host rules, health-check URLs in CI, and TLS cert configuration. Workers have no public URL.
-                    </p>
                   </div>
 
                   {/* Existing files */}
@@ -936,10 +930,6 @@ export function DeployMode() {
                     </div>
                   </div>
 
-                  <div style={{ padding: '8px 12px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 7, display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <Zap size={12} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                    <span style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>Next: generate a <strong>Dockerfile per service</strong> + a combined <strong>docker-compose.yml</strong>.</span>
-                  </div>
                 </div>
               )}
             </div>
