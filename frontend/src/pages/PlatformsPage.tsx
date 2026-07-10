@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   GitBranch, GitMerge, Server, Shield, Cloud, Database,
   Activity, BarChart2, Loader2, Plus, Trash2, Edit2,
@@ -515,6 +515,31 @@ export default function PlatformsPage() {
     staleTime: 10_000,
   });
 
+  // Live health state for each cluster — checked on load
+  const [clusterHealth, setClusterHealth] = useState<
+    Record<string, { loading: boolean; healthy: boolean; error?: string }>
+  >({});
+
+  useEffect(() => {
+    if (clusters.length === 0) return;
+    // Mark all as loading, then fire checks in parallel
+    setClusterHealth(prev => {
+      const next = { ...prev };
+      for (const c of clusters) next[c.name] = { loading: true, healthy: false };
+      return next;
+    });
+    for (const c of clusters) {
+      fetch(`/api/settings/clusters/${encodeURIComponent(c.name)}/test`, { method: 'POST' })
+        .then(r => r.json())
+        .then((res: { healthy: boolean; error?: string }) => {
+          setClusterHealth(prev => ({ ...prev, [c.name]: { loading: false, healthy: res.healthy, error: res.error } }));
+        })
+        .catch(() => {
+          setClusterHealth(prev => ({ ...prev, [c.name]: { loading: false, healthy: false, error: 'Request failed' } }));
+        });
+    }
+  }, [clusters]);
+
   // ── Derive which catalog entries are connected ──
   const connectedIds = useMemo<Set<string>>(() => {
     const ids = new Set<string>();
@@ -578,6 +603,20 @@ export default function PlatformsPage() {
     if (days < 0) return 'Token expired';
     if (days <= 10) return 'Expiring soon';
     return undefined;
+  }
+
+  function clusterStatusBadge(name: string): { label: string; color: string; bg: string; border: string } {
+    const h = clusterHealth[name];
+    if (!h || h.loading) return { label: '○ Checking…', color: V.muted, bg: `${V.border}22`, border: V.border };
+    if (h.healthy) return { label: '● Reachable', color: V.green, bg: 'rgba(63,185,80,0.1)', border: 'rgba(63,185,80,0.2)' };
+    const err = (h.error ?? '').toLowerCase();
+    if (err.includes('unauthorized') || err.includes('403') || err.includes('401'))
+      return { label: '✗ Token expired', color: V.red, bg: 'rgba(248,81,73,0.1)', border: 'rgba(248,81,73,0.25)' };
+    if (err.includes('certificate') || err.includes('x509') || err.includes('cert'))
+      return { label: '✗ Cert expired', color: V.red, bg: 'rgba(248,81,73,0.1)', border: 'rgba(248,81,73,0.25)' };
+    if (err.includes('refused') || err.includes('timeout') || err.includes('deadline') || err.includes('no such host'))
+      return { label: '⚠ Unreachable', color: V.yellow, bg: 'rgba(230,168,23,0.1)', border: 'rgba(230,168,23,0.25)' };
+    return { label: '⚠ Auth failed', color: V.red, bg: 'rgba(248,81,73,0.1)', border: 'rgba(248,81,73,0.25)' };
   }
 
   const showSearch = q.length > 0 || category !== 'all';
@@ -683,18 +722,27 @@ export default function PlatformsPage() {
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 {clusters.map(c => {
+                  const badge = clusterStatusBadge(c.name);
+                  const h = clusterHealth[c.name];
                   return (
-                    <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '0.875rem 1rem', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 10 }}>
+                    <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '0.875rem 1rem', background: V.surface, border: `1px solid ${h && !h.loading && !h.healthy ? 'rgba(248,81,73,0.25)' : V.border}`, borderRadius: 10 }}>
                       <div style={{ width: 36, height: 36, borderRadius: 8, background: '#326ce518', border: '1px solid #326ce530', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#326ce5', flexShrink: 0 }}>
                         <Server size={18} />
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
                           <span style={{ fontSize: '0.9rem', fontWeight: 600, color: V.text }}>{c.name}</span>
-                          <span style={{ fontSize: '0.68rem', color: V.green, background: 'rgba(63,185,80,0.1)', border: '1px solid rgba(63,185,80,0.2)', padding: '1px 7px', borderRadius: 100, fontWeight: 700 }}>● Connected</span>
+                          <span style={{ fontSize: '0.68rem', color: badge.color, background: badge.bg, border: `1px solid ${badge.border}`, padding: '1px 7px', borderRadius: 100, fontWeight: 700 }}>
+                            {badge.label}
+                          </span>
                           <span style={{ fontSize: '0.68rem', color: V.muted, background: V.bg, border: `1px solid ${V.border}`, padding: '1px 7px', borderRadius: 100 }}>{c.environment}</span>
                         </div>
-                        <div style={{ fontSize: '0.75rem', color: V.muted }}>{c.api_url || 'Bearer token auth'}</div>
+                        <div style={{ fontSize: '0.75rem', color: V.muted }}>
+                          {c.api_url || 'Bearer token auth'}
+                          {h && !h.loading && !h.healthy && h.error && (
+                            <span style={{ color: V.red, marginLeft: 8 }}>— {h.error.slice(0, 80)}</span>
+                          )}
+                        </div>
                       </div>
                       <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                         <button type="button" onClick={() => setEditCluster(c)}
