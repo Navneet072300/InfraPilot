@@ -352,17 +352,51 @@ function AddModal({ entry, onClose, onSaved }: { entry: CatalogEntry; onClose: (
 
 function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfig; onClose: () => void; onSaved: () => void }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ name: cluster.name, environment: cluster.environment, api_url: cluster.api_url ?? '', token: '' });
+  const [form, setForm] = useState({ environment: cluster.environment, api_url: cluster.api_url ?? '', token: '' });
   const [saving, setSaving] = useState(false);
+  const [testResult, setTestResult] = useState<{ healthy: boolean; message: string } | null>(null);
+  const [testing, setTesting] = useState(false);
 
   async function handleSave() {
     setSaving(true);
     try {
-      await fetch(`/api/settings/clusters/${encodeURIComponent(cluster.name)}`, { method: 'DELETE' });
-      await fetch('/api/settings/clusters', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      // PATCH — only send token if the user actually typed one
+      const patch: Record<string, string> = {
+        environment: form.environment,
+        api_url: form.api_url,
+      };
+      if (form.token.trim()) patch.token = form.token.trim();
+      await fetch(`/api/settings/clusters/${encodeURIComponent(cluster.name)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
       qc.invalidateQueries({ queryKey: ['platforms-clusters'] });
       onSaved();
     } finally { setSaving(false); }
+  }
+
+  async function handleTest() {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const patch: Record<string, string> = { api_url: form.api_url };
+      if (form.token.trim()) patch.token = form.token.trim();
+      const r = await fetch(`/api/settings/clusters/${encodeURIComponent(cluster.name)}/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      const data = await r.json();
+      setTestResult({
+        healthy: data.healthy,
+        message: data.healthy
+          ? `Connected — ${data.node_count ?? '?'} node(s), ${data.version ?? ''}`
+          : friendlyClusterError(data.error ?? 'Unknown error'),
+      });
+    } catch {
+      setTestResult({ healthy: false, message: 'Request failed — is the backend running?' });
+    } finally { setTesting(false); }
   }
 
   const inputStyle: React.CSSProperties = {
@@ -388,7 +422,7 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <div>
               <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>Name</label>
-              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inputStyle} />
+              <div style={{ ...inputStyle, color: V.muted, background: `${V.bg}88`, userSelect: 'none' }}>{cluster.name}</div>
             </div>
             <div>
               <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>Environment</label>
@@ -402,10 +436,21 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
             <input value={form.api_url} onChange={e => setForm(f => ({ ...f, api_url: e.target.value }))} placeholder="https://k8s.example.com:6443" style={inputStyle} />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>New Bearer Token (leave blank to keep)</label>
-            <input type="password" value={form.token} onChange={e => setForm(f => ({ ...f, token: e.target.value }))} placeholder="eyJhbGci…" style={inputStyle} />
+            <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>
+              New Bearer Token <span style={{ color: V.muted, fontWeight: 400 }}>— leave blank to keep existing</span>
+            </label>
+            <input type="password" value={form.token} onChange={e => { setForm(f => ({ ...f, token: e.target.value })); setTestResult(null); }} placeholder="eyJhbGci… (paste new token here)" style={inputStyle} />
           </div>
+          {testResult && (
+            <div style={{ padding: '8px 12px', borderRadius: 7, background: testResult.healthy ? 'rgba(63,185,80,0.08)' : 'rgba(248,81,73,0.08)', border: `1px solid ${testResult.healthy ? 'rgba(63,185,80,0.25)' : 'rgba(248,81,73,0.25)'}`, fontSize: '0.8rem', color: testResult.healthy ? V.green : V.red }}>
+              {testResult.healthy ? '✓ ' : '✗ '}{testResult.message}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
+            <button type="button" onClick={handleTest} disabled={testing}
+              style={{ padding: '0.55rem 1rem', borderRadius: 8, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.875rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              {testing ? 'Testing…' : 'Test Connection'}
+            </button>
             <button type="button" onClick={handleSave} disabled={saving}
               style={{ flex: 1, padding: '0.55rem', borderRadius: 8, border: 'none', background: V.accent, color: '#fff', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer' }}>
               {saving ? 'Saving…' : 'Save Changes'}
@@ -419,6 +464,17 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
       </div>
     </div>
   );
+}
+
+function friendlyClusterError(raw: string): string {
+  const e = raw.toLowerCase();
+  if (e.includes('unauthorized') || e.includes('403') || e.includes('401')) return 'Token rejected — update your bearer token';
+  if (e.includes('certificate') || e.includes('x509')) return 'TLS certificate expired or untrusted';
+  if (e.includes('refused')) return 'Connection refused — check the API server URL and port';
+  if (e.includes('timeout') || e.includes('deadline') || e.includes('context deadline')) return 'Connection timed out — cluster may be unreachable';
+  if (e.includes('no such host') || e.includes('lookup')) return 'Hostname not found — check the API server URL';
+  if (e.includes('kubectl not found')) return 'kubectl is not installed on the server';
+  return raw.length > 100 ? raw.slice(0, 100) + '…' : raw;
 }
 
 // ─── Connected item row ───────────────────────────────────────────────────────
@@ -737,12 +793,12 @@ export default function PlatformsPage() {
                           </span>
                           <span style={{ fontSize: '0.68rem', color: V.muted, background: V.bg, border: `1px solid ${V.border}`, padding: '1px 7px', borderRadius: 100 }}>{c.environment}</span>
                         </div>
-                        <div style={{ fontSize: '0.75rem', color: V.muted }}>
-                          {c.api_url || 'Bearer token auth'}
-                          {h && !h.loading && !h.healthy && h.error && (
-                            <span style={{ color: V.red, marginLeft: 8 }}>— {h.error.slice(0, 80)}</span>
-                          )}
-                        </div>
+                        <div style={{ fontSize: '0.75rem', color: V.muted }}>{c.api_url || 'Bearer token auth'}</div>
+                        {h && !h.loading && !h.healthy && h.error && (
+                          <div style={{ fontSize: '0.72rem', color: V.red, marginTop: 2 }}>
+                            {friendlyClusterError(h.error)}
+                          </div>
+                        )}
                       </div>
                       <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                         <button type="button" onClick={() => setEditCluster(c)}
