@@ -212,6 +212,7 @@ function AddModal({ entry, onClose, onSaved }: { entry: CatalogEntry; onClose: (
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [saved, setSaved] = useState(false);
   const qc = useQueryClient();
   const { addCluster } = useClusterStore();
 
@@ -237,10 +238,15 @@ function AddModal({ entry, onClose, onSaved }: { entry: CatalogEntry; onClose: (
         if (vd.username) await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.username', value: vd.username }) });
         if (vd.expires_at) await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'github.pat_expires_at', value: vd.expires_at }) });
       } else {
-        await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: entry.settingKey, value: JSON.stringify({ ...form, connected: true }) }) });
+        // Validate at least the first required field is filled
+        const firstField = entry.fields[0];
+        if (firstField && !form[firstField.key]?.trim()) throw new Error(`${firstField.label} is required`);
+        const r = await fetch('/api/settings/platform', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: entry.settingKey, value: JSON.stringify({ ...form, connected: true }) }) });
+        if (!r.ok) { const body = await r.json().catch(() => ({})); throw new Error((body as Record<string, string>).detail ?? 'Save failed'); }
       }
       qc.invalidateQueries({ queryKey: ['platform-data'] });
-      onSaved();
+      setSaved(true);
+      setTimeout(() => { onSaved(); }, 1400);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Save failed');
     } finally {
@@ -326,22 +332,29 @@ function AddModal({ entry, onClose, onSaved }: { entry: CatalogEntry; onClose: (
           )}
 
           {error && (
-            <div style={{ fontSize: '0.8rem', color: V.red, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <X size={12} />{error}
+            <div style={{ fontSize: '0.8rem', color: V.red, display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 7, padding: '8px 12px' }}>
+              <X size={12} style={{ flexShrink: 0 }} />{error}
+            </div>
+          )}
+          {saved && (
+            <div style={{ fontSize: '0.8rem', color: V.green, display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 7, padding: '8px 12px' }}>
+              <CheckCircle2 size={12} style={{ flexShrink: 0 }} />{entry.name} connected successfully
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
-            <button type="button" onClick={handleSave} disabled={saving}
-              style={{ flex: 1, padding: '0.55rem', borderRadius: 8, border: 'none', background: V.accent, color: '#fff', fontSize: '0.875rem', fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-              {saving ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle2 size={14} />}
-              {saving ? 'Connecting…' : (entry.special === 'github' ? 'Validate & Connect' : 'Connect')}
-            </button>
-            <button type="button" onClick={onClose}
-              style={{ padding: '0.55rem 1.25rem', borderRadius: 8, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.875rem', cursor: 'pointer' }}>
-              Cancel
-            </button>
-          </div>
+          {!saved && (
+            <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
+              <button type="button" onClick={handleSave} disabled={saving}
+                style={{ flex: 1, padding: '0.55rem', borderRadius: 8, border: 'none', background: V.accent, color: '#fff', fontSize: '0.875rem', fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                {saving ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle2 size={14} />}
+                {saving ? 'Connecting…' : (entry.special === 'github' ? 'Validate & Connect' : 'Connect')}
+              </button>
+              <button type="button" onClick={onClose}
+                style={{ padding: '0.55rem 1.25rem', borderRadius: 8, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.875rem', cursor: 'pointer' }}>
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
