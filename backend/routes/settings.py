@@ -200,6 +200,27 @@ async def test_cluster_connection(name: str, body: ClusterUpdateInput | None = N
                 overrides.pop(field, None)
         # Auto-switch kubeconfig clusters to token mode when a new token is pasted
         cluster = _apply_token_override(cluster, overrides)
+
+    # Validate before invoking kubectl — avoids the confusing "localhost:8080 refused" error
+    conn_type = cluster.get("connection_type", "")
+    if conn_type == "token":
+        if not cluster.get("api_url", "").strip():
+            return {
+                "healthy": False,
+                "error": "API Server URL is missing — enter the cluster API URL (e.g. https://your-cluster:6443) in the API Server URL field and try again",
+            }
+        if not cluster.get("token", "").strip():
+            return {
+                "healthy": False,
+                "error": "Bearer token is missing — paste your cluster bearer token in the token field",
+            }
+    elif conn_type == "kubeconfig":
+        if not cluster.get("kubeconfig", "").strip():
+            return {
+                "healthy": False,
+                "error": "Kubeconfig is empty — paste your new bearer token AND the API Server URL to switch to token auth, or re-add the cluster with a valid kubeconfig",
+            }
+
     try:
         svc = KubernetesService(cluster)
         result = await svc.health()

@@ -459,12 +459,27 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
               </select>
             </div>
           </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>
-              API Server URL <span style={{ fontWeight: 400 }}>{isKubeconfig ? '— auto-extracted from kubeconfig if blank' : ''}</span>
-            </label>
-            <input value={form.api_url} onChange={e => setForm(f => ({ ...f, api_url: e.target.value }))} placeholder="https://k8s.example.com:6443" style={inputStyle} />
-          </div>
+          {(() => {
+            const apiUrlRequired = isKubeconfig && tokenTyped && !form.api_url.trim();
+            return (
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: apiUrlRequired ? V.red : V.muted, marginBottom: 4 }}>
+                  API Server URL{apiUrlRequired ? ' — required when switching to token auth' : (isKubeconfig ? ' — auto-extracted from kubeconfig if blank' : '')}
+                </label>
+                <input
+                  value={form.api_url}
+                  onChange={e => setForm(f => ({ ...f, api_url: e.target.value }))}
+                  placeholder="https://k8s.example.com:6443"
+                  style={{ ...inputStyle, border: apiUrlRequired ? `1px solid ${V.red}` : inputStyle.border }}
+                />
+                {apiUrlRequired && (
+                  <div style={{ fontSize: '0.74rem', color: V.red, marginTop: 4, lineHeight: 1.4 }}>
+                    Enter the API Server URL so the token knows which cluster to connect to
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           <div>
             <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>
               New Bearer Token <span style={{ fontWeight: 400 }}>— leave blank to keep existing</span>
