@@ -91,6 +91,11 @@ def _mask(val: str | None, visible: int = 4) -> str | None:
 
 def _safe_cluster(c: dict) -> dict:
     out = dict(c)
+    # Auto-populate api_url from kubeconfig server URL so the Edit form shows it pre-filled
+    if not out.get("api_url") and out.get("kubeconfig"):
+        extracted = _extract_server_from_kubeconfig(out["kubeconfig"])
+        if extracted:
+            out["api_url"] = extracted
     if out.get("token"):
         out["token"] = _mask(out["token"])
     if out.get("kubeconfig"):

@@ -68,6 +68,7 @@ async def list_clusters(masked: bool = False) -> list[dict]:
 
 
 async def get_cluster(name: str) -> dict | None:
+    result = None
     if _USE_DB:
         from db.database import AsyncSessionLocal
         if AsyncSessionLocal:
@@ -75,10 +76,24 @@ async def get_cluster(name: str) -> dict | None:
                 from db.repository import ClusterRepository
                 repo = ClusterRepository(session)
                 c = await repo.get_by_name(name)
-                return _cluster_row_to_dict(c) if c else None
+                result = _cluster_row_to_dict(c) if c else None
 
-    from config.settings import get_cluster as _json_get
-    return _json_get(name)
+    if result is None:
+        from config.settings import get_cluster as _json_get
+        return _json_get(name)
+
+    # If DB record is missing the kubeconfig, enrich from JSON file as fallback
+    # (happens when cluster was originally added as kubeconfig but stored without it)
+    if not result.get("kubeconfig"):
+        try:
+            from config.settings import get_cluster as _json_get
+            json_c = _json_get(name)
+            if json_c and json_c.get("kubeconfig"):
+                result["kubeconfig"] = json_c["kubeconfig"]
+        except Exception:
+            pass
+
+    return result
 
 
 async def get_active_cluster() -> dict | None:
