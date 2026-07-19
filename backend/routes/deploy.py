@@ -319,6 +319,7 @@ class PipelineRequest(BaseModel):
     registry: str = "ghcr"        # ghcr | docker-hub | ecr
     environments: list[str] = ["prod"]  # ['dev', 'staging', 'prod']
     app_name: str = "app"
+    security_scans: list[str] = []  # ['trivy', 'gitleaks']
 
 
 @router.post("/deploy/pipeline")
@@ -334,6 +335,7 @@ async def generate_pipeline(body: PipelineRequest):
         registry=body.registry,
         environments=body.environments,
         app_name=body.app_name,
+        security_scans=body.security_scans,
     )
 
     async def stream():

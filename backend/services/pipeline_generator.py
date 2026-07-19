@@ -398,6 +398,7 @@ def build_deploy_prompt(
     registry: str,
     environments: list[str],
     app_name: str,
+    security_scans: list[str] | None = None,
 ) -> str:
     safe_app = app_name.lower().replace("/", "-").replace("_", "-")
     repo_name = repo_full_name.split("/")[-1] if "/" in repo_full_name else repo_full_name
@@ -539,6 +540,63 @@ CRITICAL VAULT RULES:
 - KV paths SEPARATE per env: secret/data/<service>/prod vs secret/data/<service>/dev
 """
 
+    # ── Security scan instructions ────────────────────────────────────────────
+    scans = set(security_scans or [])
+    security_section = ""
+    if scans:
+        scan_parts = []
+        if "gitleaks" in scans:
+            if ci_tool == "github-actions":
+                scan_parts.append(
+                    "gitleaks-scan job (runs FIRST, before any build):\n"
+                    "  - uses: gitleaks/gitleaks-action@v2\n"
+                    "  - env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n"
+                    "  - If secrets found, fail the entire workflow immediately."
+                )
+            elif ci_tool == "gitlab-ci":
+                scan_parts.append(
+                    "gitleaks-scan stage (first stage, before build):\n"
+                    "  image: zricethezav/gitleaks:latest\n"
+                    "  script: gitleaks detect --source=. --verbose --redact\n"
+                    "  Fail pipeline on any detected secret."
+                )
+            else:
+                scan_parts.append(
+                    "gitleaks stage (first stage in Jenkinsfile):\n"
+                    "  sh 'docker run --rm -v $(pwd):/path zricethezav/gitleaks:latest detect --source=/path --verbose --redact'\n"
+                    "  Fail build on any detected secret."
+                )
+
+        if "trivy" in scans:
+            if ci_tool == "github-actions":
+                scan_parts.append(
+                    "trivy-scan step inside EACH build-<service> job, after docker push:\n"
+                    "  - uses: aquasecurity/trivy-action@master\n"
+                    "    with:\n"
+                    "      image-ref: <IMAGE>:${{ github.sha }}\n"
+                    "      format: table\n"
+                    "      exit-code: '1'\n"
+                    "      ignore-unfixed: true\n"
+                    "      vuln-type: os,library\n"
+                    "      severity: CRITICAL,HIGH\n"
+                    "  If CRITICAL or HIGH vulnerabilities found, fail the job. Add trivyignore file note in setup-guide.md."
+                )
+            elif ci_tool == "gitlab-ci":
+                scan_parts.append(
+                    "trivy-scan job after each build job:\n"
+                    "  image: aquasecurity/trivy:latest\n"
+                    "  script: trivy image --exit-code 1 --ignore-unfixed --severity CRITICAL,HIGH <IMAGE>:$CI_COMMIT_SHA\n"
+                    "  Fail on CRITICAL or HIGH CVEs."
+                )
+            else:
+                scan_parts.append(
+                    "trivy scan step after each docker build in Jenkinsfile:\n"
+                    "  sh 'docker run --rm aquasecurity/trivy:latest image --exit-code 1 --ignore-unfixed --severity CRITICAL,HIGH <IMAGE>:${GIT_COMMIT}'\n"
+                    "  Fail build on CRITICAL or HIGH CVEs."
+                )
+
+        security_section = "\nSECURITY SCANNING (REQUIRED — include these in the CI pipeline):\n" + "\n\n".join(scan_parts) + "\n"
+
     # ── CI trigger desc ───────────────────────────────────────────────────────
     ci_file = _CI_FILE.get(ci_tool, "ci.yml")
     if ci_tool == "github-actions":
@@ -629,7 +687,7 @@ k8s/base/kustomization.yaml — lists all base resources
     )
 
     return f"""You are a senior DevOps engineer. Generate a complete, production-ready CI/CD pipeline for a multi-service application.
-
+{security_section}
 REPOSITORY: github.com/{repo_full_name}
 
 SERVICES ({len(services)}):

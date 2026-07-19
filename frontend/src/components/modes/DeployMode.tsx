@@ -42,6 +42,7 @@ interface Choices {
   vault: string | null;
   vaultDeployed: boolean;
   registry: string | null;
+  securityScans: string[];
 }
 
 interface GeneratedFile { path: string; content: string }
@@ -307,7 +308,7 @@ export function DeployMode() {
   const [containersCommitting, setContainersCommitting] = useState(false);
   const [containersCommitted, setContainersCommitted] = useState(false);
 
-  const [choices, setChoices] = useState<Choices>({ ciTool: null, cdTool: null, configTool: null, environments: [], vault: null, vaultDeployed: false, registry: null });
+  const [choices, setChoices] = useState<Choices>({ ciTool: null, cdTool: null, configTool: null, environments: [], vault: null, vaultDeployed: false, registry: null, securityScans: ['trivy', 'gitleaks'] });
   const [selectedEnvOption, setSelectedEnvOption] = useState<string | null>(null);
 
   const [generatedFiles, setGeneratedFiles] = useState<GeneratedFile[]>([]);
@@ -457,6 +458,7 @@ export function DeployMode() {
       vault_deployed: choices.vaultDeployed,
       registry: choices.registry ?? 'ghcr',
       environments: choices.environments,
+      security_scans: choices.securityScans,
       branch_map: branchMap,
       app_name: scanResult.app_name,
     });
@@ -1035,6 +1037,51 @@ export function DeployMode() {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {CONFIG_OPTIONS.map(opt => <OptionCard key={opt.id} {...opt} selected={choices.configTool === opt.id} onClick={() => setChoices(c => ({ ...c, configTool: opt.id }))} />)}
+                </div>
+              </div>
+
+              {/* Security Scanning */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--success)', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✓</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Security Scanning</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>— toggle to include in CI</span>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {[
+                    { id: 'gitleaks', label: 'Gitleaks', desc: 'Scan git history for leaked secrets & credentials before build', icon: '🔍' },
+                    { id: 'trivy',    label: 'Trivy',    desc: 'Scan Docker images for CVEs (CRITICAL + HIGH) after each build', icon: '🛡️' },
+                  ].map(s => {
+                    const on = choices.securityScans.includes(s.id);
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => setChoices(c => ({
+                          ...c,
+                          securityScans: on
+                            ? c.securityScans.filter(x => x !== s.id)
+                            : [...c.securityScans, s.id],
+                        }))}
+                        style={{
+                          flex: 1, display: 'flex', flexDirection: 'column', gap: 4,
+                          padding: '10px 12px', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
+                          background: on ? 'rgba(52,211,153,0.07)' : 'var(--bg-hover)',
+                          border: `1.5px solid ${on ? 'var(--success)' : 'var(--border)'}`,
+                          borderRadius: 8, transition: 'all 0.12s',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 14 }}>{s.icon}</span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: on ? 'var(--success)' : 'var(--text-primary)' }}>{s.label}</span>
+                          <span style={{ marginLeft: 'auto', width: 14, height: 14, borderRadius: '50%', background: on ? 'var(--success)' : 'var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#fff', flexShrink: 0 }}>
+                            {on ? '✓' : ''}
+                          </span>
+                        </div>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>{s.desc}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
