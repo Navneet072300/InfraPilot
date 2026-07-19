@@ -460,31 +460,17 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
               </select>
             </div>
           </div>
-          {(() => {
-            // Only warn about missing API URL after the user has pasted a token
-            const apiUrlRequired = tokenTyped && !form.api_url.trim();
-            const apiUrlLabel = isKubeconfig && !tokenTyped
-              ? 'API Server URL — auto-extracted from kubeconfig if blank'
-              : 'API Server URL';
-            return (
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: apiUrlRequired ? V.red : V.muted, marginBottom: 4 }}>
-                  {apiUrlLabel}
-                </label>
-                <input
-                  value={form.api_url}
-                  onChange={e => setForm(f => ({ ...f, api_url: e.target.value }))}
-                  placeholder="https://k8s.example.com:6443"
-                  style={{ ...inputStyle, border: apiUrlRequired ? `1px solid ${V.red}` : inputStyle.border }}
-                />
-                {apiUrlRequired && (
-                  <div style={{ fontSize: '0.74rem', color: V.red, marginTop: 4 }}>
-                    Required — enter your cluster API URL (e.g. https://console.example.com/api/kubeapi/…)
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>
+              API Server URL <span style={{ fontWeight: 400, opacity: 0.7 }}>— leave blank to auto-detect from kubeconfig</span>
+            </label>
+            <input
+              value={form.api_url}
+              onChange={e => setForm(f => ({ ...f, api_url: e.target.value }))}
+              placeholder="https://k8s.example.com:6443"
+              style={inputStyle}
+            />
+          </div>
           <div>
             <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>
               New Bearer Token <span style={{ fontWeight: 400 }}>— leave blank to keep existing</span>

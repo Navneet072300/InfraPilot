@@ -127,25 +127,23 @@ def _extract_server_from_kubeconfig(kubeconfig_str: str) -> str:
 
 
 def _apply_token_override(cluster: dict, overrides: dict) -> dict:
-    """
-    If the caller is supplying a new bearer token for a kubeconfig-mode cluster,
-    switch it to token mode on-the-fly so the pasted token is actually used.
-    """
     token = overrides.get("token", "").strip()
     if not token:
         return {**cluster, **overrides}
 
-    # Strip any trailing whitespace / newlines from the token
     overrides["token"] = token
 
-    # If cluster is kubeconfig mode and no explicit connection_type override given,
-    # switch to token auth and extract the server URL from the stored kubeconfig.
+    # Switch kubeconfig clusters to token mode when a new token is supplied
     if cluster.get("connection_type") == "kubeconfig" and "connection_type" not in overrides:
         overrides["connection_type"] = "token"
-        if not overrides.get("api_url", "").strip():
-            server = _extract_server_from_kubeconfig(cluster.get("kubeconfig", ""))
-            if server:
-                overrides["api_url"] = server
+
+    # If api_url will be blank after merge, try extracting it from the stored kubeconfig
+    # (works for both kubeconfig-mode clusters and token-mode clusters that still have a kubeconfig)
+    merged_api_url = overrides.get("api_url", "").strip() or cluster.get("api_url", "").strip()
+    if not merged_api_url:
+        server = _extract_server_from_kubeconfig(cluster.get("kubeconfig", ""))
+        if server:
+            overrides["api_url"] = server
 
     return {**cluster, **overrides}
 
