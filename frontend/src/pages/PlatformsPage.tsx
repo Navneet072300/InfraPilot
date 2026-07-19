@@ -367,18 +367,20 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
   const qc = useQueryClient();
   const [form, setForm] = useState({ environment: cluster.environment, api_url: cluster.api_url ?? '', token: '' });
   const [saving, setSaving] = useState(false);
-  const [testResult, setTestResult] = useState<{ healthy: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<{ healthy: boolean; friendly: string; raw?: string } | null>(null);
   const [testing, setTesting] = useState(false);
+
+  const isKubeconfig = cluster.connection_type === 'kubeconfig';
+  const tokenTyped = form.token.trim().length > 0;
 
   async function handleSave() {
     setSaving(true);
     try {
-      // PATCH — only send token if the user actually typed one
       const patch: Record<string, string> = {
         environment: form.environment,
         api_url: form.api_url,
       };
-      if (form.token.trim()) patch.token = form.token.trim();
+      if (tokenTyped) patch.token = form.token.trim();
       await fetch(`/api/settings/clusters/${encodeURIComponent(cluster.name)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -394,21 +396,23 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
     setTestResult(null);
     try {
       const patch: Record<string, string> = { api_url: form.api_url };
-      if (form.token.trim()) patch.token = form.token.trim();
+      if (tokenTyped) patch.token = form.token.trim();
       const r = await fetch(`/api/settings/clusters/${encodeURIComponent(cluster.name)}/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
       });
       const data = await r.json();
+      const rawError = data.error ?? '';
       setTestResult({
         healthy: data.healthy,
-        message: data.healthy
-          ? `Connected — ${data.node_count ?? '?'} node(s), ${data.version ?? ''}`
-          : friendlyClusterError(data.error ?? 'Unknown error'),
+        friendly: data.healthy
+          ? `Connected — ${data.node_count ?? '?'} node(s)${data.version ? `, ${data.version}` : ''}`
+          : friendlyClusterError(rawError || 'Unknown error'),
+        raw: rawError || undefined,
       });
     } catch {
-      setTestResult({ healthy: false, message: 'Request failed — is the backend running?' });
+      setTestResult({ healthy: false, friendly: 'Request failed — is the backend running?' });
     } finally { setTesting(false); }
   }
 
@@ -427,11 +431,22 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '0.95rem', fontWeight: 600, color: V.text }}>Edit Cluster</div>
-            <div style={{ fontSize: '0.78rem', color: V.muted }}>{cluster.name}</div>
+            <div style={{ fontSize: '0.78rem', color: V.muted }}>{cluster.name} · {isKubeconfig ? 'kubeconfig mode' : 'token mode'}</div>
           </div>
           <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', color: V.muted, cursor: 'pointer' }}><X size={16} /></button>
         </div>
         <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+
+          {/* Kubeconfig → token mode notice */}
+          {isKubeconfig && (
+            <div style={{ fontSize: '0.78rem', color: V.yellow, background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)', borderRadius: 8, padding: '8px 12px', lineHeight: 1.5 }}>
+              This cluster uses a kubeconfig file. Paste your new bearer token below — the cluster will automatically switch to token auth.
+              {!form.api_url.trim() && (
+                <><br /><span style={{ opacity: 0.8 }}>Also enter the API Server URL (https://…) if it's different from the kubeconfig.</span></>
+              )}
+            </div>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <div>
               <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>Name</label>
@@ -445,27 +460,52 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
             </div>
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>API Server URL</label>
+            <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>
+              API Server URL <span style={{ fontWeight: 400 }}>{isKubeconfig ? '— auto-extracted from kubeconfig if blank' : ''}</span>
+            </label>
             <input value={form.api_url} onChange={e => setForm(f => ({ ...f, api_url: e.target.value }))} placeholder="https://k8s.example.com:6443" style={inputStyle} />
           </div>
           <div>
             <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>
-              New Bearer Token <span style={{ color: V.muted, fontWeight: 400 }}>— leave blank to keep existing</span>
+              New Bearer Token <span style={{ fontWeight: 400 }}>— leave blank to keep existing</span>
             </label>
-            <input type="password" value={form.token} onChange={e => { setForm(f => ({ ...f, token: e.target.value })); setTestResult(null); }} placeholder="eyJhbGci… (paste new token here)" style={inputStyle} />
+            <input
+              type="password"
+              value={form.token}
+              onChange={e => { setForm(f => ({ ...f, token: e.target.value })); setTestResult(null); }}
+              placeholder="eyJhbGci… (paste new token here)"
+              style={inputStyle}
+            />
           </div>
+
+          {/* Test result */}
           {testResult && (
-            <div style={{ padding: '8px 12px', borderRadius: 7, background: testResult.healthy ? 'rgba(63,185,80,0.08)' : 'rgba(248,81,73,0.08)', border: `1px solid ${testResult.healthy ? 'rgba(63,185,80,0.25)' : 'rgba(248,81,73,0.25)'}`, fontSize: '0.8rem', color: testResult.healthy ? V.green : V.red }}>
-              {testResult.healthy ? '✓ ' : '✗ '}{testResult.message}
+            <div style={{
+              borderRadius: 7,
+              background: testResult.healthy ? 'rgba(52,211,153,0.08)' : 'rgba(248,113,113,0.08)',
+              border: `1px solid ${testResult.healthy ? 'rgba(52,211,153,0.25)' : 'rgba(248,113,113,0.25)'}`,
+              overflow: 'hidden',
+            }}>
+              <div style={{ padding: '8px 12px', fontSize: '0.82rem', color: testResult.healthy ? V.green : V.red, display: 'flex', alignItems: 'center', gap: 6 }}>
+                {testResult.healthy ? <CheckCircle2 size={13} /> : <X size={13} />}
+                {testResult.friendly}
+              </div>
+              {!testResult.healthy && testResult.raw && testResult.raw !== testResult.friendly && (
+                <div style={{ borderTop: `1px solid rgba(248,113,113,0.15)`, padding: '6px 12px', fontSize: '0.72rem', color: V.muted, fontFamily: 'var(--font-mono)', wordBreak: 'break-all', lineHeight: 1.5 }}>
+                  {testResult.raw.slice(0, 300)}{testResult.raw.length > 300 ? '…' : ''}
+                </div>
+              )}
             </div>
           )}
+
           <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
             <button type="button" onClick={handleTest} disabled={testing}
-              style={{ padding: '0.55rem 1rem', borderRadius: 8, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, fontSize: '0.875rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              style={{ padding: '0.55rem 1rem', borderRadius: 8, border: `1px solid ${V.border}`, background: 'transparent', color: testing ? V.muted : V.text, fontSize: '0.875rem', cursor: testing ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+              {testing && <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />}
               {testing ? 'Testing…' : 'Test Connection'}
             </button>
             <button type="button" onClick={handleSave} disabled={saving}
-              style={{ flex: 1, padding: '0.55rem', borderRadius: 8, border: 'none', background: V.accent, color: '#fff', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer' }}>
+              style={{ flex: 1, padding: '0.55rem', borderRadius: 8, border: 'none', background: V.accent, color: '#fff', fontSize: '0.875rem', fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer' }}>
               {saving ? 'Saving…' : 'Save Changes'}
             </button>
             <button type="button" onClick={onClose}

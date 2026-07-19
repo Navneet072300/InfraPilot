@@ -3,6 +3,8 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
+import yaml as _yaml
+
 import httpx
 from fastapi import APIRouter, Cookie, Header, HTTPException
 from pydantic import BaseModel
@@ -112,6 +114,42 @@ async def add_cluster(body: ClusterCreateInput):
     return {"cluster": _safe_cluster(created)}
 
 
+def _extract_server_from_kubeconfig(kubeconfig_str: str) -> str:
+    """Pull the first cluster server URL out of a kubeconfig YAML string."""
+    try:
+        kc = _yaml.safe_load(kubeconfig_str or "")
+        clusters = kc.get("clusters") or []
+        if clusters:
+            return clusters[0].get("cluster", {}).get("server", "")
+    except Exception:
+        pass
+    return ""
+
+
+def _apply_token_override(cluster: dict, overrides: dict) -> dict:
+    """
+    If the caller is supplying a new bearer token for a kubeconfig-mode cluster,
+    switch it to token mode on-the-fly so the pasted token is actually used.
+    """
+    token = overrides.get("token", "").strip()
+    if not token:
+        return {**cluster, **overrides}
+
+    # Strip any trailing whitespace / newlines from the token
+    overrides["token"] = token
+
+    # If cluster is kubeconfig mode and no explicit connection_type override given,
+    # switch to token auth and extract the server URL from the stored kubeconfig.
+    if cluster.get("connection_type") == "kubeconfig" and "connection_type" not in overrides:
+        overrides["connection_type"] = "token"
+        if not overrides.get("api_url", "").strip():
+            server = _extract_server_from_kubeconfig(cluster.get("kubeconfig", ""))
+            if server:
+                overrides["api_url"] = server
+
+    return {**cluster, **overrides}
+
+
 @router.patch("/clusters/{name}")
 async def edit_cluster(name: str, body: ClusterUpdateInput):
     existing = await get_cluster(name)
@@ -120,6 +158,8 @@ async def edit_cluster(name: str, body: ClusterUpdateInput):
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if not updates:
         return {"cluster": _safe_cluster(existing)}
+    # If a new token is supplied for a kubeconfig cluster, switch to token mode
+    updates = _apply_token_override(existing, updates)
     updated = await update_cluster(name, updates)
     if not updated:
         raise HTTPException(500, "Update failed")
@@ -153,11 +193,13 @@ async def test_cluster_connection(name: str, body: ClusterUpdateInput | None = N
         raise HTTPException(404, f"Cluster '{name}' not found")
     if body:
         overrides = {k: v for k, v in body.model_dump().items() if v is not None}
+        # Drop masked placeholder values
         for field in ("token", "kubeconfig", "api_url"):
             val = overrides.get(field, "")
             if val and "***" in str(val):
                 overrides.pop(field, None)
-        cluster = {**cluster, **overrides}
+        # Auto-switch kubeconfig clusters to token mode when a new token is pasted
+        cluster = _apply_token_override(cluster, overrides)
     try:
         svc = KubernetesService(cluster)
         result = await svc.health()
