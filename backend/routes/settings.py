@@ -209,6 +209,9 @@ async def test_cluster_connection(name: str, body: ClusterUpdateInput | None = N
     if conn_type == "kubeconfig" and not cluster.get("kubeconfig", "").strip():
         msg = "Kubeconfig is empty — re-add the cluster with a valid kubeconfig, or switch to token auth by entering a URL and token"
         return {"healthy": False, "friendly": msg, "error": msg}
+    if conn_type == "token" and not cluster.get("api_url", "").strip():
+        msg = "API Server URL is not saved for this cluster — enter it in the API Server URL field above"
+        return {"healthy": False, "friendly": msg, "error": msg}
 
     try:
         svc = KubernetesService(cluster)

@@ -369,6 +369,7 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
   const [saving, setSaving] = useState(false);
   const [testResult, setTestResult] = useState<{ healthy: boolean; friendly: string; raw?: string } | null>(null);
   const [testing, setTesting] = useState(false);
+  const [urlHighlight, setUrlHighlight] = useState(false);
 
   const isKubeconfig = cluster.connection_type === 'kubeconfig';
   const tokenTyped = form.token.trim().length > 0;
@@ -407,6 +408,9 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
       const friendlyMsg = data.healthy
         ? `Connected — ${data.node_count ?? '?'} node(s)${data.version ? `, ${data.version}` : ''}`
         : (data.friendly ?? friendlyClusterError(rawError || 'Unknown error'));
+      if (!data.healthy && (rawError ?? '').toLowerCase().includes('api server url is not saved')) {
+        setUrlHighlight(true);
+      }
       setTestResult({
         healthy: data.healthy,
         friendly: friendlyMsg,
@@ -461,14 +465,14 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
             </div>
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>
+            <label style={{ display: 'block', fontSize: '0.78rem', color: urlHighlight ? V.red : V.muted, marginBottom: 4 }}>
               API Server URL <span style={{ fontWeight: 400, opacity: 0.6 }}>— leave blank to keep existing</span>
             </label>
             <input
               value={form.api_url}
-              onChange={e => setForm(f => ({ ...f, api_url: e.target.value }))}
+              onChange={e => { setForm(f => ({ ...f, api_url: e.target.value })); setUrlHighlight(false); }}
               placeholder="https://k8s.example.com:6443"
-              style={inputStyle}
+              style={{ ...inputStyle, border: urlHighlight ? `1px solid ${V.red}` : inputStyle.border }}
             />
           </div>
           <div>
