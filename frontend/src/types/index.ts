@@ -216,6 +216,9 @@ export interface ArchNode {
   x: number;
   y: number;
   costPerMonth: number;
+  width?: number;
+  height?: number;
+  depth?: number;
 }
 
 export interface ArchEdge {

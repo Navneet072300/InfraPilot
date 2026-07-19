@@ -15,105 +15,124 @@ router = APIRouter()
 class DesignRequest(BaseModel):
     requirements: str
     budget: int = 0
-    cloud: str = "any"
+    cloud_provider: str = "aws"
     compliance: list[str] = []
 
 
-DESIGN_SYSTEM = """You are a Principal Solutions Architect with 20+ years of experience designing large-scale distributed systems. You think in trade-offs, not features. Every decision you make has a reason and an alternative you consciously rejected.
+DESIGN_SYSTEM = """You are a Principal Solutions Architect with 20+ years of experience.
 
-CRITICAL: Respond with ONLY a raw JSON object. No markdown. No code fences. No preamble. No explanation outside the JSON. Start your response with { and end with }.
+CRITICAL: Respond ONLY with a raw JSON object. No markdown fences. No preamble. Start with { end with }.
 
-Required JSON structure:
+CANVAS: 1400 × 900 pixels.
+
+TWO NODE CATEGORIES:
+
+1. CONTAINER nodes — cloud boundaries, regions, VPCs, AZs, subnets, security groups:
+   {"id":"...", "type":"container", "label":"...", "x":N, "y":N, "width":N, "height":N, "depth":N, "costPerMonth":0}
+   depth: 1=cloud boundary, 2=region, 3=VPC/VNet/VCN, 4=AZ/Zone/Fault Domain, 5=subnet/tier
+
+2. SERVICE nodes — actual infrastructure components:
+   {"id":"...", "type":"PICK_ONE", "label":"...", "x":N, "y":N, "costPerMonth":N}
+   service types: loadbalancer | compute | database | cache | storage | cdn | network | gateway | queue | monitoring | dns | firewall | kubernetes | container
+
+JSON SCHEMA:
 {
-  "diagram_nodes": [
-    {"id": "lb-1", "type": "loadbalancer", "label": "Load Balancer", "x": 400, "y": 50, "costPerMonth": 20}
-  ],
-  "diagram_edges": [
-    {"id": "e1", "source": "lb-1", "target": "app-1", "label": "HTTPS"}
-  ],
-  "architecture_explanation": "Full multi-section explanation here as a single string with \\n for newlines",
-  "cost_breakdown": [
-    {"service": "Load Balancer", "monthly": 20, "description": "HA active-passive pair, SSL termination, 10M req/month included"}
-  ]
+  "diagram_nodes": [ ...container nodes first (outer→inner), then service nodes... ],
+  "diagram_edges": [{"id":"e1","source":"node-id","target":"node-id","label":"HTTPS"}],
+  "architecture_explanation": "Full multi-section string with \\n for newlines",
+  "cost_breakdown": [{"service":"Name","monthly":N,"description":"details"}]
 }
 
-NODE TYPES — pick the closest match, never use vendor names:
-  loadbalancer, compute, database, cache, storage, cdn, network, gateway, queue, monitoring, dns, firewall, kubernetes, container
+LAYOUT TEMPLATE — AWS 2-AZ architecture (adapt proportionally for user requirements):
+Containers (define outer-to-inner order):
+  cloud:   x:20,  y:20,  w:1100, h:840, depth:1  label:"AWS Cloud"
+  region:  x:50,  y:80,  w:1040, h:750, depth:2  label:"us-east-1 Region"
+  vpc:     x:90,  y:160, w:850,  h:630, depth:3  label:"Production VPC (10.0.0.0/16)"
+  az-a:    x:120, y:220, w:380,  h:530, depth:4  label:"Availability Zone A"
+  az-b:    x:540, y:220, w:380,  h:530, depth:4  label:"Availability Zone B"
+  pub-a:   x:140, y:260, w:330,  h:120, depth:5  label:"Public Subnet A"
+  app-a:   x:140, y:400, w:330,  h:130, depth:5  label:"App Subnet A"
+  db-a:    x:140, y:550, w:330,  h:120, depth:5  label:"DB Subnet A"
+  pub-b:   x:560, y:260, w:330,  h:120, depth:5  label:"Public Subnet B"
+  app-b:   x:560, y:400, w:330,  h:130, depth:5  label:"App Subnet B"
+  db-b:    x:560, y:550, w:330,  h:120, depth:5  label:"DB Subnet B"
+  sec:     x:1150,y:80,  w:240,  h:380, depth:3  label:"Security & Monitoring"
+Service nodes (absolute canvas coords, inside appropriate container):
+  Internet Gateway: x:490, y:100 type:gateway
+  ALB Node A:       x:250, y:295 type:loadbalancer  inside pub-a
+  ALB Node B:       x:670, y:295 type:loadbalancer  inside pub-b
+  App Server A:     x:250, y:445 type:compute        inside app-a
+  App Server B:     x:670, y:445 type:compute        inside app-b
+  RDS Primary:      x:670, y:590 type:database       inside db-b
+  RDS Standby:      x:250, y:590 type:database       inside db-a
+  CloudWatch:       x:1220,y:135 type:monitoring      inside sec
+  AWS IAM:          x:1220,y:260 type:firewall        inside sec
 
-DIAGRAM LAYOUT RULES:
-- Canvas: 1100 wide × 700 tall. Nodes read top-to-bottom: internet/ingress at top, data layer at bottom.
-- Place 7–14 nodes. Spread horizontally (x: 80–1020). Use y layers: 50 (ingress), 180 (gateway), 320 (compute), 450 (data), 580 (monitoring/support).
-- No two nodes at the same x,y. Minimum 140px horizontal spacing.
-- costPerMonth=0 means included in platform cost or not separately billed.
+CLOUD PROVIDER ADAPTATIONS:
+- Azure: Subscription→ResourceGroup→VNet→[AvailabilitySet/Zone]→Subnets; add NSG, App Gateway, AKS
+- GCP: Organization→Project→VPCNetwork→Region→Zones→Subnets; add Cloud Armor, GKE, CloudSQL
+- Oracle: Tenancy→Compartment→VCN→[AD-1,AD-2]→Subnets; add LoadBalancer, ATP
+- DigitalOcean: Account→Region→VPC→Droplets; simpler flat hierarchy with 1 container level
+- Bare Metal: PhysicalDC→Rack/Network→ServerGroups; use compute/firewall/storage/network types
+- System Architecture: No containers — pure flat service graph; use all 1400×900 canvas with services spread out
+- Multi-Cloud: Side-by-side cloud containers (AWS on left x:20, Azure/GCP on right x:750+)
 
-ARCHITECTURE EXPLANATION RULES — write as a senior architect in a real design review:
-Use these exact section headers (with ## prefix):
+ADAPT based on user requirements:
+- Add Redis cache node when caching mentioned
+- Add Kafka/SQS queue node for event-driven patterns
+- Add CDN node at top (y:-60 or above cloud boundary y:20)
+- Kubernetes: use kubernetes type, add container nodes inside
+- Add extra AZs/regions only if user specifies multi-region
+- Microservices: more compute nodes per AZ with service mesh
+
+SERVICE NODE POSITIONING RULES:
+- Place nodes inside appropriate subnet boundary (check x,y is within container x→x+w, y→y+h)
+- Minimum 100px horizontal gap between service nodes
+- Internet-facing (CDN, DNS, Users) above cloud boundary: y < 20
+- Gateway node: just inside region boundary, centered horizontally
+- Monitoring/Security: always in the Security container (far right)
+
+ARCHITECTURE EXPLANATION — use these exact ## section headers:
 ## Overview
-2-3 sentences: what this system does, the scale it handles, the core architectural pattern chosen.
-
 ## What You Will Implement
-Numbered list of every component the user must set up, in deployment order. Be specific: "1. Provision a 3-node Kubernetes cluster (m5.xlarge or equivalent)…"
-
 ## Key Design Decisions
-For each major decision: state the choice, the reason, and the alternative rejected. Use bullet format: "• Chose X over Y because Z."
-
 ## Scalability & Reliability
-Concrete numbers: RPS capacity, failover time, replication factor, data durability. Name the patterns: circuit breaker, bulkhead, saga, CQRS, event sourcing, blue-green, canary.
-
 ## Security Posture
-Specific controls: mTLS between services, RBAC model, secret rotation policy, network segmentation approach, data-at-rest encryption standard.
-
 ## Monthly Cost Estimate
-Total range: $X–$Y/month. Break down by layer (compute, data, networking, observability). State what drives cost up or down.
-
 ## Trade-offs & What to Watch
-2–3 honest risks of this design and what early warning signs to monitor.
 
-COST BREAKDOWN RULES:
-- One row per billable component plus: egress, monitoring, backups, support.
-- monthly=0 means "variable" or "included" — explain in description.
-- If cloud-neutral, give a realistic mid-range estimate for AWS us-east-1 as reference.
-- Last row should be a total or note about total range."""
+COST BREAKDOWN: One row per billable component. monthly=0 means variable/included."""
 
 
 def _extract_json(raw: str) -> str:
-    """Return the best JSON candidate from raw AI output."""
     text = raw.strip()
-
-    # 1. Strip leading/trailing markdown fences
     if text.startswith("```"):
         first_nl = text.find("\n")
         last_fence = text.rfind("```")
         if first_nl != -1 and last_fence > first_nl:
             text = text[first_nl + 1: last_fence].strip()
-
-    # 2. If there's preamble before the JSON object, find the first '{'
     if not text.startswith("{"):
         m = re.search(r'\{', text)
         if m:
             text = text[m.start():]
-
-    # 3. Trim any trailing content after the closing '}'
     last_brace = text.rfind("}")
     if last_brace != -1:
         text = text[: last_brace + 1]
-
     return text
 
 
 async def stream_design(request: DesignRequest):
-    prompt = f"Design requirements:\n{request.requirements}"
+    provider_ctx = f"Cloud Provider: {request.cloud_provider.replace('_', ' ').title()}"
+    prompt = f"{provider_ctx}\nRequirements: {request.requirements}"
 
-    # Collect full response, strip any markdown fences the model may add, then stream
     full = ""
     try:
         async for text in ai.stream_generate(DESIGN_SYSTEM, prompt, max_tokens=8000):
             full += text
             yield f"data: {json.dumps({'chunk': text, 'done': False})}\n\n"
 
-        # Aggressively extract valid JSON from whatever the model returned
         cleaned = _extract_json(full)
-        logger.info("Design done: raw_len=%d cleaned_starts=%s", len(full), cleaned[:60])
+        logger.info("Design done: cloud=%s raw_len=%d starts=%s", request.cloud_provider, len(full), cleaned[:60])
         yield f"data: {json.dumps({'done': True, 'cleaned': cleaned})}\n\n"
     except Exception as e:
         logger.error("Design stream error: %s", e)
@@ -122,7 +141,7 @@ async def stream_design(request: DesignRequest):
 
 @router.post("/design")
 async def design(request: DesignRequest):
-    logger.info("Design: cloud=%s requirements=%s", request.cloud, request.requirements[:80])
+    logger.info("Design: cloud=%s req=%s", request.cloud_provider, request.requirements[:80])
     return StreamingResponse(
         stream_design(request),
         media_type="text/event-stream",

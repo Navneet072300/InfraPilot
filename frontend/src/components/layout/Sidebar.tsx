@@ -109,22 +109,37 @@ export function Sidebar({ collapsed, onToggle }: Props) {
           : undefined
         }
         style={{
-          width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
-          padding: collapsed ? '10px 14px' : '8px 16px',
-          background: active ? 'rgba(99,102,241,0.12)' : 'none',
+          display: 'flex', alignItems: 'center', gap: '9px',
+          padding: collapsed ? '9px 0' : '7px 10px',
+          margin: collapsed ? '1px 0' : '1px 8px',
+          width: collapsed ? '100%' : 'calc(100% - 16px)',
+          background: active ? 'rgba(129,140,248,0.13)' : 'none',
           border: 'none',
-          borderLeft: active ? '2px solid var(--accent)' : '2px solid transparent',
+          borderRadius: 8,
           color: active ? 'var(--accent)' : (item.stub || locked) ? 'var(--text-muted)' : 'var(--text-secondary)',
           fontSize: '13px', fontWeight: active ? 600 : 400,
-          cursor: (item.stub || locked) ? 'pointer' : 'pointer',
+          cursor: 'pointer',
           textAlign: 'left', justifyContent: collapsed ? 'center' : 'flex-start',
-          fontFamily: 'inherit', opacity: item.stub ? 0.5 : 1,
-          transition: 'all 0.1s',
+          fontFamily: 'inherit', opacity: item.stub ? 0.45 : 1,
+          transition: 'all 0.12s',
+          boxSizing: 'border-box',
         }}
+        onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--bg-hover)'; }}
+        onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'none'; }}
       >
-        <span style={{ flexShrink: 0 }}>{item.icon}</span>
+        <span style={{
+          flexShrink: 0,
+          width: 26, height: 26,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          borderRadius: 6,
+          background: active ? 'rgba(129,140,248,0.18)' : 'transparent',
+          color: active ? 'var(--accent)' : 'inherit',
+          transition: 'all 0.12s',
+        }}>
+          {item.icon}
+        </span>
         {!collapsed && <span style={{ flex: 1 }}>{item.label}</span>}
-        {!collapsed && locked && <Lock size={11} style={{ flexShrink: 0, opacity: 0.5 }} />}
+        {!collapsed && locked && <Lock size={11} style={{ flexShrink: 0, opacity: 0.4 }} />}
       </button>
     );
   };
@@ -137,19 +152,25 @@ export function Sidebar({ collapsed, onToggle }: Props) {
         onClick={() => navigate(path)}
         title={collapsed ? label : undefined}
         style={{
-          width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
-          padding: collapsed ? '10px 14px' : '7px 16px',
-          background: active ? 'rgba(99,102,241,0.12)' : 'none',
+          width: collapsed ? '100%' : 'calc(100% - 16px)',
+          margin: collapsed ? '1px 0' : '1px 8px',
+          display: 'flex', alignItems: 'center', gap: '9px',
+          padding: collapsed ? '8px 0' : '6px 10px',
+          background: active ? 'rgba(129,140,248,0.13)' : 'none',
           border: 'none',
-          borderLeft: active ? '2px solid var(--accent)' : '2px solid transparent',
+          borderRadius: 8,
           color: active ? 'var(--accent)' : 'var(--text-muted)',
-          fontSize: '13px', fontWeight: active ? 600 : 400,
+          fontSize: '12.5px', fontWeight: active ? 600 : 400,
           cursor: 'pointer', textAlign: 'left',
           fontFamily: 'inherit',
           justifyContent: collapsed ? 'center' : 'flex-start',
+          boxSizing: 'border-box',
+          transition: 'all 0.12s',
         }}
+        onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--bg-hover)'; }}
+        onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'none'; }}
       >
-        <span style={{ flexShrink: 0 }}>{icon}</span>
+        <span style={{ flexShrink: 0, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</span>
         {!collapsed && label}
       </button>
     );
@@ -182,29 +203,37 @@ export function Sidebar({ collapsed, onToggle }: Props) {
           </button>
         ) : (
           /* Expanded: IP logo + name + collapse button */
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0 14px', width: '100%' }}>
-            <div style={{ width: '24px', height: '24px', borderRadius: '6px', background: 'linear-gradient(135deg, var(--accent), #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 800, color: '#fff', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '0 12px', width: '100%' }}>
+            <div style={{
+              width: '26px', height: '26px', borderRadius: '7px',
+              background: 'linear-gradient(135deg, #818cf8, #a78bfa)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '11px', fontWeight: 800, color: '#fff', flexShrink: 0,
+              boxShadow: '0 2px 8px rgba(129,140,248,0.35)',
+            }}>
               IP
             </div>
-            <span style={{ fontWeight: 800, fontSize: '14px', letterSpacing: '-0.01em', flex: 1 }}>InfraPilot</span>
-            <button type="button" onClick={onToggle} title="Collapse sidebar" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', flexShrink: 0 }}>
-              <ChevronLeft size={14} />
+            <span style={{ fontWeight: 800, fontSize: '14px', letterSpacing: '-0.02em', flex: 1, background: 'linear-gradient(90deg, var(--text-primary), var(--accent))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              InfraPilot
+            </span>
+            <button type="button" onClick={onToggle} title="Collapse sidebar" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px', borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+              <ChevronLeft size={13} />
             </button>
           </div>
         )}
       </div>
 
       {/* Navigation */}
-      <nav style={{ flex: 1, padding: '8px 0', overflowY: 'auto' }}>
+      <nav style={{ flex: 1, padding: '10px 0', overflowY: 'auto' }}>
         {!collapsed && (
-          <p style={{ padding: '4px 14px 6px', fontSize: '10px', fontWeight: 600, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Workspace</p>
+          <p style={{ padding: '4px 18px 6px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Workspace</p>
         )}
         {PRIMARY.map((item) => <NavButton key={item.path} item={item} />)}
 
-        <div style={{ height: '1px', background: 'var(--border)', margin: '8px 14px' }} />
+        <div style={{ height: '1px', background: 'var(--border)', margin: '10px 12px' }} />
 
         {!collapsed && (
-          <p style={{ padding: '4px 14px 6px', fontSize: '10px', fontWeight: 600, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Resources</p>
+          <p style={{ padding: '4px 18px 6px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Resources</p>
         )}
         {RESOURCES.map((item) => <NavButton key={item.path} item={item} />)}
       </nav>

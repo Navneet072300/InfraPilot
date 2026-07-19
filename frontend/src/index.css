@@ -156,4 +156,9 @@ code, pre, .font-mono {
 }
 
 .react-flow__background { background-color: var(--bg-surface) !important; }
-.react-flow__edge-path { stroke: var(--border-focus) !important; stroke-width: 2 !important; }
+.react-flow__edge-path { stroke: var(--border-focus) !important; stroke-width: 1.8 !important; }
+.react-flow__node-container { padding: 0 !important; }
+.react-flow__node:focus { outline: none !important; box-shadow: none !important; }
+.react-flow__node-container:focus { outline: none !important; }
+.react-flow__controls button { background: var(--bg-surface) !important; border-color: var(--border) !important; color: var(--text-secondary) !important; }
+.react-flow__controls button:hover { background: var(--bg-hover) !important; }
