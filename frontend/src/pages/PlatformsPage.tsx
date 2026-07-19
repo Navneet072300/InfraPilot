@@ -404,12 +404,13 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
       });
       const data = await r.json();
       const rawError = data.error ?? '';
+      const friendlyMsg = data.healthy
+        ? `Connected — ${data.node_count ?? '?'} node(s)${data.version ? `, ${data.version}` : ''}`
+        : (data.friendly ?? friendlyClusterError(rawError || 'Unknown error'));
       setTestResult({
         healthy: data.healthy,
-        friendly: data.healthy
-          ? `Connected — ${data.node_count ?? '?'} node(s)${data.version ? `, ${data.version}` : ''}`
-          : friendlyClusterError(rawError || 'Unknown error'),
-        raw: rawError || undefined,
+        friendly: friendlyMsg,
+        raw: rawError && rawError !== friendlyMsg ? rawError : undefined,
       });
     } catch {
       setTestResult({ healthy: false, friendly: 'Request failed — is the backend running?' });
@@ -460,7 +461,10 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
             </div>
           </div>
           {(() => {
-            const apiUrlRequired = isKubeconfig && tokenTyped && !form.api_url.trim();
+            // Red border when api_url is blank and we'll need it:
+            // - token-mode clusters always need an API URL
+            // - kubeconfig clusters need one when switching to token auth (tokenTyped)
+            const apiUrlRequired = !form.api_url.trim() && (!isKubeconfig || tokenTyped);
             return (
               <div>
                 <label style={{ display: 'block', fontSize: '0.78rem', color: apiUrlRequired ? V.red : V.muted, marginBottom: 4 }}>
