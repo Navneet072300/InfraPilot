@@ -461,14 +461,15 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
             </div>
           </div>
           {(() => {
-            // Red border when api_url is blank and we'll need it:
-            // - token-mode clusters always need an API URL
-            // - kubeconfig clusters need one when switching to token auth (tokenTyped)
-            const apiUrlRequired = !form.api_url.trim() && (!isKubeconfig || tokenTyped);
+            // Only warn about missing API URL after the user has pasted a token
+            const apiUrlRequired = tokenTyped && !form.api_url.trim();
+            const apiUrlLabel = isKubeconfig && !tokenTyped
+              ? 'API Server URL — auto-extracted from kubeconfig if blank'
+              : 'API Server URL';
             return (
               <div>
                 <label style={{ display: 'block', fontSize: '0.78rem', color: apiUrlRequired ? V.red : V.muted, marginBottom: 4 }}>
-                  API Server URL{apiUrlRequired ? ' — required when switching to token auth' : (isKubeconfig ? ' — auto-extracted from kubeconfig if blank' : '')}
+                  {apiUrlLabel}
                 </label>
                 <input
                   value={form.api_url}
@@ -477,8 +478,8 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
                   style={{ ...inputStyle, border: apiUrlRequired ? `1px solid ${V.red}` : inputStyle.border }}
                 />
                 {apiUrlRequired && (
-                  <div style={{ fontSize: '0.74rem', color: V.red, marginTop: 4, lineHeight: 1.4 }}>
-                    Enter the API Server URL so the token knows which cluster to connect to
+                  <div style={{ fontSize: '0.74rem', color: V.red, marginTop: 4 }}>
+                    Required — enter your cluster API URL (e.g. https://console.example.com/api/kubeapi/…)
                   </div>
                 )}
               </div>
