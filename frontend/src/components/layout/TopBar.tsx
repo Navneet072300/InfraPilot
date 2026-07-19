@@ -50,15 +50,13 @@ function FreeUsageChip() {
 
 export function TopBar() {
   const navigate = useNavigate();
-  const { activeCluster, activeNamespace, setActiveNamespace, clusters } = useClusterStore();
+  const { activeCluster, activeNamespace, setActiveNamespace } = useClusterStore();
   const { data: nsData } = useNamespaces(activeCluster);
   const [notifOpen, setNotifOpen] = useState(false);
   const { user } = useAuthStore();
   const isFree = !user?.plan || user.plan === 'free';
 
   const namespaces = nsData?.namespaces ?? ['default'];
-  const activeCfg = clusters.find((c) => c.name === activeCluster);
-  const isProd = activeCfg?.environment === 'prod';
 
   return (
     <header
@@ -71,11 +69,6 @@ export function TopBar() {
         padding: '0 16px',
         gap: '10px',
         flexShrink: 0,
-        boxShadow: isProd
-          ? 'inset 4px 0 0 var(--cluster-prod), 0 1px 0 var(--border)'
-          : activeCluster
-          ? 'inset 4px 0 0 var(--cluster-dev), 0 1px 0 var(--border)'
-          : 'none',
       }}
     >
       {/* LEFT: Logo */}
@@ -95,20 +88,6 @@ export function TopBar() {
       {/* Cluster pills — left-aligned, right after logo */}
       <ClusterToggle />
 
-      {/* PROD warning chip */}
-      {isProd && (
-        <span
-          style={{
-            fontSize: '10px', fontWeight: 700, letterSpacing: '0.08em',
-            color: 'var(--cluster-prod)',
-            background: 'rgba(239,68,68,0.12)',
-            border: '1px solid rgba(239,68,68,0.4)',
-            padding: '3px 8px', borderRadius: '4px', flexShrink: 0,
-          }}
-        >
-          ⚠ PRODUCTION
-        </span>
-      )}
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />
