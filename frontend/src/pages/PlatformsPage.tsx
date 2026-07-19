@@ -372,8 +372,6 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
 
   const isKubeconfig = cluster.connection_type === 'kubeconfig';
   const tokenTyped = form.token.trim().length > 0;
-  // Token-mode clusters always need an API URL — kubeconfig clusters auto-extract it
-  const urlMissing = !isKubeconfig && !form.api_url.trim();
 
   async function handleSave() {
     setSaving(true);
@@ -463,24 +461,15 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
             </div>
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '0.78rem', color: urlMissing ? V.red : V.muted, marginBottom: 4 }}>
-              API Server URL
-              {isKubeconfig
-                ? <span style={{ fontWeight: 400, opacity: 0.7 }}> — auto-extracted from kubeconfig if blank</span>
-                : <span style={{ color: V.red, marginLeft: 3 }}>*</span>
-              }
+            <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>
+              API Server URL <span style={{ fontWeight: 400, opacity: 0.6 }}>— leave blank to keep existing</span>
             </label>
             <input
               value={form.api_url}
               onChange={e => setForm(f => ({ ...f, api_url: e.target.value }))}
-              placeholder={isKubeconfig ? 'https://k8s.example.com:6443' : 'https://your-cluster:6443 — required for token auth'}
-              style={{ ...inputStyle, border: urlMissing ? `1px solid ${V.red}` : inputStyle.border }}
+              placeholder="https://k8s.example.com:6443"
+              style={inputStyle}
             />
-            {urlMissing && (
-              <div style={{ fontSize: '0.74rem', color: V.red, marginTop: 4 }}>
-                Token-mode clusters require the API server URL — this is where your Kubernetes API lives
-              </div>
-            )}
           </div>
           <div>
             <label style={{ display: 'block', fontSize: '0.78rem', color: V.muted, marginBottom: 4 }}>
@@ -516,9 +505,8 @@ function EditClusterModal({ cluster, onClose, onSaved }: { cluster: ClusterConfi
           )}
 
           <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
-            <button type="button" onClick={handleTest} disabled={testing || urlMissing}
-              title={urlMissing ? 'Enter the API Server URL first' : undefined}
-              style={{ padding: '0.55rem 1rem', borderRadius: 8, border: `1px solid ${urlMissing ? V.red + '60' : V.border}`, background: 'transparent', color: (testing || urlMissing) ? V.muted : V.text, fontSize: '0.875rem', cursor: (testing || urlMissing) ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6, opacity: urlMissing ? 0.5 : 1 }}>
+            <button type="button" onClick={handleTest} disabled={testing}
+              style={{ padding: '0.55rem 1rem', borderRadius: 8, border: `1px solid ${V.border}`, background: 'transparent', color: testing ? V.muted : V.text, fontSize: '0.875rem', cursor: testing ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
               {testing && <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />}
               {testing ? 'Testing…' : 'Test Connection'}
             </button>

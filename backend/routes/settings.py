@@ -206,17 +206,9 @@ async def test_cluster_connection(name: str, body: ClusterUpdateInput | None = N
 
     # Validate before invoking kubectl — avoids the confusing "localhost:8080 refused" error
     conn_type = cluster.get("connection_type", "")
-    if conn_type == "token":
-        if not cluster.get("api_url", "").strip():
-            msg = "API Server URL is missing — enter the cluster URL (e.g. https://your-cluster:6443)"
-            return {"healthy": False, "friendly": msg, "error": msg}
-        if not cluster.get("token", "").strip():
-            msg = "Bearer token is missing — paste your cluster bearer token in the token field"
-            return {"healthy": False, "friendly": msg, "error": msg}
-    elif conn_type == "kubeconfig":
-        if not cluster.get("kubeconfig", "").strip():
-            msg = "Kubeconfig is empty — paste a new bearer token + API URL to switch to token auth, or re-add the cluster"
-            return {"healthy": False, "friendly": msg, "error": msg}
+    if conn_type == "kubeconfig" and not cluster.get("kubeconfig", "").strip():
+        msg = "Kubeconfig is empty — re-add the cluster with a valid kubeconfig, or switch to token auth by entering a URL and token"
+        return {"healthy": False, "friendly": msg, "error": msg}
 
     try:
         svc = KubernetesService(cluster)
