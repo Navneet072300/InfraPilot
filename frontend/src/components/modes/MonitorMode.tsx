@@ -3,14 +3,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp, TrendingDown, AlertTriangle, RefreshCw, DollarSign,
-  BarChart2, Loader2, CheckCircle2, Edit2, X, Eye, EyeOff,
-  ShieldAlert, Activity, Trash2, Server, Layers, BellOff, Wrench,
+  BarChart2, Loader2, CheckCircle2, Activity, Trash2, Server, Layers, BellOff, Wrench,
   AlertOctagon, AlertCircle, Info, BarChart3, ThumbsUp, LineChart,
   Bot, Copy, Check, RefreshCcw, Wifi, WifiOff, Clock, ExternalLink, Plug,
 } from 'lucide-react';
 import { useClusterStore } from '../../store/clusterStore';
 import { useClusterOverview, useNamespaces, useResources, useNodeMetrics } from '../../hooks/useKubernetes';
-import type { ClusterConfig, ClusterOverview, K8sNode } from '../../types';
+import type { ClusterOverview, K8sNode } from '../../types';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 
@@ -77,256 +76,6 @@ const OPTIMIZATIONS = [
 ];
 const SEV_COLORS: Record<'high' | 'medium' | 'low', string> = { high: C.error, medium: C.warning, low: '#60a5fa' };
 const maxSpend = Math.max(...SPEND_DATA.map((d) => d.monthly));
-
-// ─── Token fix form ───────────────────────────────────────────────────────────
-
-function isTokenError(error?: string) {
-  return error && /401|unauthorized|token.*expir|invalid.*token|authentication|forbidden/i.test(error);
-}
-
-interface TokenFixFormProps {
-  cluster: ClusterConfig;
-  onClose: () => void;
-  onSaved: () => void;
-}
-
-function TokenFixForm({ cluster, onClose, onSaved }: TokenFixFormProps) {
-  const [connType, setConnType] = useState<'token' | 'kubeconfig'>(
-    cluster.connection_type === 'kubeconfig' ? 'kubeconfig' : 'token'
-  );
-  const [apiUrl,     setApiUrl]     = useState(cluster.api_url ?? '');
-  const [token,      setToken]      = useState('');
-  const [kubeconfig, setKubeconfig] = useState('');
-  const [showToken,  setShowToken]  = useState(false);
-  const [testing,    setTesting]    = useState(false);
-  const [saving,     setSaving]     = useState(false);
-  const [testResult, setTestResult] = useState<{ healthy?: boolean; error?: string; version?: string } | null>(null);
-  const [confirmProd,setConfirmProd]= useState(false);
-
-  async function handleTest() {
-    setTesting(true); setTestResult(null);
-    try {
-      const body: Record<string, string> = { connection_type: connType };
-      if (apiUrl)     body.api_url    = apiUrl;
-      if (token)      body.token      = token;
-      if (kubeconfig) body.kubeconfig = kubeconfig;
-      const r = await fetch(`/api/settings/clusters/${encodeURIComponent(cluster.name)}/test`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-      });
-      setTestResult(await r.json());
-    } catch (e) { setTestResult({ healthy: false, error: String(e) }); }
-    finally { setTesting(false); }
-  }
-
-  async function doSave() {
-    setSaving(true);
-    try {
-      const body: Record<string, string> = { connection_type: connType };
-      if (apiUrl)     body.api_url    = apiUrl;
-      if (token)      body.token      = token;
-      if (kubeconfig) body.kubeconfig = kubeconfig;
-      const r = await fetch(`/api/settings/clusters/${encodeURIComponent(cluster.name)}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-      });
-      if (!r.ok) throw new Error('Save failed');
-      onSaved(); onClose();
-    } catch (e) { setTestResult({ healthy: false, error: String(e) }); }
-    finally { setSaving(false); }
-  }
-
-  function handleSave() {
-    if (cluster.environment === 'prod') setConfirmProd(true);
-    else doSave();
-  }
-
-  const V = {
-    border: C.border, surface: C.surface, bg: C.bg,
-    text: C.primary, muted: C.muted, accent: C.accent,
-    green: C.success, red: C.error,
-  };
-
-  return (
-    <div style={{ background: V.bg, border: `1px solid ${V.border}`, borderRadius: 10, padding: '1rem', marginTop: '0.5rem' }}>
-      {confirmProd && (
-        <div style={{ background: 'rgba(239,68,68,0.08)', border: `1px solid ${V.red}`, borderRadius: 8, padding: '0.875rem', marginBottom: '0.875rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: V.red, fontWeight: 600, fontSize: '0.875rem' }}>
-            <ShieldAlert size={16} /> Production cluster — confirm change
-          </div>
-          <p style={{ color: V.muted, fontSize: '0.8rem', margin: '0 0 0.75rem' }}>
-            You are updating credentials for a <strong style={{ color: V.red }}>PRODUCTION</strong> cluster. Are you sure?
-          </p>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button type="button" onClick={() => setConfirmProd(false)} style={{ flex: 1, padding: '0.4rem', borderRadius: 7, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, cursor: 'pointer', fontSize: '0.8rem' }}>Cancel</button>
-            <button type="button" onClick={doSave} disabled={saving} style={{ flex: 1, padding: '0.4rem', borderRadius: 7, border: 'none', background: V.red, color: '#fff', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}>
-              {saving ? '...' : 'Confirm Update'}
-            </button>
-          </div>
-        </div>
-      )}
-      <div style={{ display: 'flex', gap: '0.375rem', marginBottom: '0.75rem' }}>
-        {([{ val: 'token', label: 'Bearer Token' }, { val: 'kubeconfig', label: 'Kubeconfig' }] as { val: 'token' | 'kubeconfig'; label: string }[]).map(({ val, label }) => (
-          <button key={val} type="button" onClick={() => setConnType(val)} style={{ flex: 1, padding: '0.3rem', borderRadius: 7, border: `1px solid ${connType === val ? V.accent : V.border}`, background: connType === val ? `${V.accent}14` : 'transparent', color: connType === val ? V.accent : V.muted, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 500 }}>
-            {label}
-          </button>
-        ))}
-      </div>
-      {connType === 'token' ? (
-        <>
-          <input value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} placeholder="API URL (e.g. https://k8s.example.com:6443)"
-            style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.425rem 0.625rem', color: V.text, fontSize: '0.8rem', marginBottom: '0.5rem', boxSizing: 'border-box' }} />
-          <div style={{ position: 'relative', marginBottom: '0.5rem' }}>
-            <input type={showToken ? 'text' : 'password'} value={token} onChange={(e) => setToken(e.target.value)} placeholder="New bearer token..."
-              style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.425rem 2.25rem 0.425rem 0.625rem', color: V.text, fontSize: '0.8rem', boxSizing: 'border-box' }} />
-            <button type="button" onClick={() => setShowToken(!showToken)} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: V.muted }}>
-              {showToken ? <EyeOff size={13} /> : <Eye size={13} />}
-            </button>
-          </div>
-        </>
-      ) : (
-        <textarea value={kubeconfig} onChange={(e) => setKubeconfig(e.target.value)} placeholder="Paste kubeconfig YAML..." rows={4}
-          style={{ width: '100%', background: V.surface, border: `1px solid ${V.border}`, borderRadius: 7, padding: '0.425rem 0.625rem', color: V.text, fontSize: '0.78rem', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box', marginBottom: '0.5rem' }} />
-      )}
-      {testResult && (
-        <div style={{ borderRadius: 7, padding: '0.5rem 0.625rem', fontSize: '0.78rem', marginBottom: '0.5rem', background: testResult.healthy ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)', border: `1px solid ${testResult.healthy ? V.green : V.red}`, color: testResult.healthy ? V.green : V.red }}>
-          {testResult.healthy ? `✓ ${testResult.version || 'Connected'}` : `✗ ${testResult.error || 'Connection failed'}`}
-        </div>
-      )}
-      <div style={{ display: 'flex', gap: '0.375rem', justifyContent: 'flex-end' }}>
-        <button type="button" onClick={handleTest} disabled={testing} style={{ padding: '0.375rem 0.75rem', borderRadius: 7, border: `1px solid ${V.border}`, background: 'transparent', color: V.text, cursor: 'pointer', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: 4 }}>
-          {testing ? <Loader2 size={12} /> : <CheckCircle2 size={12} />} Test
-        </button>
-        <button type="button" onClick={onClose} style={{ padding: '0.375rem 0.75rem', borderRadius: 7, border: `1px solid ${V.border}`, background: 'transparent', color: V.muted, cursor: 'pointer', fontSize: '0.78rem' }}>Cancel</button>
-        <button type="button" onClick={handleSave} disabled={saving || (!token && !kubeconfig && !apiUrl)} style={{ padding: '0.375rem 0.875rem', borderRadius: 7, border: 'none', background: V.accent, color: '#fff', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
-          {saving ? '...' : 'Save'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ─── Per-cluster health card ───────────────────────────────────────────────────
-
-function ClusterHealthCard({ cluster }: { cluster: ClusterConfig }) {
-  const qc = useQueryClient();
-  const { setActiveCluster, removeCluster } = useClusterStore();
-  const [showFix,       setShowFix]       = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const [deleting,      setDeleting]      = useState(false);
-
-  async function handleDelete() {
-    setDeleting(true);
-    try {
-      await fetch(`/api/settings/clusters/${encodeURIComponent(cluster.name)}`, { method: 'DELETE' });
-      removeCluster(cluster.name);
-    } catch { /* removed from store regardless */ }
-    finally { setDeleting(false); setDeleteConfirm(false); }
-  }
-
-  const { data: health, isFetching } = useQuery({
-    queryKey: ['monitor-health', cluster.name],
-    queryFn: async () => {
-      const r = await fetch(`/api/k8s/health?cluster=${encodeURIComponent(cluster.name)}`);
-      return r.json() as Promise<{ healthy: boolean; error?: string; version?: string; cluster_name?: string }>;
-    },
-    refetchInterval: 30_000,
-  });
-
-  const healthy      = health?.healthy;
-  const tokenExpired = !healthy && isTokenError(health?.error);
-  const errorMsg     = health?.error;
-  const envColor     = cluster.environment === 'prod' ? C.error : cluster.environment === 'staging' ? C.warning : C.success;
-
-  function handleSaved() {
-    qc.invalidateQueries({ queryKey: ['monitor-health', cluster.name] });
-    qc.invalidateQueries({ queryKey: ['cluster-overview'] });
-  }
-
-  return (
-    <div style={{
-      background: C.surface,
-      border: `1px solid ${healthy === undefined ? C.border : healthy ? `${C.success}44` : `${C.error}44`}`,
-      borderRadius: 8, overflow: 'hidden',
-    }}>
-      <div style={{ padding: '10px 14px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ flexShrink: 0 }}>
-            {isFetching ? (
-              <Loader2 size={12} style={{ animation: 'spin 1s linear infinite', color: C.muted }} />
-            ) : (
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: healthy === undefined ? C.border : healthy ? C.success : C.error, boxShadow: healthy ? `0 0 6px ${C.success}66` : healthy === false ? `0 0 6px ${C.error}44` : 'none' }} />
-            )}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <span style={{ color: C.primary, fontWeight: 600, fontSize: 12, fontFamily: 'monospace' }}>{cluster.name}</span>
-              {cluster.active && <span style={{ background: `${C.accent}22`, color: C.accent, borderRadius: 3, padding: '1px 5px', fontSize: 9, fontWeight: 700, letterSpacing: '0.06em' }}>ACTIVE</span>}
-              <span style={{ background: `${envColor}18`, color: envColor, borderRadius: 3, padding: '1px 5px', fontSize: 9, fontWeight: 600, letterSpacing: '0.06em' }}>{cluster.environment.toUpperCase()}</span>
-            </div>
-            <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>
-              {healthy ? `✓ ${health?.version || 'cluster reachable'}` : healthy === false ? (tokenExpired ? '✗ Token expired or invalid' : `✗ ${errorMsg?.slice(0, 60) || 'Unreachable'}`) : 'Checking…'}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-            {!cluster.active && (
-              <button type="button" onClick={() => setActiveCluster(cluster.name)} style={{ padding: '3px 8px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 4, color: C.muted, fontSize: 10, cursor: 'pointer' }}>Activate</button>
-            )}
-            <button type="button" onClick={() => setShowFix(!showFix)} title={tokenExpired ? 'Fix Token' : 'Edit'} style={{ padding: '3px 8px', background: tokenExpired ? `${C.error}14` : 'transparent', border: `1px solid ${tokenExpired ? C.error : C.border}`, borderRadius: 4, color: tokenExpired ? C.error : C.muted, fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, fontWeight: tokenExpired ? 600 : 400 }}>
-              {tokenExpired ? <><ShieldAlert size={10} /> Fix Token</> : <><Edit2 size={10} /> Edit</>}
-            </button>
-            {showFix && <button type="button" onClick={() => setShowFix(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, padding: '3px' }}><X size={12} /></button>}
-            <button type="button" onClick={() => setDeleteConfirm(true)} style={{ padding: '3px 8px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 4, color: C.muted, fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
-              <Trash2 size={10} /> Delete
-            </button>
-          </div>
-        </div>
-      </div>
-      {showFix && (
-        <div style={{ padding: '0 10px 10px' }}>
-          <TokenFixForm cluster={cluster} onClose={() => setShowFix(false)} onSaved={handleSaved} />
-        </div>
-      )}
-      {deleteConfirm && (
-        <div style={{ margin: '0 10px 10px', background: `${C.error}0a`, border: `1px solid ${C.error}44`, borderRadius: 6, padding: '10px 12px' }}>
-          <p style={{ fontSize: 11, fontWeight: 600, color: C.error, margin: '0 0 4px' }}>Remove cluster?</p>
-          <p style={{ fontSize: 11, color: C.muted, margin: '0 0 10px', lineHeight: 1.5 }}>
-            <strong style={{ color: C.primary }}>{cluster.name}</strong> will be removed. This cannot be undone.
-          </p>
-          <div style={{ display: 'flex', gap: 5 }}>
-            <button type="button" disabled={deleting} onClick={handleDelete} style={{ flex: 1, padding: '4px', background: C.error, border: 'none', borderRadius: 4, color: '#fff', fontSize: 10, fontWeight: 600, cursor: 'pointer', opacity: deleting ? 0.6 : 1 }}>
-              {deleting ? 'Removing…' : 'Remove'}
-            </button>
-            <button type="button" onClick={() => setDeleteConfirm(false)} style={{ flex: 1, padding: '4px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 4, color: C.muted, fontSize: 10, cursor: 'pointer' }}>Cancel</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Cluster health section ───────────────────────────────────────────────────
-
-function ClusterHealthSection() {
-  const { clusters } = useClusterStore();
-  if (clusters.length === 0) {
-    return (
-      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 20, textAlign: 'center', color: C.dim, fontSize: 12 }}>
-        No clusters configured. Go to Settings to add a cluster.
-      </div>
-    );
-  }
-  return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
-      <div style={{ padding: '9px 14px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 7 }}>
-        <Activity size={12} color={C.muted} />
-        <span style={{ fontSize: 11, fontWeight: 700, color: C.primary, letterSpacing: '0.05em' }}>Cluster Connections</span>
-        <span style={{ fontSize: 10, color: C.dim }}>polls every 30s</span>
-      </div>
-      <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {clusters.map((c) => <ClusterHealthCard key={c.name} cluster={c} />)}
-      </div>
-    </div>
-  );
-}
 
 // ─── Usage bar ────────────────────────────────────────────────────────────────
 
@@ -798,8 +547,9 @@ function MetricCard({ title, unit, series, color, empty }: { title: string; unit
 }
 
 function MetricsTab() {
-  const clusters   = useClusterStore(s => s.clusters);
-  const activeCluster = clusters.find(c => c.active) ?? clusters[0];
+  const clusters          = useClusterStore(s => s.clusters);
+  const activeClusterName = useClusterStore(s => s.activeCluster);
+  const activeCluster     = clusters.find(c => c.name === activeClusterName) ?? clusters[0] ?? null;
   const navigate   = useNavigate();
 
   const [subTab,        setSubTab]        = useState<MetricsSubTab>('dashboard');
@@ -1085,9 +835,6 @@ function HealthTab() {
       {/* Cluster node overview */}
       <ClusterOverviewPanel />
 
-      {/* Cluster connections */}
-      <ClusterHealthSection />
-
       {/* Cost & Drift */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
         {[
@@ -1282,9 +1029,8 @@ function NoHelmSteps({ token }: { token: string }) {
 }
 
 function AgentTab() {
-  const { clusters } = useClusterStore();
-  const activeCluster = clusters.find((c) => c.active) ?? clusters[0];
-  const clusterName = activeCluster?.name ?? '';
+  const { clusters, activeCluster: activeClusterName } = useClusterStore();
+  const clusterName = activeClusterName ?? clusters[0]?.name ?? '';
   const queryClient = useQueryClient();
 
   const [generating, setGenerating] = useState(false);
@@ -1573,8 +1319,8 @@ export function MonitorMode() {
   const [timeRange,  setTimeRange]  = useState<TopTimeRange>('1h');
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
 
-  const { clusters } = useClusterStore();
-  const activeCluster = clusters.find((c) => c.active) ?? clusters[0];
+  const { clusters, activeCluster: activeClusterName } = useClusterStore();
+  const activeCluster = clusters.find((c) => c.name === activeClusterName) ?? clusters[0] ?? null;
 
   useEffect(() => {
     const id = setInterval(() => setLastUpdate(new Date()), 30_000);

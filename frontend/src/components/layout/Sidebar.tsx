@@ -36,9 +36,9 @@ const RESOURCES: NavItem[] = [
 
 const PLAN_LABEL: Record<Plan, string> = { free: 'Free', pro: 'Pro', team: 'Team', enterprise: 'Enterprise' };
 const PLAN_COLOR: Record<Plan, string> = {
-  free: 'var(--text-secondary)',
-  pro: 'var(--accent)',
-  team: 'var(--accent)',
+  free:       'var(--text-muted)',
+  pro:        'var(--accent)',
+  team:       'var(--accent)',
   enterprise: 'var(--accent)',
 };
 
@@ -67,7 +67,6 @@ export function Sidebar({ collapsed, onToggle }: Props) {
     location.pathname === path ||
     (path === '/app/pipeline' && location.pathname === '/app');
 
-  // Avatar initials
   const initials = name
     .split(' ')
     .map((w) => w[0])
@@ -109,23 +108,26 @@ export function Sidebar({ collapsed, onToggle }: Props) {
           : undefined
         }
         style={{
-          display: 'flex', alignItems: 'center', gap: '9px',
-          padding: collapsed ? '9px 0' : '7px 10px',
-          margin: collapsed ? '1px 0' : '1px 8px',
-          width: collapsed ? '100%' : 'calc(100% - 16px)',
-          background: active ? 'rgba(129,140,248,0.13)' : 'none',
+          display: 'flex', alignItems: 'center', gap: '10px',
+          padding: collapsed ? '10px 0' : '8px 12px',
+          margin: collapsed ? '1px 0' : '2px 8px 2px 0',
+          width: collapsed ? '100%' : 'calc(100% - 8px)',
+          background: active ? 'rgba(129,140,248,0.10)' : 'none',
           border: 'none',
-          borderRadius: 8,
-          color: active ? 'var(--accent)' : (item.stub || locked) ? 'var(--text-muted)' : 'var(--text-secondary)',
-          fontSize: '13px', fontWeight: active ? 600 : 400,
+          borderLeft: !collapsed ? (active ? '3px solid var(--accent)' : '3px solid transparent') : 'none',
+          borderRadius: collapsed ? 8 : (active ? '0 8px 8px 0' : '0 8px 8px 0'),
+          color: active ? '#bdc2ff' : (item.stub || locked) ? 'var(--text-muted)' : 'var(--text-secondary)',
+          fontSize: '13px', fontWeight: active ? 700 : 400,
           cursor: 'pointer',
-          textAlign: 'left', justifyContent: collapsed ? 'center' : 'flex-start',
-          fontFamily: 'inherit', opacity: item.stub ? 0.45 : 1,
-          transition: 'all 0.12s',
+          textAlign: 'left',
+          justifyContent: collapsed ? 'center' : 'flex-start',
+          fontFamily: 'inherit',
+          opacity: item.stub ? 0.45 : 1,
+          transition: 'background 0.12s, color 0.12s, border-color 0.12s',
           boxSizing: 'border-box',
         }}
         onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--bg-hover)'; }}
-        onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'none'; }}
+        onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = active ? 'rgba(129,140,248,0.10)' : 'none'; }}
       >
         <span style={{
           flexShrink: 0,
@@ -133,7 +135,7 @@ export function Sidebar({ collapsed, onToggle }: Props) {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           borderRadius: 6,
           background: active ? 'rgba(129,140,248,0.18)' : 'transparent',
-          color: active ? 'var(--accent)' : 'inherit',
+          color: active ? '#bdc2ff' : 'inherit',
           transition: 'all 0.12s',
         }}>
           {item.icon}
@@ -152,23 +154,24 @@ export function Sidebar({ collapsed, onToggle }: Props) {
         onClick={() => navigate(path)}
         title={collapsed ? label : undefined}
         style={{
-          width: collapsed ? '100%' : 'calc(100% - 16px)',
-          margin: collapsed ? '1px 0' : '1px 8px',
+          width: collapsed ? '100%' : 'calc(100% - 8px)',
+          margin: collapsed ? '1px 0' : '1px 8px 1px 0',
           display: 'flex', alignItems: 'center', gap: '9px',
           padding: collapsed ? '8px 0' : '6px 10px',
-          background: active ? 'rgba(129,140,248,0.13)' : 'none',
+          background: active ? 'rgba(129,140,248,0.10)' : 'none',
           border: 'none',
-          borderRadius: 8,
-          color: active ? 'var(--accent)' : 'var(--text-muted)',
+          borderLeft: !collapsed ? (active ? '3px solid var(--accent)' : '3px solid transparent') : 'none',
+          borderRadius: '0 8px 8px 0',
+          color: active ? '#bdc2ff' : 'var(--text-muted)',
           fontSize: '12.5px', fontWeight: active ? 600 : 400,
           cursor: 'pointer', textAlign: 'left',
           fontFamily: 'inherit',
           justifyContent: collapsed ? 'center' : 'flex-start',
           boxSizing: 'border-box',
-          transition: 'all 0.12s',
+          transition: 'background 0.12s',
         }}
         onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--bg-hover)'; }}
-        onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'none'; }}
+        onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = active ? 'rgba(129,140,248,0.10)' : 'none'; }}
       >
         <span style={{ flexShrink: 0, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</span>
         {!collapsed && label}
@@ -176,138 +179,181 @@ export function Sidebar({ collapsed, onToggle }: Props) {
     );
   };
 
+  const SectionLabel = ({ label }: { label: string }) => (
+    !collapsed ? (
+      <p style={{
+        padding: '8px 16px 4px',
+        fontSize: '10px', fontWeight: 700,
+        letterSpacing: '0.08em',
+        color: 'var(--text-muted)',
+        textTransform: 'uppercase',
+      }}>
+        {label}
+      </p>
+    ) : (
+      <div style={{ height: '1px', background: 'var(--border)', margin: '8px 10px' }} />
+    )
+  );
+
   return (
-  <>
-    <aside
-      style={{
-        width: collapsed ? '48px' : '220px',
-        minWidth: collapsed ? '48px' : '220px',
-        background: 'var(--bg-surface)',
-        borderRight: '1px solid var(--border)',
-        display: 'flex', flexDirection: 'column',
-        transition: 'width 0.2s, min-width 0.2s',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Logo */}
-      <div style={{ height: '48px', display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--border)', flexShrink: 0, overflow: 'hidden' }}>
-        {collapsed ? (
-          /* Collapsed: full-width menu button, no overlap */
-          <button
-            type="button"
-            onClick={onToggle}
-            title="Expand sidebar"
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
-          >
-            <Menu size={16} />
-          </button>
-        ) : (
-          /* Expanded: IP logo + name + collapse button */
-          <div style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '0 12px', width: '100%' }}>
-            <div style={{
-              width: '26px', height: '26px', borderRadius: '7px',
-              background: 'linear-gradient(135deg, #818cf8, #a78bfa)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '11px', fontWeight: 800, color: '#fff', flexShrink: 0,
-              boxShadow: '0 2px 8px rgba(129,140,248,0.35)',
-            }}>
-              IP
-            </div>
-            <span style={{ fontWeight: 800, fontSize: '14px', letterSpacing: '-0.02em', flex: 1, background: 'linear-gradient(90deg, var(--text-primary), var(--accent))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-              InfraPilot
-            </span>
-            <button type="button" onClick={onToggle} title="Collapse sidebar" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px', borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
-              <ChevronLeft size={13} />
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Navigation */}
-      <nav style={{ flex: 1, padding: '10px 0', overflowY: 'auto' }}>
-        {!collapsed && (
-          <p style={{ padding: '4px 18px 6px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Workspace</p>
-        )}
-        {PRIMARY.map((item) => <NavButton key={item.path} item={item} />)}
-
-        <div style={{ height: '1px', background: 'var(--border)', margin: '10px 12px' }} />
-
-        {!collapsed && (
-          <p style={{ padding: '4px 18px 6px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Resources</p>
-        )}
-        {RESOURCES.map((item) => <NavButton key={item.path} item={item} />)}
-      </nav>
-
-      {/* Bottom section */}
-      <div style={{ borderTop: '1px solid var(--border)' }}>
-        {/* Profile card */}
-        <div
-          style={{
-            padding: collapsed ? '10px 0' : '10px 14px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            cursor: 'pointer',
-            justifyContent: collapsed ? 'center' : 'flex-start',
-          }}
-          onClick={() => navigate('/app/profile')}
-          title={collapsed ? name : undefined}
-        >
-          {/* Avatar */}
-          <div style={{ position: 'relative', flexShrink: 0 }}>
-            <div
+    <>
+      <aside
+        style={{
+          width: collapsed ? '48px' : '220px',
+          minWidth: collapsed ? '48px' : '220px',
+          background: 'var(--bg-surface)',
+          borderRight: '1px solid var(--border)',
+          display: 'flex', flexDirection: 'column',
+          transition: 'width 0.2s, min-width 0.2s',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Logo / Brand */}
+        <div style={{
+          height: '64px',
+          display: 'flex', alignItems: 'center',
+          borderBottom: '1px solid var(--border)',
+          flexShrink: 0, overflow: 'hidden',
+        }}>
+          {collapsed ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              title="Expand sidebar"
               style={{
-                width: 32, height: 32, borderRadius: '50%',
-                background: avatar ? 'transparent' : 'linear-gradient(135deg, var(--accent), #8b5cf6)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '11px', fontWeight: 700, color: '#fff',
-                overflow: 'hidden',
-                border: isActive('/app/profile') ? '2px solid var(--accent)' : '2px solid transparent',
+                width: '100%', height: '100%',
+                background: 'none', border: 'none',
+                color: 'var(--text-muted)', cursor: 'pointer',
               }}
             >
-              {avatar
-                ? <img src={avatar} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                : initials}
-            </div>
-            {/* Camera overlay — only in expanded mode */}
-            {!collapsed && (
-              <>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/*"
-                  aria-label="Upload profile photo"
-                  style={{ display: 'none' }}
-                  onChange={handleAvatarFile}
-                />
-                <button
-                  type="button"
-                  title="Change photo"
-                  onClick={(e) => { e.stopPropagation(); fileRef.current?.click(); }}
-                  style={{
-                    position: 'absolute', inset: 0, borderRadius: '50%',
-                    background: 'rgba(0,0,0,0.5)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    opacity: 0, transition: 'opacity 0.15s',
-                    border: 'none', cursor: 'pointer', color: '#fff',
-                  }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '0'; }}
-                >
-                  <Camera size={10} />
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* Name + plan */}
-          {!collapsed && (
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {name}
+              <Menu size={16} />
+            </button>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0 14px', width: '100%' }}>
+              {/* IP logo mark */}
+              <div style={{
+                width: 30, height: 30, borderRadius: '8px',
+                background: 'linear-gradient(135deg, #818cf8, #a78bfa)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '11px', fontWeight: 800, color: '#fff', flexShrink: 0,
+                boxShadow: '0 2px 10px rgba(129,140,248,0.4)',
+                letterSpacing: '-0.02em',
+              }}>
+                IP
               </div>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+              <span style={{
+                fontWeight: 800, fontSize: '18px',
+                letterSpacing: '-0.03em',
+                flex: 1,
+                color: '#bdc2ff',
+              }}>
+                InfraPilot
+              </span>
+              <button
+                type="button"
+                onClick={onToggle}
+                title="Collapse sidebar"
+                style={{
+                  background: 'none', border: 'none',
+                  color: 'var(--text-muted)', cursor: 'pointer',
+                  padding: '4px', borderRadius: 5, flexShrink: 0,
+                  display: 'flex', alignItems: 'center',
+                  opacity: 0.6,
+                }}
+              >
+                <ChevronLeft size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Navigation */}
+        <nav style={{ flex: 1, padding: '8px 0', overflowY: 'auto' }}>
+          <SectionLabel label="Workspace" />
+          {PRIMARY.map((item) => <NavButton key={item.path} item={item} />)}
+
+          <SectionLabel label="Resources" />
+          {RESOURCES.map((item) => <NavButton key={item.path} item={item} />)}
+        </nav>
+
+        {/* Bottom section */}
+        <div style={{ borderTop: '1px solid var(--border)' }}>
+          {/* Profile card */}
+          <div
+            style={{
+              margin: collapsed ? '8px 4px' : '8px',
+              padding: collapsed ? '8px 0' : '10px 12px',
+              background: 'var(--bg-hover)',
+              border: '1px solid var(--border)',
+              borderRadius: 10,
+              display: 'flex', alignItems: 'center',
+              gap: '10px', cursor: 'pointer',
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              transition: 'background 0.12s',
+            }}
+            onClick={() => navigate('/app/profile')}
+            title={collapsed ? name : undefined}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--accent)'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)'; }}
+          >
+            {/* Avatar */}
+            <div style={{ position: 'relative', flexShrink: 0 }}>
+              <div
+                style={{
+                  width: 34, height: 34, borderRadius: '50%',
+                  background: avatar ? 'transparent' : 'linear-gradient(135deg, var(--accent), #8b5cf6)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '12px', fontWeight: 700, color: '#fff',
+                  overflow: 'hidden',
+                }}
+              >
+                {avatar
+                  ? <img src={avatar} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : initials}
+              </div>
+              {!collapsed && (
+                <>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/*"
+                    aria-label="Upload profile photo"
+                    style={{ display: 'none' }}
+                    onChange={handleAvatarFile}
+                  />
+                  <button
+                    type="button"
+                    title="Change photo"
+                    onClick={(e) => { e.stopPropagation(); fileRef.current?.click(); }}
+                    style={{
+                      position: 'absolute', inset: 0, borderRadius: '50%',
+                      background: 'rgba(0,0,0,0.55)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      opacity: 0, transition: 'opacity 0.15s',
+                      border: 'none', cursor: 'pointer', color: '#fff',
+                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '0'; }}
+                  >
+                    <Camera size={10} />
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Name + plan */}
+            {!collapsed && (
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: '13px', fontWeight: 600,
+                  color: 'var(--text-primary)',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {name}
+                </div>
                 <span style={{
+                  display: 'inline-block', marginTop: 2,
                   fontSize: '9px', fontWeight: 700, letterSpacing: '0.05em',
                   color: PLAN_COLOR[plan],
                   background: `${PLAN_COLOR[plan]}18`,
@@ -318,26 +364,25 @@ export function Sidebar({ collapsed, onToggle }: Props) {
                   {PLAN_LABEL[plan]}
                 </span>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
 
-        {/* Bottom nav */}
-        <div style={{ paddingBottom: '6px' }}>
-          <BottomNavBtn icon={<Home size={15} />} label="Home" path="/" />
-          <BottomNavBtn icon={<CreditCard size={15} />} label="Subscription" path="/app/subscription" />
-          <BottomNavBtn icon={<HelpCircle size={15} />} label="Help" path="/app/help" />
+          {/* Bottom nav */}
+          <div style={{ paddingBottom: '8px' }}>
+            <BottomNavBtn icon={<Home size={14} />}       label="Home"         path="/" />
+            <BottomNavBtn icon={<CreditCard size={14} />} label="Subscription" path="/app/subscription" />
+            <BottomNavBtn icon={<HelpCircle size={14} />} label="Help"         path="/app/help" />
+          </div>
         </div>
-      </div>
-    </aside>
+      </aside>
 
-    {upgradeFeature && (
-      <UpgradeModal
-        feature={upgradeFeature}
-        requiredPlan="pro"
-        onClose={() => setUpgradeFeature(null)}
-      />
-    )}
-  </>
+      {upgradeFeature && (
+        <UpgradeModal
+          feature={upgradeFeature}
+          requiredPlan="pro"
+          onClose={() => setUpgradeFeature(null)}
+        />
+      )}
+    </>
   );
 }

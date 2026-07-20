@@ -71,7 +71,6 @@ export function ClusterToggle({ onProdWarning }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   const activeCfg = clusters.find(c => c.name === activeCluster);
-  const isProd = activeCfg?.environment === 'prod';
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -139,7 +138,6 @@ export function ClusterToggle({ onProdWarning }: Props) {
             EXPIRED
           </span>
         )}
-        {isProd && !activeCfg?.token_expired && <AlertTriangle size={11} color="#f87171" />}
         <ChevronDown size={12} style={{ color: 'var(--text-muted)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
       </button>
 

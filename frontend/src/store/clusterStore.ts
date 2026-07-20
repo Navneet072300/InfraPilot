@@ -26,10 +26,10 @@ export const useClusterStore = create<ClusterState>((set) => ({
   namespaces: {},
 
   setClusters: (c) =>
-    set({
+    set((s) => ({
       clusters: c,
-      activeCluster: c.find((x) => x.active)?.name ?? c[0]?.name ?? null,
-    }),
+      activeCluster: s.activeCluster ?? c.find((x) => x.active)?.name ?? c[0]?.name ?? null,
+    })),
 
   addCluster: (c) =>
     set((s) => {
@@ -53,7 +53,7 @@ export const useClusterStore = create<ClusterState>((set) => ({
       return { clusters, activeCluster, health };
     }),
 
-  setActiveCluster: (name) => set({ activeCluster: name }),
+  setActiveCluster: (name) => set({ activeCluster: name, activeNamespace: 'default' }),
   setActiveNamespace: (ns) => set({ activeNamespace: ns }),
   setHealth: (cluster, h) =>
     set((s) => ({ health: { ...s.health, [cluster]: h } })),

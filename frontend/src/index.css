@@ -1,19 +1,21 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
-/* ── Dark theme (default) — mid-dark, easy on the eyes ── */
+/* ── Dark theme (default) ── */
 :root,
 [data-theme="dark"] {
-  --bg-base:       #1c1c26;
-  --bg-surface:    #23232f;
-  --bg-hover:      #2a2a38;
-  --border:        #38384e;
+  --bg-base:       #12121c;
+  --bg-surface:    #1f1f29;
+  --bg-hover:      #292933;
+  --border:        #454653;
   --border-focus:  #818cf8;
-  --text-primary:  #eaeaf4;
-  --text-secondary:#9898b8;
-  --text-muted:    #65657e;
+  --text-primary:  #e3e1ef;
+  --text-secondary:#c6c5d5;
+  --text-muted:    #908f9e;
   --accent:        #818cf8;
   --accent-glow:   rgba(129, 140, 248, 0.15);
+  --primary:       #bdc2ff;
+  --tertiary:      #45dfa4;
   --success:       #34d399;
   --warning:       #fbbf24;
   --error:         #f87171;
@@ -125,6 +127,11 @@ code, pre, .font-mono {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 @keyframes shimmer {
