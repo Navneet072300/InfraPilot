@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useClusterStore } from '../../store/clusterStore';
 import { useClusterOverview, useNamespaces, useResources, useNodeMetrics } from '../../hooks/useKubernetes';
-import type { ClusterOverview, K8sNode } from '../../types';
+import type { ClusterOverview } from '../../types';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 
@@ -807,11 +807,12 @@ function ServiceTablePanel() {
 function HealthTab() {
   const { activeCluster } = useClusterStore();
   const { data, isFetching: overviewFetching } = useClusterOverview(activeCluster);
+  const { data: metricsData } = useNodeMetrics(activeCluster);
   const overview = data as ClusterOverview | undefined;
   const nodes = overview?.nodes ?? [];
-  type NodeWithMetrics = K8sNode & { cpu_pct?: number; mem_pct?: number };
-  const avgCpu = nodes.length ? Math.round((nodes as NodeWithMetrics[]).reduce((s, n) => s + (n.cpu_pct ?? 0), 0) / nodes.length) : null;
-  const avgMem = nodes.length ? Math.round((nodes as NodeWithMetrics[]).reduce((s, n) => s + (n.mem_pct ?? 0), 0) / nodes.length) : null;
+  const metrics = metricsData?.metrics ?? [];
+  const avgCpu = metrics.length ? Math.round(metrics.reduce((s, n) => s + parseFloat(n.cpu_percent || '0'), 0) / metrics.length) : null;
+  const avgMem = metrics.length ? Math.round(metrics.reduce((s, n) => s + parseFloat(n.memory_percent || '0'), 0) / metrics.length) : null;
   const totalNodes   = nodes.length || null;
   const runningPods  = (overview?.pod_counts?.running as number) ?? null;
 
