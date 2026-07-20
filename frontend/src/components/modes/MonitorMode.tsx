@@ -14,21 +14,21 @@ import type { ClusterOverview, K8sNode } from '../../types';
 // ─── Design tokens ────────────────────────────────────────────────────────────
 
 const C = {
-  bg:      '#0d0d12',
-  surface: '#111118',
-  border:  '#1e1e2a',
-  rowWarn: '#0f0e0a',
-  rowErr:  '#100d0d',
-  badgeErr:'#2a1515',
-  primary: '#f0f0f5',
-  muted:   '#8b8b9e',
-  dim:     '#5a5a6e',
-  dead:    '#3a3a4a',
-  accent:  '#6366f1',
-  success: '#22c55e',
-  warning: '#f59e0b',
-  error:   '#ef4444',
-} as const;
+  bg:      'var(--bg-base)',
+  surface: 'var(--bg-surface)',
+  border:  'var(--border)',
+  rowWarn: 'rgba(251, 191, 36, 0.05)',
+  rowErr:  'rgba(248, 113, 113, 0.05)',
+  badgeErr:'rgba(248, 113, 113, 0.15)',
+  primary: 'var(--text-primary)',
+  muted:   'var(--text-secondary)',
+  dim:     'var(--text-muted)',
+  dead:    'var(--text-muted)',
+  accent:  '#818cf8',
+  success: '#34d399',
+  warning: '#fbbf24',
+  error:   '#f87171',
+};
 
 function barColor(pct: number) {
   if (pct > 85) return C.error;
@@ -1328,8 +1328,14 @@ export function MonitorMode() {
   }, []);
 
   const { data: incidentsData } = useQuery({
-    queryKey: ['incidents'],
-    queryFn: async () => { const r = await fetch('/api/incidents'); return r.json(); },
+    queryKey: ['incidents', activeClusterName],
+    queryFn: async () => {
+      const url = activeClusterName
+        ? `/api/incidents?cluster=${encodeURIComponent(activeClusterName)}`
+        : '/api/incidents';
+      const r = await fetch(url);
+      return r.json();
+    },
     refetchInterval: 30_000,
   });
   const incidents: Incident[] = incidentsData?.incidents ?? [];
