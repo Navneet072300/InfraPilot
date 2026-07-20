@@ -89,6 +89,26 @@ def _mask(val: str | None, visible: int = 4) -> str | None:
     return val[:visible] + "***" if len(val) > visible else "***"
 
 
+def _is_token_expired(token: str) -> bool:
+    """Decode a JWT bearer token and check if it's expired."""
+    import base64 as _b64, json as _json, time as _time
+    try:
+        # Handle custom prefixes like 'compasskubeapi-eyJ...'
+        jwt_str = token
+        if "-" in token and not token.startswith("eyJ"):
+            jwt_str = token.split("-", 1)[1]
+        parts = jwt_str.split(".")
+        if len(parts) < 2:
+            return False
+        padding = "=" * (-len(parts[1]) % 4)
+        payload = _json.loads(_b64.urlsafe_b64decode(parts[1] + padding))
+        # Support both 'exp' (standard) and 'expired_at' (Compass custom)
+        exp = payload.get("expired_at") or payload.get("exp")
+        return bool(exp and float(exp) < _time.time())
+    except Exception:
+        return False
+
+
 def _safe_cluster(c: dict) -> dict:
     out = dict(c)
     # Auto-populate api_url from kubeconfig server URL so the Edit form shows it pre-filled
@@ -96,8 +116,11 @@ def _safe_cluster(c: dict) -> dict:
         extracted = _extract_server_from_kubeconfig(out["kubeconfig"])
         if extracted:
             out["api_url"] = extracted
-    if out.get("token"):
-        out["token"] = _mask(out["token"])
+    # Check token expiry before masking
+    raw_token = out.get("token", "")
+    out["token_expired"] = _is_token_expired(raw_token) if raw_token else False
+    if raw_token:
+        out["token"] = _mask(raw_token)
     if out.get("kubeconfig"):
         out["kubeconfig"] = "***[kubeconfig]***"
     return out

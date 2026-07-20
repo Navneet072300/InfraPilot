@@ -38,26 +38,41 @@ function ConfigLoader({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    fetch('/api/platform/config')
-      .then((r) => r.json())
-      .then((data: { configured: boolean; clusters?: { name: string; environment: string; active: boolean; connection_type?: string }[] }) => {
-        if (data.configured && data.clusters) {
+    async function load() {
+      try {
+        // Use /api/settings/clusters as the authoritative source — it always reads from
+        // the DB (or JSON fallback) directly, not through the platform config layer
+        const [configRes, clustersRes] = await Promise.all([
+          fetch('/api/platform/config'),
+          fetch('/api/settings/clusters'),
+        ]);
+        const config = await configRes.json() as { configured: boolean };
+        const clustersData = await clustersRes.json() as { clusters?: Array<{ name: string; environment: string; active: boolean; connection_type?: string; api_url?: string; token_expired?: boolean }> };
+
+        if (clustersData.clusters && clustersData.clusters.length > 0) {
           setClusters(
-            data.clusters.map((c) => ({
+            clustersData.clusters.map((c) => ({
               name: c.name,
               environment: c.environment as 'dev' | 'staging' | 'prod',
               connection_type: (c.connection_type === 'kubeconfig' ? 'kubeconfig' : 'token') as 'token' | 'kubeconfig',
-              api_url: '', token: '', kubeconfig: '', active: c.active,
+              api_url: c.api_url ?? '', token: '', kubeconfig: '',
+              active: c.active,
+              token_expired: c.token_expired ?? false,
             }))
           );
         }
+
         const path = window.location.pathname;
-        if (!data.configured && path.startsWith('/app')) {
+        if (!config.configured && path.startsWith('/app')) {
           navigate('/onboarding', { replace: true });
         }
-      })
-      .catch(() => {/* Backend not reachable — allow app to open anyway */})
-      .finally(() => setReady(true));
+      } catch {
+        // Backend not reachable — allow app to open anyway
+      } finally {
+        setReady(true);
+      }
+    }
+    load();
   }, [navigate, setClusters]);
 
   if (!ready) {

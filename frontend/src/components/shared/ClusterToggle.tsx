@@ -48,6 +48,11 @@ function ClusterOption({ cluster, active, onClick }: { cluster: ClusterConfig; a
     >
       <HealthDot name={cluster.name} />
       <span style={{ flex: 1 }}>{cluster.name}</span>
+      {cluster.token_expired && (
+        <span style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.06em', color: '#f87171', background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.35)', padding: '1px 5px', borderRadius: 3 }}>
+          EXPIRED
+        </span>
+      )}
       <EnvBadge env={cluster.environment} />
       {active && <span style={{ fontSize: '10px', color: 'var(--accent)' }}>●</span>}
     </button>
@@ -129,7 +134,12 @@ export function ClusterToggle({ onProdWarning }: Props) {
         {activeCfg ? <HealthDot name={activeCfg.name} /> : null}
         <span>{activeCfg?.name ?? 'Select cluster'}</span>
         {activeCfg && <EnvBadge env={activeCfg.environment} />}
-        {isProd && <AlertTriangle size={11} color="#f87171" />}
+        {activeCfg?.token_expired && (
+          <span style={{ fontSize: '9px', fontWeight: 700, color: '#f87171', background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.4)', padding: '1px 5px', borderRadius: 3, letterSpacing: '0.05em' }}>
+            EXPIRED
+          </span>
+        )}
+        {isProd && !activeCfg?.token_expired && <AlertTriangle size={11} color="#f87171" />}
         <ChevronDown size={12} style={{ color: 'var(--text-muted)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
       </button>
 
