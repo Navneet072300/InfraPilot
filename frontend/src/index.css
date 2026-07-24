@@ -1,19 +1,19 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
-/* ── Dark theme (default - Obsidian Pitch Dark) ── */
+/* ── Dark theme (Slightly lighter, comfortable midnight slate) ── */
 :root,
 [data-theme="dark"] {
-  --bg-base:          #080c14;
-  --bg-surface:       #0f1726;
-  --bg-surface-elev:  #162035;
-  --bg-hover:         #1c2840;
-  --border:           #1e293b;
-  --border-subtle:    #162032;
+  --bg-base:          #131a29;
+  --bg-surface:       #1b2436;
+  --bg-surface-elev:  #222f45;
+  --bg-hover:         #2a3952;
+  --border:           #2e3d56;
+  --border-subtle:    #243248;
   --border-focus:     #6366f1;
   --text-primary:     #f8fafc;
-  --text-secondary:   #94a3b8;
-  --text-muted:       #64748b;
+  --text-secondary:   #cbd5e1;
+  --text-muted:       #94a3b8;
   --accent:           #6366f1;
   --accent-hover:     #4f46e5;
   --accent-light:     #818cf8;
@@ -23,22 +23,22 @@
   --primary:          #818cf8;
   --tertiary:         #34d399;
   --success:          #10b981;
-  --success-bg:       rgba(16, 185, 129, 0.14);
+  --success-bg:       rgba(16, 185, 129, 0.16);
   --warning:          #f59e0b;
-  --warning-bg:       rgba(245, 158, 11, 0.14);
+  --warning-bg:       rgba(245, 158, 11, 0.16);
   --error:            #ef4444;
-  --error-bg:         rgba(239, 68, 68, 0.14);
+  --error-bg:         rgba(239, 68, 68, 0.16);
   --info:             #3b82f6;
-  --info-bg:          rgba(59, 130, 246, 0.14);
-  --card-bg:          rgba(15, 23, 38, 0.85);
-  --card-border:      rgba(255, 255, 255, 0.08);
-  --glass-bg:         rgba(11, 16, 26, 0.8);
-  --glass-border:     rgba(255, 255, 255, 0.1);
-  --dot-color:        rgba(255, 255, 255, 0.07);
-  --shadow-sm:        0 1px 3px 0 rgba(0, 0, 0, 0.4);
-  --shadow-md:        0 4px 16px -2px rgba(0, 0, 0, 0.5);
-  --shadow-lg:        0 14px 32px -4px rgba(0, 0, 0, 0.65);
-  --badge-bg:         rgba(99, 102, 241, 0.15);
+  --info-bg:          rgba(59, 130, 246, 0.16);
+  --card-bg:          rgba(27, 36, 54, 0.9);
+  --card-border:      rgba(255, 255, 255, 0.1);
+  --glass-bg:         rgba(19, 26, 41, 0.85);
+  --glass-border:     rgba(255, 255, 255, 0.12);
+  --dot-color:        rgba(255, 255, 255, 0.08);
+  --shadow-sm:        0 1px 3px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md:        0 4px 16px -2px rgba(0, 0, 0, 0.4);
+  --shadow-lg:        0 14px 32px -4px rgba(0, 0, 0, 0.5);
+  --badge-bg:         rgba(99, 102, 241, 0.18);
   --badge-text:       #a5b4fc;
 }
 

@@ -3,7 +3,6 @@ import {
   Wand2, Stethoscope, Compass, Activity,
   Database, Clock, HelpCircle, Zap, Rocket,
   ChevronLeft, Menu, CreditCard, Camera, Lock, Home, Plug, KeyRound,
-  Sparkles,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useProfileStore, type Plan } from '../../store/profileStore';
@@ -309,19 +308,6 @@ export function Sidebar({ collapsed, onToggle }: Props) {
 
         {/* Bottom section */}
         <div style={{ borderTop: '1px solid var(--border)', padding: '6px' }}>
-          {/* AI Active indicator pill */}
-          {!collapsed && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '6px 10px', margin: '2px 4px 6px',
-              background: 'var(--badge-bg)', border: '1px solid var(--border)',
-              borderRadius: 8, fontSize: '11px', color: 'var(--accent-text)', fontWeight: 600,
-            }}>
-              <Sparkles size={13} color="var(--accent)" />
-              <span>AI Co-Pilot Active</span>
-              <span style={{ marginLeft: 'auto', width: 6, height: 6, borderRadius: '50%', background: 'var(--success)', animation: 'pulseDot 1.5s infinite' }} />
-            </div>
-          )}
 
           {/* Profile card */}
           <div
