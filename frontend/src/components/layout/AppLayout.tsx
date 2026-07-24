@@ -29,7 +29,7 @@ export function AppLayout({ children }: Props) {
           gap: 12, padding: '6px 16px', flexShrink: 0,
         }}>
           <span style={{ fontSize: 12, color: 'var(--warning)', fontWeight: 600 }}>
-            👁 Demo Mode — sandbox environment (simulated data)
+            👁 Demo Mode — sandbox environment (simulated cluster data)
           </span>
           <button
             type="button"
@@ -57,7 +57,7 @@ export function AppLayout({ children }: Props) {
         <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
           <TopBar />
-          <main style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>{children}</main>
+          <main className="bg-dot-pattern" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>{children}</main>
         </div>
       </div>
     </div>

@@ -3,6 +3,7 @@ import {
   Wand2, Stethoscope, Compass, Activity,
   Database, Clock, HelpCircle, Zap, Rocket,
   ChevronLeft, Menu, CreditCard, Camera, Lock, Home, Plug, KeyRound,
+  Sparkles,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useProfileStore, type Plan } from '../../store/profileStore';
@@ -21,7 +22,7 @@ interface NavItem {
 const PRIMARY: NavItem[] = [
   { icon: <Zap size={16} />,         label: 'Deploy',      path: '/app/deploy' },
   { icon: <Rocket size={16} />,      label: 'Deployments', path: '/app/deployments' },
-  { icon: <Wand2 size={16} />,       label: 'Generate',    path: '/app/generate' },
+  { icon: <Wand2 size={16} />,       label: 'Generate AI', path: '/app/generate' },
   { icon: <Stethoscope size={16} />, label: 'Diagnose',    path: '/app/diagnose' },
   { icon: <Compass size={16} />,     label: 'Design',      path: '/app/design', planFeature: 'design_mode' },
   { icon: <Activity size={16} />,    label: 'Monitor',     path: '/app/monitor', planFeature: 'monitor_mode' },
@@ -31,7 +32,7 @@ const RESOURCES: NavItem[] = [
   { icon: <Plug size={15} />,     label: 'Platforms', path: '/app/platforms' },
   { icon: <KeyRound size={15} />, label: 'Vault',     path: '/app/vault' },
   { icon: <Database size={15} />, label: 'Resources', path: '/app/resources' },
-  { icon: <Clock size={15} />,    label: 'History',   path: '/app/history' },
+  { icon: <Clock size={15} />,    label: 'Audit Log', path: '/app/history' },
 ];
 
 const PLAN_LABEL: Record<Plan, string> = { free: 'Free', pro: 'Pro', team: 'Team', enterprise: 'Enterprise' };
@@ -104,8 +105,8 @@ export function Sidebar({ collapsed, onToggle }: Props) {
         style={{
           display: 'flex', alignItems: 'center', gap: '10px',
           padding: collapsed ? '10px 0' : '8px 12px',
-          margin: collapsed ? '2px 0' : '2px 8px 2px 4px',
-          width: collapsed ? '100%' : 'calc(100% - 12px)',
+          margin: collapsed ? '2px 0' : '2px 8px 2px 6px',
+          width: collapsed ? '100%' : 'calc(100% - 14px)',
           background: active ? 'var(--badge-bg)' : 'transparent',
           border: 'none',
           borderLeft: !collapsed ? (active ? '3px solid var(--accent)' : '3px solid transparent') : 'none',
@@ -158,8 +159,8 @@ export function Sidebar({ collapsed, onToggle }: Props) {
         onClick={() => navigate(path)}
         title={collapsed ? label : undefined}
         style={{
-          width: collapsed ? '100%' : 'calc(100% - 12px)',
-          margin: collapsed ? '1px 0' : '1px 8px 1px 4px',
+          width: collapsed ? '100%' : 'calc(100% - 14px)',
+          margin: collapsed ? '1px 0' : '1px 8px 1px 6px',
           display: 'flex', alignItems: 'center', gap: '9px',
           padding: collapsed ? '8px 0' : '6px 10px',
           background: active ? 'var(--badge-bg)' : 'transparent',
@@ -196,8 +197,8 @@ export function Sidebar({ collapsed, onToggle }: Props) {
   const SectionLabel = ({ label }: { label: string }) => (
     !collapsed ? (
       <p style={{
-        padding: '12px 16px 4px',
-        fontSize: '10px', fontWeight: 700,
+        padding: '14px 16px 4px',
+        fontSize: '9.5px', fontWeight: 700,
         letterSpacing: '0.08em',
         color: 'var(--text-muted)',
         textTransform: 'uppercase',
@@ -213,8 +214,8 @@ export function Sidebar({ collapsed, onToggle }: Props) {
     <>
       <aside
         style={{
-          width: collapsed ? '56px' : '224px',
-          minWidth: collapsed ? '56px' : '224px',
+          width: collapsed ? '56px' : '230px',
+          minWidth: collapsed ? '56px' : '230px',
           background: 'var(--bg-surface)',
           borderRight: '1px solid var(--border)',
           display: 'flex', flexDirection: 'column',
@@ -253,22 +254,24 @@ export function Sidebar({ collapsed, onToggle }: Props) {
               {/* IP logo mark */}
               <div style={{
                 width: 32, height: 32, borderRadius: '9px',
-                background: 'linear-gradient(135deg, var(--accent) 0%, #a78bfa 100%)',
+                background: 'var(--accent-gradient)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: '12px', fontWeight: 800, color: '#fff', flexShrink: 0,
-                boxShadow: '0 3px 12px var(--accent-glow)',
+                boxShadow: '0 3px 14px var(--accent-glow)',
                 letterSpacing: '-0.02em',
               }}>
                 IP
               </div>
-              <span style={{
-                fontWeight: 800, fontSize: '17px',
-                letterSpacing: '-0.03em',
-                flex: 1,
-                color: 'var(--text-primary)',
-              }}>
-                Infra<span style={{ color: 'var(--accent)' }}>Pilot</span>
-              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontWeight: 800, fontSize: '16.5px', letterSpacing: '-0.03em', color: 'var(--text-primary)' }}>
+                    Infra<span style={{ color: 'var(--accent)' }}>Pilot</span>
+                  </span>
+                  <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--accent-text)', background: 'var(--badge-bg)', border: '1px solid var(--border)', padding: '1px 5px', borderRadius: 4 }}>
+                    v2.4
+                  </span>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={onToggle}
@@ -296,7 +299,7 @@ export function Sidebar({ collapsed, onToggle }: Props) {
         </div>
 
         {/* Navigation */}
-        <nav style={{ flex: 1, padding: '6px 0', overflowY: 'auto' }}>
+        <nav style={{ flex: 1, padding: '4px 0', overflowY: 'auto' }}>
           <SectionLabel label="Workspace" />
           {PRIMARY.map((item) => <NavButton key={item.path} item={item} />)}
 
@@ -306,6 +309,20 @@ export function Sidebar({ collapsed, onToggle }: Props) {
 
         {/* Bottom section */}
         <div style={{ borderTop: '1px solid var(--border)', padding: '6px' }}>
+          {/* AI Active indicator pill */}
+          {!collapsed && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '6px 10px', margin: '2px 4px 6px',
+              background: 'var(--badge-bg)', border: '1px solid var(--border)',
+              borderRadius: 8, fontSize: '11px', color: 'var(--accent-text)', fontWeight: 600,
+            }}>
+              <Sparkles size={13} color="var(--accent)" />
+              <span>AI Co-Pilot Active</span>
+              <span style={{ marginLeft: 'auto', width: 6, height: 6, borderRadius: '50%', background: 'var(--success)', animation: 'pulseDot 1.5s infinite' }} />
+            </div>
+          )}
+
           {/* Profile card */}
           <div
             style={{
@@ -334,11 +351,11 @@ export function Sidebar({ collapsed, onToggle }: Props) {
               <div
                 style={{
                   width: 32, height: 32, borderRadius: '50%',
-                  background: avatar ? 'transparent' : 'linear-gradient(135deg, var(--accent), #8b5cf6)',
+                  background: avatar ? 'transparent' : 'var(--accent-gradient)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: '12px', fontWeight: 700, color: '#fff',
                   overflow: 'hidden',
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
                 }}
               >
                 {avatar
@@ -394,7 +411,7 @@ export function Sidebar({ collapsed, onToggle }: Props) {
                   borderRadius: 4, padding: '1px 6px',
                   textTransform: 'uppercase',
                 }}>
-                  {PLAN_LABEL[plan]}
+                  {PLAN_LABEL[plan]} Plan
                 </span>
               </div>
             )}

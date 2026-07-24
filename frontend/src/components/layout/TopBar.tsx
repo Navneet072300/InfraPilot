@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ChevronDown, Home, Zap } from 'lucide-react';
+import { ChevronDown, Home, Zap, Search } from 'lucide-react';
 import { ClusterToggle } from '../shared/ClusterToggle';
 import { useClusterStore } from '../../store/clusterStore';
 import { useNamespaces } from '../../hooks/useKubernetes';
@@ -85,8 +85,8 @@ export function TopBar() {
       style={{
         height: '60px',
         background: 'var(--glass-bg)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
         borderBottom: '1px solid var(--border)',
         display: 'flex',
         alignItems: 'center',
@@ -123,8 +123,46 @@ export function TopBar() {
       {/* Cluster dropdown */}
       <ClusterToggle />
 
+      {/* Latency Pill */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 5,
+        padding: '3px 8px', background: 'var(--bg-base)',
+        border: '1px solid var(--border)', borderRadius: 6,
+        fontSize: '11px', color: 'var(--text-muted)', fontWeight: 500,
+      }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--success)' }} />
+        <span>24ms</span>
+      </div>
+
       {/* Spacer */}
       <div style={{ flex: 1 }} />
+
+      {/* Quick Search trigger */}
+      <button
+        type="button"
+        onClick={() => navigate('/app/deploy')}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          background: 'var(--bg-base)', border: '1px solid var(--border)',
+          borderRadius: 8, padding: '5px 12px', cursor: 'pointer',
+          color: 'var(--text-muted)', fontSize: '12px', fontWeight: 500,
+          transition: 'all 0.15s ease',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.borderColor = 'var(--border-focus)';
+          e.currentTarget.style.color = 'var(--text-primary)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.borderColor = 'var(--border)';
+          e.currentTarget.style.color = 'var(--text-muted)';
+        }}
+      >
+        <Search size={13} />
+        <span>Search apps, clusters, logs…</span>
+        <span style={{ fontSize: '10px', background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px', color: 'var(--text-muted)' }}>
+          ⌘K
+        </span>
+      </button>
 
       {/* Free plan usage chip */}
       {isFree && <FreeUsageChip />}
@@ -144,7 +182,7 @@ export function TopBar() {
               fontSize: '12px',
               fontWeight: 500,
               padding: '5px 26px 5px 10px',
-              borderRadius: '7px',
+              borderRadius: '8px',
               cursor: 'pointer',
               appearance: 'none',
               fontFamily: 'inherit',
