@@ -2149,7 +2149,7 @@ export default function SettingsPage() {
                 cursor: 'pointer', textAlign: 'left', fontSize: '0.85rem',
                 fontWeight: active ? 600 : 400, transition: 'all 0.12s',
               }}
-              onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.04)'; }}
+              onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-hover)'; }}
               onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
             >
               {icon}

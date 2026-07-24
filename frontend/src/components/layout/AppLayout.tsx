@@ -22,14 +22,24 @@ export function AppLayout({ children }: Props) {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--bg-base)', overflow: 'hidden' }}>
       {/* Demo mode banner */}
       {isDemoMode && (
-        <div style={{ background: 'rgba(210,153,34,0.12)', borderBottom: '1px solid rgba(210,153,34,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '6px 16px', flexShrink: 0 }}>
+        <div style={{
+          background: 'var(--warning-bg)',
+          borderBottom: '1px solid var(--border)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          gap: 12, padding: '6px 16px', flexShrink: 0,
+        }}>
           <span style={{ fontSize: 12, color: 'var(--warning)', fontWeight: 600 }}>
-            👁 Demo Mode — data is mocked, nothing is saved
+            👁 Demo Mode — sandbox environment (simulated data)
           </span>
           <button
             type="button"
             onClick={() => navigate('/signup')}
-            style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: 'var(--warning)', border: 'none', borderRadius: 5, padding: '3px 10px', cursor: 'pointer' }}
+            style={{
+              fontSize: 11, fontWeight: 700, color: '#fff',
+              background: 'var(--warning)', border: 'none',
+              borderRadius: 6, padding: '3px 10px', cursor: 'pointer',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
+            }}
           >
             Sign up free
           </button>

@@ -70,14 +70,15 @@ export function CodeBlock({
   return (
     <div
       style={{
-        background: '#0d1117',
+        background: 'var(--bg-surface)',
         border: '1px solid var(--border)',
-        borderRadius: '8px',
+        borderRadius: '12px',
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
         height: maxHeight ? undefined : '100%',
         maxHeight,
+        boxShadow: 'var(--shadow-sm)',
       }}
     >
       {/* Header */}
@@ -86,26 +87,27 @@ export function CodeBlock({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '5px 12px',
+          padding: '6px 14px',
           borderBottom: '1px solid var(--border)',
-          background: 'var(--bg-surface)',
+          background: 'var(--bg-base)',
           flexShrink: 0,
         }}
       >
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+        <span style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
           {filename ?? ''}
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {streaming && (
-            <span style={{ fontSize: '10px', color: 'var(--accent)', animation: 'blink 1s step-end infinite' }}>
+            <span style={{ fontSize: '10px', color: 'var(--accent)', animation: 'blink 1s step-end infinite', fontWeight: 600 }}>
               ● live
             </span>
           )}
           <span
             style={{
               fontSize: '10px', fontWeight: 700, letterSpacing: '0.08em',
-              color: 'var(--accent)', background: 'var(--accent-glow)',
-              padding: '2px 6px', borderRadius: '4px', fontFamily: 'monospace',
+              color: 'var(--accent-text)', background: 'var(--badge-bg)',
+              border: '1px solid var(--border)',
+              padding: '2px 7px', borderRadius: '4px', fontFamily: 'var(--font-mono)',
             }}
           >
             {LANG_BADGE[language] ?? language.toUpperCase()}
@@ -113,11 +115,11 @@ export function CodeBlock({
           <button
             onClick={handleCopy}
             style={{
-              background: copied ? 'rgba(34,197,94,0.12)' : 'var(--bg-hover)',
+              background: copied ? 'var(--success-bg)' : 'var(--bg-hover)',
               border: `1px solid ${copied ? 'var(--success)' : 'var(--border)'}`,
-              color: copied ? 'var(--success)' : 'var(--text-muted)',
-              fontSize: '11px', padding: '2px 8px', borderRadius: '4px',
-              cursor: 'pointer', transition: 'all 0.15s',
+              color: copied ? 'var(--success)' : 'var(--text-secondary)',
+              fontSize: '11px', fontWeight: 600, padding: '3px 9px', borderRadius: '6px',
+              cursor: 'pointer', transition: 'all 0.15s ease',
             }}
           >
             {copied ? '✓ Copied' : 'Copy'}
@@ -126,7 +128,7 @@ export function CodeBlock({
       </div>
 
       {/* Code */}
-      <div ref={scrollRef} style={{ overflow: 'auto', flex: 1 }}>
+      <div ref={scrollRef} style={{ overflow: 'auto', flex: 1, background: 'var(--bg-base)', padding: '4px 0' }}>
         <table style={{ borderCollapse: 'collapse', width: '100%' }}>
           <tbody>
             {lines.map((line, i) => (
@@ -137,7 +139,7 @@ export function CodeBlock({
                       width: '44px', minWidth: '44px', textAlign: 'right',
                       paddingRight: '12px', paddingLeft: '6px',
                       fontSize: '11px', color: 'var(--text-muted)',
-                      fontFamily: 'JetBrains Mono, monospace',
+                      fontFamily: 'var(--font-mono)',
                       userSelect: 'none', borderRight: '1px solid var(--border)',
                       verticalAlign: 'top', lineHeight: '1.6',
                     }}
@@ -148,9 +150,9 @@ export function CodeBlock({
                 <td
                   style={{
                     paddingLeft: '14px', paddingRight: '14px',
-                    fontSize: '12.5px', fontFamily: 'JetBrains Mono, monospace',
+                    fontSize: '12.5px', fontFamily: 'var(--font-mono)',
                     whiteSpace: 'pre', verticalAlign: 'top',
-                    color: '#abb2bf', lineHeight: '1.6',
+                    color: 'var(--text-primary)', lineHeight: '1.6',
                   }}
                 >
                   <code

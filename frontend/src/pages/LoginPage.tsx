@@ -1,16 +1,5 @@
 import { useSearchParams } from 'react-router-dom';
 
-const C = {
-  bg:      '#0d0d12',
-  surface: '#111118',
-  border:  '#1e1e2a',
-  primary: '#f0f0f5',
-  muted:   '#8b8b9e',
-  dim:     '#5a5a6e',
-  accent:  '#6366f1',
-  error:   '#ef4444',
-} as const;
-
 const ERROR_MESSAGES: Record<string, string> = {
   github_failed:    'GitHub sign-in failed. Please try again.',
   github_no_email:  'Your GitHub account has no public email. Enable a primary email in GitHub settings and retry.',
@@ -42,43 +31,32 @@ export function LoginPage() {
   const error = errorCode ? (ERROR_MESSAGES[errorCode] ?? 'Sign-in failed. Please try again.') : '';
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <style>{`
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(12px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        .login-card { animation: fadeUp 0.35s ease; }
-        .oauth-btn { transition: opacity 0.15s, transform 0.1s; }
-        .oauth-btn:hover { opacity: 0.88; transform: translateY(-1px); }
-        .oauth-btn:active { transform: translateY(0); }
-      `}</style>
-
-      <div className="login-card" style={{ width: '100%', maxWidth: 360 }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div className="animate-fade-in-up" style={{ width: '100%', maxWidth: 380 }}>
         {/* Logo + wordmark */}
-        <div style={{ textAlign: 'center', marginBottom: 36 }}>
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{
             width: 52, height: 52, borderRadius: 16,
-            background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+            background: 'linear-gradient(135deg, var(--accent) 0%, #a78bfa 100%)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 18, fontWeight: 800, color: '#fff',
-            margin: '0 auto 20px',
-            boxShadow: '0 4px 24px #6366f133',
+            margin: '0 auto 16px',
+            boxShadow: '0 4px 20px var(--accent-glow)',
           }}>
             IP
           </div>
-          <h1 style={{ margin: '0 0 8px', color: C.primary, fontWeight: 800, fontSize: 22, letterSpacing: '-0.01em' }}>
-            InfraPilot
+          <h1 style={{ margin: '0 0 8px', color: 'var(--text-primary)', fontWeight: 800, fontSize: 24, letterSpacing: '-0.02em' }}>
+            Infra<span style={{ color: 'var(--accent)' }}>Pilot</span>
           </h1>
-          <p style={{ margin: 0, color: C.muted, fontSize: 13, lineHeight: 1.6 }}>
+          <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: 13.5, lineHeight: 1.6 }}>
             Sign in with your Git provider to connect<br />repositories and deploy infrastructure.
           </p>
         </div>
 
         {/* Card */}
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: '28px 24px' }}>
+        <div className="ip-card" style={{ padding: '28px 24px', boxShadow: 'var(--shadow-md)' }}>
           {error && (
-            <div style={{ background: `${C.error}12`, border: `1px solid ${C.error}44`, borderRadius: 8, padding: '10px 14px', marginBottom: 22, color: C.error, fontSize: 12, lineHeight: 1.5 }}>
+            <div style={{ background: 'var(--error-bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', marginBottom: 20, color: 'var(--error)', fontSize: 12, lineHeight: 1.5 }}>
               {error}
             </div>
           )}
@@ -86,46 +64,47 @@ export function LoginPage() {
           {/* GitHub button */}
           <a
             href="/api/auth/github"
-            className="oauth-btn"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
               padding: '12px 20px', borderRadius: 10,
               background: '#24292f', border: '1px solid #444c56',
-              color: '#f0f0f5', fontSize: 14, fontWeight: 600, textDecoration: 'none',
+              color: '#ffffff', fontSize: 14, fontWeight: 600, textDecoration: 'none',
               width: '100%', boxSizing: 'border-box',
+              transition: 'all 0.15s ease',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
             }}
           >
             <GitHubLogo size={18} /> Continue with GitHub
           </a>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '14px 0' }}>
-            <div style={{ flex: 1, height: 1, background: C.border }} />
-            <span style={{ color: C.dim, fontSize: 11 }}>or</span>
-            <div style={{ flex: 1, height: 1, background: C.border }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '16px 0' }}>
+            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+            <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>or</span>
+            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
           </div>
 
           {/* GitLab button */}
           <a
             href="/api/auth/gitlab"
-            className="oauth-btn"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
               padding: '12px 20px', borderRadius: 10,
               background: '#fc6d26', border: '1px solid #e24329',
-              color: '#fff', fontSize: 14, fontWeight: 600, textDecoration: 'none',
+              color: '#ffffff', fontSize: 14, fontWeight: 600, textDecoration: 'none',
               width: '100%', boxSizing: 'border-box',
+              transition: 'all 0.15s ease',
+              boxShadow: '0 2px 8px rgba(252,109,38,0.2)',
             }}
           >
             <GitLabLogo size={18} /> Continue with GitLab
           </a>
 
-          <p style={{ textAlign: 'center', color: C.dim, fontSize: 11, margin: '20px 0 0', lineHeight: 1.7 }}>
-            Requests <code style={{ background: C.border, padding: '1px 5px', borderRadius: 3, color: C.muted, fontSize: 10 }}>read_user</code> / <code style={{ background: C.border, padding: '1px 5px', borderRadius: 3, color: C.muted, fontSize: 10 }}>repo</code> scopes.
-            No separate token setup needed.
+          <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 11.5, margin: '20px 0 0', lineHeight: 1.6 }}>
+            Requests <code style={{ background: 'var(--bg-hover)', padding: '2px 5px', borderRadius: 4, color: 'var(--text-secondary)', fontSize: 10.5 }}>read_user</code> / <code style={{ background: 'var(--bg-hover)', padding: '2px 5px', borderRadius: 4, color: 'var(--text-secondary)', fontSize: 10.5 }}>repo</code> scopes.
           </p>
         </div>
 
-        <p style={{ textAlign: 'center', color: C.dim, fontSize: 10, marginTop: 18, lineHeight: 1.6 }}>
+        <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 11, marginTop: 20, lineHeight: 1.6 }}>
           By continuing you agree to InfraPilot's terms of service.
         </p>
       </div>

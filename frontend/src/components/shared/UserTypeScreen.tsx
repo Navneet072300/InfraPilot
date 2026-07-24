@@ -39,7 +39,6 @@ export function UserTypeScreen({ onDone }: Props) {
   const [selected, setSelected] = useState<ExperienceLevel | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Auto-dismiss with devops default if user hasn't interacted after 5 minutes
   useEffect(() => {
     const timer = setTimeout(() => {
       if (!selected) skip();
@@ -71,7 +70,6 @@ export function UserTypeScreen({ onDone }: Props) {
       });
       setUser({ experience_level: selected });
     } catch {
-      // best-effort — apply locally regardless
       setUser({ experience_level: selected });
     } finally {
       setSaving(false);
@@ -99,17 +97,17 @@ export function UserTypeScreen({ onDone }: Props) {
         </div>
 
         {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: 36 }}>
+        <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.03em' }}>
-            InfraPilot
+            Infra<span style={{ color: 'var(--accent)' }}>Pilot</span>
           </div>
         </div>
 
         <h2 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6, textAlign: 'center' }}>
           How do you usually work?
         </h2>
-        <p style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', marginBottom: 28 }}>
-          This helps InfraPilot use the right language for you.
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', marginBottom: 24 }}>
+          This helps InfraPilot use the right terminology for you.
         </p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -123,16 +121,16 @@ export function UserTypeScreen({ onDone }: Props) {
                 style={{
                   display: 'flex', alignItems: 'flex-start', gap: 16,
                   padding: '16px 20px',
-                  background: active ? 'rgba(88,166,255,0.08)' : 'var(--bg-surface)',
+                  background: active ? 'var(--badge-bg)' : 'var(--bg-surface)',
                   border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-                  borderRadius: 10, cursor: 'pointer', textAlign: 'left',
-                  transition: 'all 0.15s',
+                  borderRadius: 12, cursor: 'pointer', textAlign: 'left',
+                  transition: 'all 0.15s ease',
                   width: '100%',
                 }}
               >
                 <span style={{ fontSize: 26, flexShrink: 0, lineHeight: 1.2 }}>{c.icon}</span>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text-primary)', marginBottom: 4 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: active ? 'var(--accent-text)' : 'var(--text-primary)', marginBottom: 4 }}>
                     {c.title}
                   </div>
                   {c.lines.map((l, i) => (
@@ -151,13 +149,10 @@ export function UserTypeScreen({ onDone }: Props) {
           type="button"
           onClick={confirm}
           disabled={!selected || saving}
+          className={selected ? 'ip-button-primary' : 'ip-button-secondary'}
           style={{
             width: '100%', marginTop: 24, padding: '12px',
-            background: selected ? 'var(--accent)' : 'var(--bg-hover)',
-            border: 'none', borderRadius: 8,
-            color: selected ? '#fff' : 'var(--text-muted)',
-            fontSize: 14, fontWeight: 700, cursor: selected ? 'pointer' : 'not-allowed',
-            transition: 'all 0.15s',
+            fontSize: 14, fontWeight: 700, opacity: (!selected || saving) ? 0.6 : 1,
           }}
         >
           {saving ? 'Saving…' : 'Continue →'}

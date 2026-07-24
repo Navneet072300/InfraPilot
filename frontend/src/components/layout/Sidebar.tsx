@@ -35,12 +35,6 @@ const RESOURCES: NavItem[] = [
 ];
 
 const PLAN_LABEL: Record<Plan, string> = { free: 'Free', pro: 'Pro', team: 'Team', enterprise: 'Enterprise' };
-const PLAN_COLOR: Record<Plan, string> = {
-  free:       'var(--text-muted)',
-  pro:        'var(--accent)',
-  team:       'var(--accent)',
-  enterprise: 'var(--accent)',
-};
 
 interface Props {
   collapsed: boolean;
@@ -110,38 +104,48 @@ export function Sidebar({ collapsed, onToggle }: Props) {
         style={{
           display: 'flex', alignItems: 'center', gap: '10px',
           padding: collapsed ? '10px 0' : '8px 12px',
-          margin: collapsed ? '1px 0' : '2px 8px 2px 0',
-          width: collapsed ? '100%' : 'calc(100% - 8px)',
-          background: active ? 'rgba(129,140,248,0.10)' : 'none',
+          margin: collapsed ? '2px 0' : '2px 8px 2px 4px',
+          width: collapsed ? '100%' : 'calc(100% - 12px)',
+          background: active ? 'var(--badge-bg)' : 'transparent',
           border: 'none',
           borderLeft: !collapsed ? (active ? '3px solid var(--accent)' : '3px solid transparent') : 'none',
-          borderRadius: collapsed ? 8 : (active ? '0 8px 8px 0' : '0 8px 8px 0'),
-          color: active ? '#bdc2ff' : (item.stub || locked) ? 'var(--text-muted)' : 'var(--text-secondary)',
-          fontSize: '13px', fontWeight: active ? 700 : 400,
+          borderRadius: collapsed ? 8 : '0 8px 8px 0',
+          color: active ? 'var(--accent-text)' : (item.stub || locked) ? 'var(--text-muted)' : 'var(--text-secondary)',
+          fontSize: '13px', fontWeight: active ? 600 : 400,
           cursor: 'pointer',
           textAlign: 'left',
           justifyContent: collapsed ? 'center' : 'flex-start',
           fontFamily: 'inherit',
           opacity: item.stub ? 0.45 : 1,
-          transition: 'background 0.12s, color 0.12s, border-color 0.12s',
+          transition: 'all 0.15s ease',
           boxSizing: 'border-box',
         }}
-        onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--bg-hover)'; }}
-        onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = active ? 'rgba(129,140,248,0.10)' : 'none'; }}
+        onMouseEnter={(e) => {
+          if (!active) {
+            e.currentTarget.style.background = 'var(--bg-hover)';
+            e.currentTarget.style.color = 'var(--text-primary)';
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!active) {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = (item.stub || locked) ? 'var(--text-muted)' : 'var(--text-secondary)';
+          }
+        }}
       >
         <span style={{
           flexShrink: 0,
           width: 26, height: 26,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           borderRadius: 6,
-          background: active ? 'rgba(129,140,248,0.18)' : 'transparent',
-          color: active ? '#bdc2ff' : 'inherit',
-          transition: 'all 0.12s',
+          background: active ? 'var(--accent-glow)' : 'transparent',
+          color: active ? 'var(--accent)' : 'inherit',
+          transition: 'all 0.15s ease',
         }}>
           {item.icon}
         </span>
-        {!collapsed && <span style={{ flex: 1 }}>{item.label}</span>}
-        {!collapsed && locked && <Lock size={11} style={{ flexShrink: 0, opacity: 0.4 }} />}
+        {!collapsed && <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>}
+        {!collapsed && locked && <Lock size={12} style={{ flexShrink: 0, opacity: 0.5 }} />}
       </button>
     );
   };
@@ -154,24 +158,34 @@ export function Sidebar({ collapsed, onToggle }: Props) {
         onClick={() => navigate(path)}
         title={collapsed ? label : undefined}
         style={{
-          width: collapsed ? '100%' : 'calc(100% - 8px)',
-          margin: collapsed ? '1px 0' : '1px 8px 1px 0',
+          width: collapsed ? '100%' : 'calc(100% - 12px)',
+          margin: collapsed ? '1px 0' : '1px 8px 1px 4px',
           display: 'flex', alignItems: 'center', gap: '9px',
           padding: collapsed ? '8px 0' : '6px 10px',
-          background: active ? 'rgba(129,140,248,0.10)' : 'none',
+          background: active ? 'var(--badge-bg)' : 'transparent',
           border: 'none',
           borderLeft: !collapsed ? (active ? '3px solid var(--accent)' : '3px solid transparent') : 'none',
           borderRadius: '0 8px 8px 0',
-          color: active ? '#bdc2ff' : 'var(--text-muted)',
+          color: active ? 'var(--accent-text)' : 'var(--text-muted)',
           fontSize: '12.5px', fontWeight: active ? 600 : 400,
           cursor: 'pointer', textAlign: 'left',
           fontFamily: 'inherit',
           justifyContent: collapsed ? 'center' : 'flex-start',
           boxSizing: 'border-box',
-          transition: 'background 0.12s',
+          transition: 'all 0.15s ease',
         }}
-        onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--bg-hover)'; }}
-        onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = active ? 'rgba(129,140,248,0.10)' : 'none'; }}
+        onMouseEnter={(e) => {
+          if (!active) {
+            e.currentTarget.style.background = 'var(--bg-hover)';
+            e.currentTarget.style.color = 'var(--text-primary)';
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!active) {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = 'var(--text-muted)';
+          }
+        }}
       >
         <span style={{ flexShrink: 0, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</span>
         {!collapsed && label}
@@ -182,7 +196,7 @@ export function Sidebar({ collapsed, onToggle }: Props) {
   const SectionLabel = ({ label }: { label: string }) => (
     !collapsed ? (
       <p style={{
-        padding: '8px 16px 4px',
+        padding: '12px 16px 4px',
         fontSize: '10px', fontWeight: 700,
         letterSpacing: '0.08em',
         color: 'var(--text-muted)',
@@ -199,21 +213,23 @@ export function Sidebar({ collapsed, onToggle }: Props) {
     <>
       <aside
         style={{
-          width: collapsed ? '48px' : '220px',
-          minWidth: collapsed ? '48px' : '220px',
+          width: collapsed ? '56px' : '224px',
+          minWidth: collapsed ? '56px' : '224px',
           background: 'var(--bg-surface)',
           borderRight: '1px solid var(--border)',
           display: 'flex', flexDirection: 'column',
-          transition: 'width 0.2s, min-width 0.2s',
+          transition: 'width 0.2s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
           overflow: 'hidden',
+          zIndex: 20,
         }}
       >
         {/* Logo / Brand */}
         <div style={{
-          height: '64px',
+          height: '60px',
           display: 'flex', alignItems: 'center',
           borderBottom: '1px solid var(--border)',
           flexShrink: 0, overflow: 'hidden',
+          padding: collapsed ? '0' : '0 14px',
         }}>
           {collapsed ? (
             <button
@@ -225,51 +241,62 @@ export function Sidebar({ collapsed, onToggle }: Props) {
                 width: '100%', height: '100%',
                 background: 'none', border: 'none',
                 color: 'var(--text-muted)', cursor: 'pointer',
+                transition: 'color 0.15s',
               }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; }}
             >
-              <Menu size={16} />
+              <Menu size={18} />
             </button>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0 14px', width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
               {/* IP logo mark */}
               <div style={{
-                width: 30, height: 30, borderRadius: '8px',
-                background: 'linear-gradient(135deg, #818cf8, #a78bfa)',
+                width: 32, height: 32, borderRadius: '9px',
+                background: 'linear-gradient(135deg, var(--accent) 0%, #a78bfa 100%)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '11px', fontWeight: 800, color: '#fff', flexShrink: 0,
-                boxShadow: '0 2px 10px rgba(129,140,248,0.4)',
+                fontSize: '12px', fontWeight: 800, color: '#fff', flexShrink: 0,
+                boxShadow: '0 3px 12px var(--accent-glow)',
                 letterSpacing: '-0.02em',
               }}>
                 IP
               </div>
               <span style={{
-                fontWeight: 800, fontSize: '18px',
+                fontWeight: 800, fontSize: '17px',
                 letterSpacing: '-0.03em',
                 flex: 1,
-                color: '#bdc2ff',
+                color: 'var(--text-primary)',
               }}>
-                InfraPilot
+                Infra<span style={{ color: 'var(--accent)' }}>Pilot</span>
               </span>
               <button
                 type="button"
                 onClick={onToggle}
                 title="Collapse sidebar"
                 style={{
-                  background: 'none', border: 'none',
+                  background: 'transparent', border: 'none',
                   color: 'var(--text-muted)', cursor: 'pointer',
-                  padding: '4px', borderRadius: 5, flexShrink: 0,
-                  display: 'flex', alignItems: 'center',
-                  opacity: 0.6,
+                  padding: '6px', borderRadius: 6, flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'background 0.15s, color 0.15s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'var(--bg-hover)';
+                  e.currentTarget.style.color = 'var(--text-primary)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = 'var(--text-muted)';
                 }}
               >
-                <ChevronLeft size={14} />
+                <ChevronLeft size={16} />
               </button>
             </div>
           )}
         </div>
 
         {/* Navigation */}
-        <nav style={{ flex: 1, padding: '8px 0', overflowY: 'auto' }}>
+        <nav style={{ flex: 1, padding: '6px 0', overflowY: 'auto' }}>
           <SectionLabel label="Workspace" />
           {PRIMARY.map((item) => <NavButton key={item.path} item={item} />)}
 
@@ -278,34 +305,40 @@ export function Sidebar({ collapsed, onToggle }: Props) {
         </nav>
 
         {/* Bottom section */}
-        <div style={{ borderTop: '1px solid var(--border)' }}>
+        <div style={{ borderTop: '1px solid var(--border)', padding: '6px' }}>
           {/* Profile card */}
           <div
             style={{
-              margin: collapsed ? '8px 4px' : '8px',
-              padding: collapsed ? '8px 0' : '10px 12px',
-              background: 'var(--bg-hover)',
+              padding: collapsed ? '8px 0' : '8px 10px',
+              background: 'var(--bg-base)',
               border: '1px solid var(--border)',
               borderRadius: 10,
               display: 'flex', alignItems: 'center',
               gap: '10px', cursor: 'pointer',
               justifyContent: collapsed ? 'center' : 'flex-start',
-              transition: 'background 0.12s',
+              transition: 'all 0.15s ease',
             }}
             onClick={() => navigate('/app/profile')}
             title={collapsed ? name : undefined}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--accent)'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)'; }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border-focus)';
+              (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-hover)';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)';
+              (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-base)';
+            }}
           >
             {/* Avatar */}
             <div style={{ position: 'relative', flexShrink: 0 }}>
               <div
                 style={{
-                  width: 34, height: 34, borderRadius: '50%',
+                  width: 32, height: 32, borderRadius: '50%',
                   background: avatar ? 'transparent' : 'linear-gradient(135deg, var(--accent), #8b5cf6)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: '12px', fontWeight: 700, color: '#fff',
                   overflow: 'hidden',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
                 }}
               >
                 {avatar
@@ -336,7 +369,7 @@ export function Sidebar({ collapsed, onToggle }: Props) {
                     onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '0'; }}
                   >
-                    <Camera size={10} />
+                    <Camera size={11} />
                   </button>
                 </>
               )}
@@ -346,7 +379,7 @@ export function Sidebar({ collapsed, onToggle }: Props) {
             {!collapsed && (
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{
-                  fontSize: '13px', fontWeight: 600,
+                  fontSize: '12.5px', fontWeight: 600,
                   color: 'var(--text-primary)',
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}>
@@ -354,11 +387,11 @@ export function Sidebar({ collapsed, onToggle }: Props) {
                 </div>
                 <span style={{
                   display: 'inline-block', marginTop: 2,
-                  fontSize: '9px', fontWeight: 700, letterSpacing: '0.05em',
-                  color: PLAN_COLOR[plan],
-                  background: `${PLAN_COLOR[plan]}18`,
-                  border: `1px solid ${PLAN_COLOR[plan]}44`,
-                  borderRadius: 4, padding: '1px 5px',
+                  fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.05em',
+                  color: 'var(--accent-text)',
+                  background: 'var(--badge-bg)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 4, padding: '1px 6px',
                   textTransform: 'uppercase',
                 }}>
                   {PLAN_LABEL[plan]}
@@ -368,7 +401,7 @@ export function Sidebar({ collapsed, onToggle }: Props) {
           </div>
 
           {/* Bottom nav */}
-          <div style={{ paddingBottom: '8px' }}>
+          <div style={{ paddingTop: '4px' }}>
             <BottomNavBtn icon={<Home size={14} />}       label="Home"         path="/" />
             <BottomNavBtn icon={<CreditCard size={14} />} label="Subscription" path="/app/subscription" />
             <BottomNavBtn icon={<HelpCircle size={14} />} label="Help"         path="/app/help" />

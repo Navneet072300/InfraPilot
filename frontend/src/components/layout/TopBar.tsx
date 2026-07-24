@@ -12,18 +12,18 @@ import { useQuery } from '@tanstack/react-query';
 const PAGE_NAMES: Record<string, string> = {
   '/app/deploy':       'Deploy',
   '/app/deployments':  'Deployments',
-  '/app/generate':     'Generate',
+  '/app/generate':     'Generate AI',
   '/app/diagnose':     'Diagnose',
-  '/app/design':       'Design',
-  '/app/monitor':      'Monitor',
+  '/app/design':       'Architecture Design',
+  '/app/monitor':      'Cluster Monitor',
   '/app/platforms':    'Platforms',
-  '/app/vault':        'Vault',
+  '/app/vault':        'Secrets Vault',
   '/app/resources':    'Resources',
-  '/app/history':      'History',
+  '/app/history':      'Audit Log & History',
   '/app/settings':     'Settings',
   '/app/profile':      'Profile',
-  '/app/subscription': 'Subscription',
-  '/app/help':         'Help',
+  '/app/subscription': 'Subscription & Billing',
+  '/app/help':         'Help & Docs',
   '/app/repos':        'Repositories',
 };
 
@@ -49,17 +49,20 @@ function FreeUsageChip() {
       title={`${remaining} AI requests remaining today. Click to upgrade.`}
       onClick={() => navigate('/app/subscription')}
       style={{
-        display: 'flex', alignItems: 'center', gap: 6,
-        background: 'var(--bg-hover)', border: '1px solid var(--border)',
-        borderRadius: 6, padding: '3px 9px', cursor: 'pointer', flexShrink: 0,
+        display: 'flex', alignItems: 'center', gap: 8,
+        background: 'var(--bg-base)', border: '1px solid var(--border)',
+        borderRadius: 8, padding: '4px 10px', cursor: 'pointer', flexShrink: 0,
+        transition: 'all 0.15s ease',
       }}
+      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-focus)'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; }}
     >
-      <Zap size={11} color={color} fill={color} />
-      <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+      <Zap size={13} color={color} fill={color} />
+      <span style={{ fontSize: '11.5px', color: 'var(--text-primary)', fontWeight: 600 }}>
         {remaining}<span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>/{limit} AI</span>
       </span>
-      <div style={{ width: 34, height: 3, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
-        <div style={{ width: `${Math.min(100, pct)}%`, height: '100%', background: color, borderRadius: 2 }} />
+      <div style={{ width: 38, height: 4, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
+        <div style={{ width: `${Math.min(100, pct)}%`, height: '100%', background: color, borderRadius: 99, transition: 'width 0.3s' }} />
       </div>
     </button>
   );
@@ -80,18 +83,21 @@ export function TopBar() {
   return (
     <header
       style={{
-        height: '64px',
-        background: 'var(--bg-surface)',
+        height: '60px',
+        background: 'var(--glass-bg)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
         borderBottom: '1px solid var(--border)',
         display: 'flex',
         alignItems: 'center',
         padding: '0 20px',
         gap: '12px',
         flexShrink: 0,
+        zIndex: 10,
       }}
     >
       {/* LEFT: Breadcrumb */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
         <button
           type="button"
           onClick={() => navigate('/app')}
@@ -99,17 +105,20 @@ export function TopBar() {
           style={{
             background: 'none', border: 'none',
             color: 'var(--text-muted)', cursor: 'pointer',
-            padding: 0, display: 'flex', alignItems: 'center',
+            padding: '4px', borderRadius: 4, display: 'flex', alignItems: 'center',
+            transition: 'color 0.15s ease',
           }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; }}
         >
-          <Home size={14} />
+          <Home size={15} />
         </button>
-        <span style={{ color: 'var(--border)', fontSize: 16, lineHeight: 1, userSelect: 'none' }}>/</span>
-        <span style={{ fontSize: '13px', fontWeight: 700, color: '#bdc2ff' }}>{pageName}</span>
+        <span style={{ color: 'var(--text-muted)', fontSize: 14, userSelect: 'none', opacity: 0.6 }}>/</span>
+        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>{pageName}</span>
       </div>
 
       {/* Divider */}
-      <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
+      <div style={{ width: 1, height: 18, background: 'var(--border)', flexShrink: 0 }} />
 
       {/* Cluster dropdown */}
       <ClusterToggle />
@@ -121,7 +130,7 @@ export function TopBar() {
       {isFree && <FreeUsageChip />}
 
       {/* RIGHT: Namespace + icons */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
         {/* Namespace dropdown */}
         <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
           <select
@@ -129,23 +138,27 @@ export function TopBar() {
             value={activeNamespace}
             onChange={(e) => setActiveNamespace(e.target.value)}
             style={{
-              background: 'var(--bg-hover)',
+              background: 'var(--bg-base)',
               border: '1px solid var(--border)',
               color: 'var(--text-secondary)',
               fontSize: '12px',
-              padding: '5px 24px 5px 9px',
-              borderRadius: '6px',
+              fontWeight: 500,
+              padding: '5px 26px 5px 10px',
+              borderRadius: '7px',
               cursor: 'pointer',
               appearance: 'none',
               fontFamily: 'inherit',
               outline: 'none',
+              transition: 'all 0.15s ease',
             }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--border-focus)'; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; }}
           >
             {namespaces.map((ns) => (
               <option key={ns} value={ns}>{ns}</option>
             ))}
           </select>
-          <ChevronDown size={11} style={{ position: 'absolute', right: '7px', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+          <ChevronDown size={12} style={{ position: 'absolute', right: '8px', color: 'var(--text-muted)', pointerEvents: 'none' }} />
         </div>
 
         {/* Notification bell */}

@@ -2,9 +2,9 @@ import type { TaskStatus } from '../../types';
 
 const STATUS_CONFIG: Record<TaskStatus, { color: string; bg: string; label: string }> = {
   pending: { color: 'var(--text-muted)', bg: 'var(--bg-hover)', label: 'Pending' },
-  running: { color: 'var(--accent)', bg: 'rgba(99,102,241,0.12)', label: 'Running' },
-  done: { color: 'var(--success)', bg: 'rgba(34,197,94,0.12)', label: 'Done' },
-  failed: { color: 'var(--error)', bg: 'rgba(239,68,68,0.12)', label: 'Failed' },
+  running: { color: 'var(--accent-text)', bg: 'var(--badge-bg)', label: 'Running' },
+  done:    { color: 'var(--success)', bg: 'var(--success-bg)', label: 'Done' },
+  failed:  { color: 'var(--error)', bg: 'var(--error-bg)', label: 'Failed' },
   skipped: { color: 'var(--text-muted)', bg: 'transparent', label: 'Skipped' },
 };
 
@@ -20,11 +20,11 @@ export function StatusBadge({ status, size = 'md' }: Props) {
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: '4px',
-        padding: size === 'sm' ? '1px 6px' : '3px 8px',
+        gap: '5px',
+        padding: size === 'sm' ? '1px 7px' : '3px 9px',
         background: cfg.bg,
-        border: `1px solid ${cfg.color}`,
-        borderRadius: '100px',
+        border: '1px solid var(--border)',
+        borderRadius: '9999px',
         color: cfg.color,
         fontSize: size === 'sm' ? '10px' : '11px',
         fontWeight: 600,
@@ -37,7 +37,7 @@ export function StatusBadge({ status, size = 'md' }: Props) {
           style={{
             width: '6px', height: '6px', borderRadius: '50%',
             background: cfg.color,
-            animation: 'blink 1s step-end infinite',
+            animation: 'pulseDot 1.2s infinite ease-in-out',
           }}
         />
       )}
